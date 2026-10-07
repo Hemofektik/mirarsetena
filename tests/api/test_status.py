@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from mirarsetena.app import create_app
 from mirarsetena.jobs.runner import JobQueue
-from mirarsetena.pipeline.dates import index_key, refresh_index
+from mirarsetena.pipeline.dates import refresh_index
 from mirarsetena.projects.registry import ProjectRegistry
 from mirarsetena.status import status_payload
 from mirarsetena.storage import LocalStore

@@ -6,13 +6,14 @@ project-namespaced key so future S3Store swaps are transparent.
 """
 from __future__ import annotations
 
-from typing import Callable, Sequence
+from collections.abc import Callable, Sequence
 
 import rasterio
 from rasterio.io import MemoryFile
 from rasterio.merge import merge as rio_merge
 from rasterio.warp import transform_bounds
-from rasterio.windows import from_bounds, transform as window_transform
+from rasterio.windows import from_bounds
+from rasterio.windows import transform as window_transform
 
 from mirarsetena.projects.registry import cache_key
 from mirarsetena.storage import Storage

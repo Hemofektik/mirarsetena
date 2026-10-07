@@ -6,9 +6,9 @@ Sentinel-1 GRD; Copernicus CDSE is only queried for SLC coherence).
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date as date_type
-from typing import Iterable, Sequence
 
 import httpx
 

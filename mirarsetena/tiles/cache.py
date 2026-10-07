@@ -5,7 +5,7 @@ sources stay resident (they are the expensive downloads; tiles re-render).
 """
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 from mirarsetena.projects.registry import cache_key
 from mirarsetena.storage import Storage

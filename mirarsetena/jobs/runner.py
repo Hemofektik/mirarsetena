@@ -9,8 +9,8 @@ import json
 import sqlite3
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 MAX_ATTEMPTS = 3
 

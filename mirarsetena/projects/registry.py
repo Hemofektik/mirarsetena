@@ -43,7 +43,7 @@ class Timeline(BaseModel):
     works_start: date
 
     @model_validator(mode="after")
-    def _order(self) -> "Timeline":
+    def _order(self) -> Timeline:
         if self.works_start < self.start:
             raise ValueError(
                 f"works_start {self.works_start} is before timeline start {self.start}"

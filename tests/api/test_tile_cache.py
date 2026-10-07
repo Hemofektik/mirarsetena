@@ -3,7 +3,6 @@
 Eviction scans only the project's tiles/ prefix — level-1 scene sources
 under scenes/ are never candidates (SCOPE R2-Q6).
 """
-from pathlib import Path
 
 from mirarsetena.storage import LocalStore
 from mirarsetena.tiles.cache import TileCache

@@ -6,9 +6,10 @@ interferogram). Nominal baseline: 12 days, accepted within [11, 13].
 """
 from __future__ import annotations
 
+import itertools
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Sequence
 
 from mirarsetena.pipeline.catalog import Scene
 
@@ -46,7 +47,7 @@ def plan_pairs(scenes: Sequence[Scene]) -> list[InterferometricPair]:
     pairs: list[InterferometricPair] = []
     for track_scenes in tracks.values():
         ordered = sorted(track_scenes, key=lambda scene: scene.datetime)
-        for first, second in zip(ordered, ordered[1:]):
+        for first, second in itertools.pairwise(ordered):
             delta_days = (_parse(second.datetime) - _parse(first.datetime)).total_seconds() / 86400
             if MIN_BASELINE_DAYS <= delta_days <= MAX_BASELINE_DAYS:
                 pairs.append(InterferometricPair(first=first, second=second))

@@ -7,8 +7,8 @@ index refreshed at most every INDEX_TTL (SCOPE R2-Q5 hybrid freshness).
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
-from typing import Callable
 
 from mirarsetena.pipeline import catalog
 from mirarsetena.pipeline.catalog import DailyScene, Scene, group_by_date, search

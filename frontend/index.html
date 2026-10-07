@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Mirar Setena</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header id="topbar">
+      <h1 id="app-title">Mirar Setena</h1>
+      <span id="project-name" class="muted"></span>
+      <nav>
+        <a id="status-link" href="#">Status</a>
+        <button id="about-btn" type="button">Acerca de</button>
+      </nav>
+    </header>
+
+    <main>
+      <aside id="panel">
+        <section>
+          <h2 data-i18n="layer">Capa</h2>
+          <div id="layer-buttons" role="radiogroup"></div>
+        </section>
+
+        <section>
+          <h2 data-i18n="date">Fecha</h2>
+          <input id="date-range" type="range" min="0" max="0" value="0" />
+          <div id="date-readout">
+            <span id="date-value"></span>
+            <span id="cloud-badge" class="muted"></span>
+          </div>
+          <div id="cloud-strip" title=""></div>
+          <label class="row">
+            <input id="hide-cloudy" type="checkbox" />
+            <span data-i18n="hide_cloudy">Ocultar fechas nubladas</span>
+          </label>
+          <label class="row">
+            <span data-i18n="max_cloud">Máx. nube %</span>
+            <input id="max-cloud" type="number" min="0" max="100" value="20" />
+          </label>
+          <div id="works-marker" class="marker muted"></div>
+        </section>
+
+        <section id="radar-controls">
+          <h2 data-i18n="baseline">Línea base</h2>
+          <select id="baseline-select"></select>
+          <div class="row">
+            <label
+              ><input type="radio" name="mode" value="change" checked />
+              <span data-i18n="mode_change">Cambio</span></label
+            >
+            <label
+              ><input type="radio" name="mode" value="raw" />
+              <span data-i18n="mode_raw">Crudo</span></label
+            >
+          </div>
+        </section>
+
+        <section>
+          <h2 data-i18n="pois">Puntos de interés</h2>
+          <label class="row">
+            <input id="poi-facilities" type="checkbox" checked />
+            <span data-i18n="pois_facilities">Instalaciones</span>
+          </label>
+          <label class="row">
+            <input id="poi-inspection" type="checkbox" checked />
+            <span data-i18n="pois_inspection">Puntos de inspección</span>
+          </label>
+        </section>
+
+        <section>
+          <h2 data-i18n="basemap">Mapa base</h2>
+          <select id="basemap-select">
+            <option value="osm" data-i18n="basemap_osm">OpenStreetMap</option>
+            <option value="esri" data-i18n="basemap_esri">Imagen</option>
+          </select>
+        </section>
+
+        <section class="row actions">
+          <button id="share-btn" type="button" data-i18n="share">
+            Compartir vista
+          </button>
+          <button id="png-btn" type="button" data-i18n="download_png">
+            Descargar PNG
+          </button>
+        </section>
+      </aside>
+
+      <div id="map"></div>
+    </main>
+
+    <dialog id="about-dialog">
+      <h2 data-i18n="about">Acerca de</h2>
+      <p id="about-disclaimer"></p>
+      <p class="muted">
+        <a href="https://github.com/Hemofektik/mirarsetena" target="_blank" rel="noopener"
+          >github.com/Hemofektik/mirarsetena</a
+        >
+      </p>
+      <form method="dialog"><button>Cerrar</button></form>
+    </dialog>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

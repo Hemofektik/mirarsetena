@@ -5,8 +5,6 @@ Seam: mirarsetena.pipeline.change (classify / render / baseline selection).
 from datetime import date
 
 import numpy as np
-import pytest
-import rasterio
 from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 

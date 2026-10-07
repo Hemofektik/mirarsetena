@@ -7,14 +7,12 @@ Pair handlers are idempotent (skip when the result is already cached).
 import json
 from pathlib import Path
 
-import pytest
-
+from mirarsetena.coherence.pairs import plan_pairs
 from mirarsetena.coherence.pipeline import (
     make_eager_handler,
     make_pair_handler,
     pair_to_payload,
 )
-from mirarsetena.coherence.pairs import plan_pairs
 from mirarsetena.coherence.trigger import (
     enqueue_new_pairs,
     on_plain_data_view,

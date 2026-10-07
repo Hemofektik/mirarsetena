@@ -59,6 +59,6 @@ async def poller_loop(app, interval_seconds: int) -> None:
     while True:
         try:
             await asyncio.to_thread(cycle, app)
-        except Exception:  # noqa: BLE001 - the loop must survive bad cycles
+        except Exception:
             log.exception("catalog poll cycle failed")
         await asyncio.sleep(interval_seconds)

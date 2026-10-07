@@ -6,9 +6,8 @@ project registry (SCOPE §3 R5-Q1); storage is the two-level cache backend.
 from __future__ import annotations
 
 import os
-from pathlib import Path
-
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 
@@ -96,7 +95,7 @@ def create_app(
         except ProjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         try:
-            return list_dates(
+            result = list_dates(
                 storage,
                 slug,
                 config,
@@ -106,6 +105,11 @@ def create_app(
             )
         except UnknownLayer as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # SCOPE R2-Q1: the first plain-data view starts the eager coherence job.
+        from mirarsetena.coherence.trigger import trigger_on_first_view
+
+        trigger_on_first_view(storage, config, queue, app.state.search_fn)
+        return result
 
     @app.get("/p/{slug}/status")
     def project_status(slug: str) -> dict:
@@ -121,8 +125,8 @@ def create_app(
 
     @app.get("/p/{slug}/status/page")
     def project_status_page(slug: str) -> Response:
-        from datetime import datetime, timezone
         import json as _json
+        from datetime import datetime, timezone
 
         try:
             config = registry.get(slug)
@@ -139,6 +143,59 @@ def create_app(
             "</body></html>"
         )
         return Response(content=html, media_type="text/html")
+
+    @app.get("/p/{slug}/aoi.geojson")
+    def project_aoi(slug: str) -> Response:
+        return _geo_response(slug, "aoi_path")
+
+    @app.get("/p/{slug}/pois.geojson")
+    def project_pois(slug: str) -> Response:
+        return _geo_response(slug, "pois_path")
+
+    def _geo_response(slug: str, attr: str) -> Response:
+        try:
+            config = registry.get(slug)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        repo_root = config_dir.resolve().parent.parent
+        path = repo_root / getattr(config, attr)
+        if not path.is_file():
+            raise HTTPException(
+                status_code=404, detail=f"{attr} not found: {path.name}"
+            )
+        return Response(
+            content=path.read_text(encoding="utf-8"),
+            media_type="application/geo+json",
+        )
+
+    # Built SPA (frontend/dist) — same origin as the API when present.
+    dist_dir = Path(os.environ.get("MIRAR_FRONTEND_DIST", "frontend/dist"))
+    index_file = dist_dir / "index.html"
+    if index_file.is_file():
+        if (dist_dir / "assets").is_dir():
+            from fastapi.staticfiles import StaticFiles
+
+            app.mount(
+                "/assets", StaticFiles(directory=dist_dir / "assets"), name="assets"
+            )
+
+        def _index() -> Response:
+            return Response(
+                content=index_file.read_text(encoding="utf-8"),
+                media_type="text/html",
+            )
+
+        @app.get("/")
+        def root_index() -> Response:
+            return _index()
+
+        @app.get("/p/{slug}/")
+        def project_index(slug: str) -> Response:
+            try:
+                registry.get(slug)
+            except ProjectNotFound as exc:
+                raise HTTPException(status_code=404, detail=str(exc)) from exc
+            return _index()
 
     @app.get("/p/{slug}/wmts")
     def wmts(

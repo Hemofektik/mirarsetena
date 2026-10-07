@@ -6,18 +6,18 @@ window_key). Synthetic GeoTIFFs provide the georeferencing ground truth.
 from pathlib import Path
 
 import numpy as np
-import rasterio
 import pytest
+import rasterio
 from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 
-from mirarsetena.storage import LocalStore
 from mirarsetena.pipeline.window import (
     cached_window,
     mosaic,
     read_window,
     window_key,
 )
+from mirarsetena.storage import LocalStore
 
 BBOX = (-83.672, 9.380, -83.664, 9.392)  # west, south, east, north
 

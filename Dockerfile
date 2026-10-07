@@ -11,6 +11,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY mirarsetena ./mirarsetena
 COPY config ./config
 COPY data ./data
+COPY frontend/dist ./frontend/dist
 
 EXPOSE 8000
 

@@ -4,14 +4,13 @@ Seams: GET /p/{slug}/wmts (GetCapabilities + GetTile) and
 GET /p/{slug}/tiles/{layer}/{date}/{z}/{x}/{y}.png.
 """
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 from fastapi.testclient import TestClient
-from xml.etree import ElementTree
 
 from mirarsetena.app import create_app
 from mirarsetena.pipeline.indices import layer_key
-from mirarsetena.projects.registry import ProjectRegistry
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "config" / "projects"

@@ -14,9 +14,9 @@ still fit within MAX_REGISTRY_RESIDUAL_M, otherwise resolution fails loudly.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import yaml
 from pyproj import Transformer

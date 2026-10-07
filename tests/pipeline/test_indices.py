@@ -17,7 +17,6 @@ from mirarsetena.pipeline.indices import (
     NODATA,
     bsi,
     cloud_pct,
-    layer_key,
     mndwi,
     ndvi,
     process_s2_daily,

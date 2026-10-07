@@ -3,7 +3,6 @@
 Seam: mirarsetena.coherence.cdse.CdseAuth.
 """
 import json
-from pathlib import Path
 
 import httpx
 import pytest

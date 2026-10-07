@@ -8,10 +8,11 @@ officially stated areas).
 """
 from __future__ import annotations
 
+import itertools
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import yaml
 
@@ -95,7 +96,7 @@ def compute(legs: Sequence[Leg]) -> TraverseResult:
     if not legs:
         raise TraverseError("traverse has no legs")
     if legs[-1].end != legs[0].start or any(
-        a.end != b.start for a, b in zip(legs, legs[1:])
+        a.end != b.start for a, b in itertools.pairwise(legs)
     ):
         raise TraverseError(
             f"open traverse: starts at {legs[0].start!r}, ends at {legs[-1].end!r}"

@@ -13,8 +13,8 @@ from __future__ import annotations
 
 import re
 import shutil
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 
 from mirarsetena.coherence.cdse import CoherenceUnavailable
 from mirarsetena.coherence.pairs import InterferometricPair, pair_key

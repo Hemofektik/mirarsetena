@@ -5,6 +5,7 @@ canonical project geometry consumed by the config registry (aoi_path/pois_path).
 Assertions reference external facts: official stated areas, the shared-edge
 spec, Appendix B labels, and independently computed CRTM→WGS84 fixes.
 """
+import itertools
 import json
 import math
 import shutil
@@ -86,7 +87,7 @@ def _proper_intersection(a, b, c, d) -> bool:
 
 
 def _assert_simple(ring, plan_id: str):
-    segments = list(zip(ring[:-1], ring[1:]))
+    segments = list(itertools.pairwise(ring))
     n = len(segments)
     for i in range(n):
         for j in range(i + 1, n):

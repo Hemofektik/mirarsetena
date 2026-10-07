@@ -5,9 +5,8 @@ the XYZ route (SCOPE R2-Q4), so parity is structural, not incidental.
 """
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
-from mirarsetena.pipeline import PipelineError
 from mirarsetena.pipeline.catalog import group_by_date, search
 from mirarsetena.pipeline.change import default_baseline_date, render_change
 from mirarsetena.pipeline.dates import list_dates, mission_for_layer

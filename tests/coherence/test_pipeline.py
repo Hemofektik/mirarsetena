@@ -3,7 +3,6 @@
 The SLC sources exist only for the duration of one pair job: downloaded,
 processed, result cached, sources deleted — on success AND on failure.
 """
-import shutil
 
 import pytest
 

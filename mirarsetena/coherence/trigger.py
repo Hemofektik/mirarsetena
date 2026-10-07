@@ -7,8 +7,8 @@ append paths can never double-compute (SCOPE R2-Q1).
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import datetime, timezone
-from typing import Sequence
 
 from mirarsetena.coherence.pairs import InterferometricPair, pair_key
 from mirarsetena.coherence.pipeline import pair_to_payload
@@ -57,3 +57,27 @@ def enqueue_new_pairs(slug: str, pairs: Sequence[InterferometricPair], queue) ->
         ):
             enqueued += 1
     return enqueued
+
+
+def trigger_on_first_view(storage, config, queue, search_fn) -> bool:
+    """Route-level hook: plan pairs from the S1 catalog and fire the single
+    eager job on the project's first data view (SCOPE R2-Q1).
+
+    Pair planning uses Sentinel-1 GRD metadata (same platform, orbit and
+    pass times as the SLC acquisitions); actual SLC download happens inside
+    the job against Copernicus CDSE.
+    """
+    if storage.get(viewed_flag_key(config.slug)) is not None:
+        return False
+    from mirarsetena.coherence.pairs import plan_pairs
+    from mirarsetena.pipeline.catalog import CatalogError
+
+    try:
+        scenes = search_fn(
+            "sentinel-1-grd", config.bbox,
+            config.timeline.start.isoformat(),
+            datetime.now(timezone.utc).date().isoformat(),
+        )
+    except CatalogError:
+        scenes = []
+    return on_plain_data_view(storage, config.slug, plan_pairs(scenes), queue)

@@ -33,3 +33,7 @@ dist/
 
 # Runtime cache (two-level tile/source cache)
 data/cache/
+
+# Playwright artifacts
+frontend/test-results/
+frontend/playwright-report/

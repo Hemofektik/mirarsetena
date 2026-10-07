@@ -156,3 +156,20 @@ def test_route_serves_dates_and_maps_errors():
     )
     assert filtered.status_code == 200
     assert all(d["cloud"] <= 5 for d in filtered.json()["dates"])
+
+
+def test_first_dates_fetch_triggers_the_eager_coherence_job(tmp_path, fake_search):
+    """SCOPE R2-Q1: first plain-data view starts exactly one eager job."""
+    app = create_app(
+        config_dir=CONFIG_DIR,
+        storage_root=tmp_path / "cache",
+        search_fn=fake_search,
+    )
+    client = TestClient(app)
+
+    client.get("/p/cdp-rio-general/api/dates", params={"layer": "ndvi"})
+    assert app.state.queue.counts() == {"pending": 1}
+    assert app.state.queue.last_job("coherence_eager") is not None
+
+    client.get("/p/cdp-rio-general/api/dates", params={"layer": "ndvi"})
+    assert app.state.queue.counts() == {"pending": 1}  # still exactly one

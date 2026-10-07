@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 
 import numpy as np
-import rasterio
 from rasterio.enums import Resampling
 from rasterio.io import MemoryFile
 from rasterio.warp import reproject as warp_reproject
@@ -158,7 +157,7 @@ def process_s2_daily(
             opener=opener,
         )
 
-    blue, blue_prof = _read_band(band("blue"))
+    blue, _ = _read_band(band("blue"))
     green, _ = _read_band(band("green"))
     red, red_prof = _read_band(band("red"))
     nir, _ = _read_band(band("nir"))
