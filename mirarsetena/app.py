@@ -8,11 +8,16 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 
+from mirarsetena.jobs.poller import poller_loop
+from mirarsetena.jobs.runner import JobQueue
 from mirarsetena.pipeline import catalog as catalog_module
 from mirarsetena.pipeline.dates import UnknownLayer, list_dates
 from mirarsetena.projects.registry import ProjectNotFound, ProjectRegistry
+from mirarsetena.status import status_payload
 from mirarsetena.storage import LocalStore
 from mirarsetena.tiles.render import TileError
 from mirarsetena.tiles.service import TileService, make_processor
@@ -34,10 +39,28 @@ def create_app(
 
     registry = ProjectRegistry(config_dir)
     storage = LocalStore(storage_root)
+    queue = JobQueue(storage_root / "jobs.db")
 
-    app = FastAPI(title="Mirar Setena", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(app_):
+        import asyncio
+
+        interval = int(os.environ.get("MIRAR_POLL_SECONDS", "3600"))
+        task = asyncio.create_task(poller_loop(app_, interval))
+        app_.state.poller = task
+        try:
+            yield
+        finally:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
+    app = FastAPI(title="Mirar Setena", version="0.1.0", lifespan=lifespan)
     app.state.registry = registry
     app.state.storage = storage
+    app.state.queue = queue
     app.state.search_fn = search_fn or catalog_module.search
     app.state.processor_override = processor
 
@@ -83,6 +106,39 @@ def create_app(
             )
         except UnknownLayer as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/p/{slug}/status")
+    def project_status(slug: str) -> dict:
+        from datetime import datetime, timezone
+
+        try:
+            config = registry.get(slug)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return status_payload(
+            storage, config, queue, now=datetime.now(timezone.utc)
+        )
+
+    @app.get("/p/{slug}/status/page")
+    def project_status_page(slug: str) -> Response:
+        from datetime import datetime, timezone
+        import json as _json
+
+        try:
+            config = registry.get(slug)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        payload = status_payload(
+            storage, config, queue, now=datetime.now(timezone.utc)
+        )
+        html = (
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            f"<title>Mirar Setena — {config.name}</title></head><body>"
+            f"<h1>Mirar Setena — {config.name}</h1>"
+            f"<pre>{_json.dumps(payload, indent=2, ensure_ascii=False)}</pre>"
+            "</body></html>"
+        )
+        return Response(content=html, media_type="text/html")
 
     @app.get("/p/{slug}/wmts")
     def wmts(
