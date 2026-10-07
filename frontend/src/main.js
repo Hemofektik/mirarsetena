@@ -10,6 +10,7 @@ let config;
 let state;
 let map;
 let poisData = null;
+let aoiData = null;
 
 const BASEMAPS = {
   osm: {
@@ -70,6 +71,18 @@ function updatePoiVisibility() {
       id,
       "visibility",
       state.poiGroups[group] ? "visible" : "none"
+    );
+  }
+}
+
+function updateAoiVisibility() {
+  if (!map) return;
+  for (const id of ["aoi-fill", "aoi-casing", "aoi-outline"]) {
+    if (!map.getLayer(id)) continue;
+    map.setLayoutProperty(
+      id,
+      "visibility",
+      state.showProperties ? "visible" : "none"
     );
   }
 }
@@ -173,6 +186,8 @@ function renderAll() {
   renderRadarControls();
   updateOverlay();
   updatePoiVisibility();
+  updateAoiVisibility();
+  document.getElementById("show-properties").checked = state.showProperties;
   pushUrl();
 }
 
@@ -214,6 +229,7 @@ function buildMap() {
           tileSize: 256,
         },
         pois: { type: "geojson", data: poisData },
+        aoi: { type: "geojson", data: aoiData },
       },
       layers: [
         { id: "base", type: "raster", source: "base" },
@@ -227,6 +243,34 @@ function buildMap() {
             visibility: state.date && state.layer ? "visible" : "none",
           },
           paint: { "raster-opacity": 0.85, "raster-fade-duration": 150 },
+        },
+        // the two 1991 plan parcels: fill + white casing + colored outline
+        {
+          id: "aoi-fill",
+          type: "fill",
+          source: "aoi",
+          layout: { visibility: state.showProperties ? "visible" : "none" },
+          paint: { "fill-color": "#1d4ed8", "fill-opacity": 0.06 },
+        },
+        {
+          id: "aoi-casing",
+          type: "line",
+          source: "aoi",
+          layout: {
+            visibility: state.showProperties ? "visible" : "none",
+            "line-join": "round",
+          },
+          paint: { "line-color": "#ffffff", "line-width": 5 },
+        },
+        {
+          id: "aoi-outline",
+          type: "line",
+          source: "aoi",
+          layout: {
+            visibility: state.showProperties ? "visible" : "none",
+            "line-join": "round",
+          },
+          paint: { "line-color": "#1d4ed8", "line-width": 2.5 },
         },
         poiLayer("poi-facilities", "facilities"),
         poiLayer("poi-inspection", "inspection"),
@@ -307,6 +351,10 @@ function wireUi() {
       renderAll();
     });
   }
+  document.getElementById("show-properties").addEventListener("change", (event) => {
+    state = S.setShowProperties(state, event.target.checked);
+    renderAll();
+  });
   document.getElementById("basemap-select").addEventListener("change", (event) => {
     state = S.setBasemap(state, event.target.value);
     updateBasemap();
@@ -357,6 +405,7 @@ async function boot() {
     state.hideCloudy = restored.hideCloudy;
     state.maxCloud = restored.maxCloud;
     state.baseline = restored.baseline;
+    state.showProperties = restored.properties;
     state = S.setMode(state, restored.mode);
     state = S.setBasemap(state, restored.basemap);
     const groups = restored.pois.split(",");
@@ -376,6 +425,7 @@ async function boot() {
     state = S.setDate(state, restored.date);
   }
   poisData = await getJSON(`/p/${state.slug}/pois.geojson`);
+  aoiData = await getJSON(`/p/${state.slug}/aoi.geojson`);
 
   try {
     buildMap();

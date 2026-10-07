@@ -31,6 +31,7 @@ export function makeState(config) {
     mode: "change", // radar render mode: change | raw
     hideCloudy: false,
     maxCloud: 20,
+    showProperties: true, // two 1991 plan parcels drawn as outlines
     poiGroups: { facilities: true, inspection: true },
     basemap: "osm",
     bbox: null,
@@ -91,6 +92,10 @@ export function togglePoiGroup(state, group) {
   };
 }
 
+export function setShowProperties(state, on) {
+  return { ...state, showProperties: Boolean(on) };
+}
+
 export function setBasemap(state, name) {
   if (!BASEMAPS.includes(name)) return state;
   return { ...state, basemap: name };
@@ -126,6 +131,7 @@ export function serializeState(state) {
   if (!state.layer) params.set("layer", "off"); // disabled layer travels as "off"
   params.set("hideCloudy", state.hideCloudy ? "1" : "0");
   params.set("maxCloud", String(state.maxCloud));
+  params.set("properties", state.showProperties ? "1" : "0");
   const groups = Object.entries(state.poiGroups)
     .filter(([, on]) => on)
     .map(([name]) => name)
@@ -177,6 +183,7 @@ export function parseState(search) {
     mode: mode ?? "change",
     hideCloudy: params.get("hideCloudy") === "1",
     maxCloud,
+    properties: params.get("properties") !== "0",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
     bbox,
@@ -200,6 +207,8 @@ export const MESSAGES = {
     pois: "Puntos de interés",
     pois_facilities: "Instalaciones",
     pois_inspection: "Puntos de inspección",
+    properties: "Propiedades",
+    properties_label: "Perímetro de propiedades",
     works_start: "Inicio de obras",
     about: "Acerca de",
     disclaimer:
@@ -227,6 +236,8 @@ export const MESSAGES = {
     pois: "Points of interest",
     pois_facilities: "Facilities",
     pois_inspection: "Inspection points",
+    properties: "Properties",
+    properties_label: "Property perimeter",
     works_start: "Works start",
     about: "About",
     disclaimer:

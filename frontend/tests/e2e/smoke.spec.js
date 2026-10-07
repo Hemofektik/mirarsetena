@@ -206,3 +206,57 @@ test("POI checkboxes toggle their label layers on the map", async ({ page }) => 
   await page.locator("#poi-inspection").uncheck();
   await expect.poll(async () => (await read()).inspection).toBe("none");
 });
+
+test("property perimeter layer renders and toggles", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+  await page.waitForFunction(
+    () => window.__mirarsetenaMap?.getLayer("aoi-outline"),
+    null,
+    { timeout: 15000 },
+  );
+
+  const read = () =>
+    page.evaluate(() =>
+      window.__mirarsetenaMap.getLayoutProperty("aoi-outline", "visibility"),
+    );
+
+  // both 1991 plan parcels come from the API and the layer is drawn
+  const aoi = await page.request.get(`/p/${SLUG}/aoi.geojson`);
+  expect((await aoi.json()).features).toHaveLength(2);
+  await expect.poll(async () => await read(), { timeout: 10000 }).toBe("visible");
+
+  // uncheck -> hidden, URL records it, share URL restores it
+  await page.locator("#show-properties").uncheck();
+  await expect.poll(async () => await read()).toBe("none");
+  await expect(page).toHaveURL(/properties=0/);
+
+  await page.locator("#share-btn").click();
+  const shared = page.url();
+  await page.goto(shared);
+  await page.waitForFunction(
+    () => window.__mirarsetenaMap?.getLayer("aoi-outline"),
+    null,
+    { timeout: 15000 },
+  );
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() =>
+          window.__mirarsetenaMap.getLayoutProperty("aoi-outline", "visibility"),
+        ),
+      { timeout: 10000 },
+    )
+    .toBe("none");
+
+  await page.locator("#show-properties").check();
+  await expect
+    .poll(
+      async () =>
+        page.evaluate(() =>
+          window.__mirarsetenaMap.getLayoutProperty("aoi-outline", "visibility"),
+        ),
+      { timeout: 10000 },
+    )
+    .toBe("visible");
+});

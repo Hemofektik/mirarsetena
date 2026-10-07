@@ -15,6 +15,7 @@ import {
   setBasemap,
   setHideCloudy,
   setLayer,
+  setShowProperties,
   t,
   tileUrl,
   togglePoiGroup,
@@ -103,6 +104,7 @@ describe("tile URLs and URL state (I.5)", () => {
       mode: "raw",
       hideCloudy: true,
       maxCloud: 15,
+      properties: true,
       pois: "facilities",
       basemap: "esri",
       bbox: state.bbox,
@@ -136,6 +138,29 @@ describe("POI groups and basemap (I.3)", () => {
   });
 });
 
+
+
+describe("property perimeter toggle (two 1991 plan parcels)", () => {
+  const config = { slug: "cdp-rio-general", layers: ["rgb"] };
+
+  it("defaults to visible and serializes properties=1", () => {
+    const state = makeState(config);
+    expect(state.showProperties).toBe(true);
+    expect(serializeState(state)).toContain("properties=1");
+  });
+
+  it("setShowProperties(false) round-trips through the URL", () => {
+    const off = setShowProperties(makeState(config), false);
+    const query = serializeState(off);
+    expect(query).toContain("properties=0");
+    expect(parseState(query).properties).toBe(false);
+    expect(parseState(serializeState(off)).properties).toBe(false);
+  });
+
+  it("an absent properties param still parses as visible (legacy links)", () => {
+    expect(parseState("layer=rgb").properties).toBe(true);
+  });
+});
 
 describe("layer toggle: disable the active layer (user request)", () => {
   const config = { slug: "cdp-rio-general", layers: ["rgb", "sigma0"] };
