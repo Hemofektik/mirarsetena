@@ -1,0 +1,32 @@
+# Reference documents stay local: registry printouts/certificates and plan
+# scans contain personal identity numbers. Only the public SETENA resolution
+# RES-1333-2017 (ES/EN) is committed.
+samples/*
+!samples/RES-1333-2017/
+samples/RES-1333-2017/*
+!samples/RES-1333-2017/RES-1333-2017.pdf
+!samples/RES-1333-2017/RES-1333-2017_eng.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Node / frontend
+node_modules/
+dist/
+.vite/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+
+# OS / editor
+.DS_Store
+*.swp
