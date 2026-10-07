@@ -1,0 +1,155 @@
+{
+ "type": "FeatureCollection",
+ "features": [
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "project-start",
+    "label": "Project start",
+    "group": "facilities"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.66707980874652,
+     9.395319419973573
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "project-end",
+    "label": "Project end",
+    "group": "facilities"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.67335863041262,
+     9.379723408626155
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "road-start",
+    "label": "Internal road start",
+    "group": "facilities"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.66209916491923,
+     9.384203757519732
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "road-end",
+    "label": "Internal road end",
+    "group": "facilities"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.67285233157133,
+     9.383881197525815
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "breaker",
+    "label": "Breaker",
+    "group": "facilities"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.66920257459665,
+     9.385361787093968
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "dumper-ramp",
+    "label": "Dumper ramp",
+    "group": "facilities"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.66943376701654,
+     9.385440307072164
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "office",
+    "label": "Office",
+    "group": "facilities"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.66858272775565,
+     9.384860097613346
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "storage",
+    "label": "Storage",
+    "group": "facilities"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.66911842965787,
+     9.385377441627234
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "channel",
+    "label": "Channel",
+    "group": "inspection"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.66938436282098,
+     9.385402374795879
+    ]
+   }
+  },
+  {
+   "type": "Feature",
+   "properties": {
+    "id": "quarry",
+    "label": "Quarry",
+    "group": "inspection"
+   },
+   "geometry": {
+    "type": "Point",
+    "coordinates": [
+     -83.67182437113365,
+     9.38554027522345
+    ]
+   }
+  }
+ ]
+}

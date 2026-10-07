@@ -40,6 +40,7 @@ class ResolutionError(ValueError):
 @dataclass(frozen=True)
 class Poi:
     id: str
+    label: str
     group: str
     east: float
     north: float
@@ -71,6 +72,7 @@ def load_reference(path: str | Path) -> Reference:
     pois = {
         str(row["id"]): Poi(
             id=str(row["id"]),
+            label=str(row.get("label", "")),
             group=str(row["group"]),
             east=float(row["east"]),
             north=float(row["north"]),

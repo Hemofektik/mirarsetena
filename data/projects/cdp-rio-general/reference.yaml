@@ -10,16 +10,16 @@ registry:
   SJ-980861-1991: {east: 536414.0, north: 1037419.0}
 
 pois:
-  - {id: project-start, group: facilities, east: 536563.07, north: 1038887.01}
-  - {id: project-end, group: facilities, east: 535875.09, north: 1037161.53}
-  - {id: road-start, group: facilities, east: 537111.26, north: 1037658.20}
-  - {id: road-end, group: facilities, east: 535930.27, north: 1037621.41}
-  - {id: breaker, group: facilities, east: 536330.97, north: 1037785.53}
-  - {id: dumper-ramp, group: facilities, east: 536305.57, north: 1037794.19}
-  - {id: office, group: facilities, east: 536399.10, north: 1037730.11}
-  - {id: storage, group: facilities, east: 536340.21, north: 1037787.27}
-  - {id: channel, group: inspection, east: 536311.0, north: 1037790.0}
-  - {id: quarry, group: inspection, east: 536043.0, north: 1037805.0}
+  - {id: project-start, label: Project start, group: facilities, east: 536563.07, north: 1038887.01}
+  - {id: project-end, label: Project end, group: facilities, east: 535875.09, north: 1037161.53}
+  - {id: road-start, label: Internal road start, group: facilities, east: 537111.26, north: 1037658.20}
+  - {id: road-end, label: Internal road end, group: facilities, east: 535930.27, north: 1037621.41}
+  - {id: breaker, label: Breaker, group: facilities, east: 536330.97, north: 1037785.53}
+  - {id: dumper-ramp, label: Dumper ramp, group: facilities, east: 536305.57, north: 1037794.19}
+  - {id: office, label: Office, group: facilities, east: 536399.10, north: 1037730.11}
+  - {id: storage, label: Storage, group: facilities, east: 536340.21, north: 1037787.27}
+  - {id: channel, label: Channel, group: inspection, east: 536311.0, north: 1037790.0}
+  - {id: quarry, label: Quarry, group: inspection, east: 536043.0, north: 1037805.0}
 
 # Physical control used by anchor resolution (SCOPE §7): Río General runs
 # along the western boundaries near the channel fix; the road is east of the

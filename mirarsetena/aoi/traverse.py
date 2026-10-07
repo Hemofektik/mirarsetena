@@ -51,6 +51,7 @@ class Plan:
     id: str
     stated_area_m2: float
     legs: tuple[Leg, ...]
+    finca: str = ""
 
 
 @dataclass(frozen=True)
@@ -136,5 +137,12 @@ def load_plans(path: str | Path) -> tuple[Plan, ...]:
             )
             for row in item["legs"]
         )
-        plans.append(Plan(str(item["id"]), float(item["stated_area_m2"]), legs))
+        plans.append(
+            Plan(
+                str(item["id"]),
+                float(item["stated_area_m2"]),
+                legs,
+                str(item.get("finca", "")),
+            )
+        )
     return tuple(plans)

@@ -15,8 +15,8 @@ Execution companion to **[SCOPE.md](./SCOPE.md)**. SCOPE answers *what and why*;
 | Phase | Todo | Increments | Done | Status |
 |---|---|---|---|---|
 | A. Repository & docs | `init-repo` | 2 | 2 | ✅ |
-| B. AOI reconstruction | `aoi-reconstruction` | 3 | 2 | 🟡 |
-| C. Backend foundation | `scaffold-backend` | 3 | 2 | 🟡 |
+| B. AOI reconstruction | `aoi-reconstruction` | 3 | 3 | ✅ |
+| C. Backend foundation | `scaffold-backend` | 3 | 3 | ✅ |
 | D. Sentinel-2 pipeline | `s2-pipeline` | 4 | 0 | ⬜ |
 | E. Sentinel-1 GRD pipeline | `s1-grd-pipeline` | 2 | 0 | ⬜ |
 | F. Tiles & WMTS service | `wmts-service` | 4 | 0 | ⬜ |
@@ -25,7 +25,7 @@ Execution companion to **[SCOPE.md](./SCOPE.md)**. SCOPE answers *what and why*;
 | I. Frontend | `frontend` | 7 | 0 | ⬜ |
 | J. CI | `ci-pipeline` | 1 | 0 | ⬜ |
 | K. End-to-end verification | `e2e-verify` | 1 | 0 | ⬜ |
-| **Total** | | **35** | **6** | |
+| **Total** | | **35** | **8** | |
 
 **Execution order** (parallel where branches are independent):
 
@@ -67,7 +67,7 @@ flowchart LR
 
 ---
 
-## Phase B — AOI reconstruction (`aoi-reconstruction`)
+## Phase B — AOI reconstruction (`aoi-reconstruction`) ✅
 
 Depends: A. Produces the canonical project geometry consumed by C/D/E (`tools/aoi/` one-off generator per SCOPE R5-Q2).
 
@@ -86,11 +86,12 @@ Depends: A. Produces the canonical project geometry consumed by C/D/E (`tools/ao
 - **Deliverable:** `data/projects/cdp-rio-general/aoi.geojson` (two parcel polygons, WGS84) + `pois.geojson` (10 points: 8 facilities, 2 inspection) with labels from Appendix B.
 - **TDD:** `tests/aoi/test_emit.py` — valid FeatureCollection, simple (non-self-intersecting) polygons, exactly 10 POIs in two groups, coordinates transformed correctly.
 - **Scenario (BDD, acceptance):** *Given the corrected Appendix A tables and Appendix B anchors, when the generator runs, then both parcels close < 2 m with area ±1 % of stated, the shared edge coincides within 0.5 m, and the emitted GeoJSON loads with exactly 8 facility + 2 inspection POIs.*
-- **Status:** [ ]
+- **Status:** [x] done
+- **Result:** `python -m tools.aoi` emits the committed `aoi.geojson` (2 polygons, finca + stated area props) and `pois.geojson` (10 labeled points); shared edge re-verified on the emitted artifact at < 0.5 m after a WGS84→CRTM round trip; polygon simplicity and independent golden fixes asserted.
 
 ---
 
-## Phase C — Backend foundation (`scaffold-backend`)
+## Phase C — Backend foundation (`scaffold-backend`) ✅
 
 Depends: A. Runs in parallel with B.
 
@@ -108,7 +109,8 @@ Depends: A. Runs in parallel with B.
 - **Deliverable:** app factory, `/healthz`, project-scoped routers mounted under `/p/{slug}`, `Dockerfile`, `docker-compose.yml` (api + storage volume).
 - **TDD:** `tests/backend/test_app.py` — TestClient `/healthz` 200; unknown project route → 404.
 - **Scenario (manual):** *`docker compose up` serves `/healthz` within 30 s.*
-- **Status:** [ ]
+- **Status:** [x] done
+- **Result:** verified live — image built, stack up in seconds: `/healthz` 200, `/p/cdp-rio-general/config` 200 with full config, unknown slug 404, `docker compose down` clean.
 
 ---
 
