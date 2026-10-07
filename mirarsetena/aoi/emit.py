@@ -11,6 +11,12 @@ from mirarsetena.aoi.anchor import Poi
 from mirarsetena.aoi.traverse import Plan
 
 _CRTM_TO_WGS84 = Transformer.from_crs("EPSG:5367", "EPSG:4326", always_xy=True)
+# NOTE: EPSG:5367's authority axis order is (Northing, Easting). Feeding our
+# (E, N) pairs into an axis-order-honoring tool (cs2cs without always_xy, most
+# online converters) silently swaps them and lands ~500 km away. always_xy=True
+# pins input to (E, N) and output to (lon, lat) as RFC 7946 requires.
+# Cross-verified against PROJ 8.2.1 (cs2cs), 9.2 (pyproj) and 9.7 (rasterio):
+# identical to <1e-6 deg; selected op "CR05 to WGS 84 (2)", accuracy 1.0 m.
 
 
 def to_wgs84(vertices_crtm: Sequence[tuple[float, float]]) -> list[list[float]]:
