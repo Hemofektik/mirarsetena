@@ -1,0 +1,30 @@
+[project]
+name = "mirarsetena"
+version = "0.1.0"
+description = "Satellite-based environmental monitoring for SETENA projects — starting with CDP Río General"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+    "PyYAML>=6.0",
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+]
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mirarsetena*"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "acceptance: BDD API acceptance scenarios (deselect with -m 'not acceptance')",
+]

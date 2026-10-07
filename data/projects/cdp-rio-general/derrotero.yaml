@@ -1,0 +1,42 @@
+# Derrotero (bearing/distance) tables of the cadastral plans bounding the
+# CDP Río General project area.
+#
+# Transcribed from the original 1991 plan scans and corrected against them on
+# 2026-10-06; validation results are recorded in docs/SCOPE.md §7:
+#   SJ-980860-1991: closure 0.02 m, area +0.006 % of stated
+#   SJ-980861-1991: closure 0.05 m, area -0.010 % of stated
+# Shared edge: 980860 leg 13-1 (89°19′) vs 980861 leg 4-5 (269°19′), 180° exact.
+#
+# Row format: azimuth = [degrees, minutes], distance = [metres, centimetres]
+plans:
+  - id: SJ-980860-1991
+    finca: 1-386536-000
+    stated_area_m2: 111820.13
+    legs:
+      - {start: 1, end: 2, azimuth: [159, 19], distance: [0, 68]}
+      - {start: 2, end: 3, azimuth: [188, 24], distance: [133, 45]}
+      - {start: 3, end: 4, azimuth: [144, 40], distance: [5, 43]}
+      - {start: 4, end: 5, azimuth: [222, 25], distance: [29, 74]}
+      - {start: 5, end: 6, azimuth: [239, 51], distance: [15, 44]}
+      - {start: 6, end: 7, azimuth: [270, 9], distance: [88, 83]}
+      - {start: 7, end: 8, azimuth: [272, 12], distance: [248, 80]}
+      - {start: 8, end: 9, azimuth: [272, 37], distance: [273, 98]}
+      - {start: 9, end: 10, azimuth: [322, 19], distance: [19, 1]}
+      - {start: 10, end: 11, azimuth: [232, 57], distance: [99, 15]}
+      - {start: 11, end: 12, azimuth: [0, 59], distance: [104, 40]}
+      - {start: 12, end: 13, azimuth: [20, 52], distance: [81, 59]}
+      - {start: 13, end: 1, azimuth: [89, 19], distance: [720, 62]}
+
+  - id: SJ-980861-1991
+    finca: 1-101880-000
+    stated_area_m2: 111826.59
+    legs:
+      - {start: 1, end: 2, azimuth: [193, 2], distance: [50, 24]}
+      - {start: 2, end: 3, azimuth: [185, 27], distance: [136, 71]}
+      - {start: 3, end: 4, azimuth: [159, 21], distance: [61, 14]}
+      - {start: 4, end: 5, azimuth: [269, 19], distance: [720, 62]}
+      - {start: 5, end: 6, azimuth: [20, 52], distance: [49, 37]}
+      - {start: 6, end: 7, azimuth: [55, 38], distance: [159, 93]}
+      - {start: 7, end: 8, azimuth: [99, 1], distance: [256, 84]}
+      - {start: 8, end: 9, azimuth: [352, 15], distance: [123, 82]}
+      - {start: 9, end: 1, azimuth: [84, 34], distance: [338, 31]}

@@ -15,8 +15,8 @@ Execution companion to **[SCOPE.md](./SCOPE.md)**. SCOPE answers *what and why*;
 | Phase | Todo | Increments | Done | Status |
 |---|---|---|---|---|
 | A. Repository & docs | `init-repo` | 2 | 2 | ✅ |
-| B. AOI reconstruction | `aoi-reconstruction` | 3 | 0 | ⬜ |
-| C. Backend foundation | `scaffold-backend` | 3 | 0 | ⬜ |
+| B. AOI reconstruction | `aoi-reconstruction` | 3 | 1 | 🟡 |
+| C. Backend foundation | `scaffold-backend` | 3 | 1 | 🟡 |
 | D. Sentinel-2 pipeline | `s2-pipeline` | 4 | 0 | ⬜ |
 | E. Sentinel-1 GRD pipeline | `s1-grd-pipeline` | 2 | 0 | ⬜ |
 | F. Tiles & WMTS service | `wmts-service` | 4 | 0 | ⬜ |
@@ -25,7 +25,7 @@ Execution companion to **[SCOPE.md](./SCOPE.md)**. SCOPE answers *what and why*;
 | I. Frontend | `frontend` | 7 | 0 | ⬜ |
 | J. CI | `ci-pipeline` | 1 | 0 | ⬜ |
 | K. End-to-end verification | `e2e-verify` | 1 | 0 | ⬜ |
-| **Total** | | **35** | **2** | |
+| **Total** | | **35** | **4** | |
 
 **Execution order** (parallel where branches are independent):
 
@@ -74,7 +74,7 @@ Depends: A. Produces the canonical project geometry consumed by C/D/E (`tools/ao
 ### B.1 Derrotero traverse core
 - **Deliverable:** pure geometry module: azimuth °′→decimal, forward computation, closure distance, shoelace area, closed-traverse validator with hard gates.
 - **TDD:** `tests/aoi/test_traverse.py` — both Appendix A tables must reproduce the measured results: closure ≤ 0.1 m (980860: 0.02 m, 980861: 0.05 m), area within ±0.1 % (measured +0.006 % / −0.010 %), azimuth conversion cases (89°19′ → 89.3167°); empty-leg and open-traverse inputs fail loudly.
-- **Status:** [ ]
+- **Status:** [x] done
 
 ### B.2 Anchor resolution
 - **Deliverable:** algorithm choosing which vertex of each traverse corresponds to its registry CRTM coordinate, scored by the SCOPE §7 consistency checks.
@@ -96,7 +96,7 @@ Depends: A. Runs in parallel with B.
 ### C.1 Config-driven project registry
 - **Deliverable:** `config/projects/cdp-rio-general.yaml` (slug, name, AOI/POI paths, layer set, timeline start `2026-07-01`, works-start marker, bbox) + loader with schema validation + namespacing helper producing `/p/{slug}/…` route and cache keys.
 - **TDD:** `tests/backend/test_registry.py` — loads the real project file; unknown slug → 404/`ProjectNotFound`; missing required field → validation error; two projects namespace independently.
-- **Status:** [ ]
+- **Status:** [x] done
 
 ### C.2 Storage interface (local now, S3 later)
 - **Deliverable:** `Storage` protocol + `LocalStore` (get/put/exists/list/delete) with per-project path namespacing and size accounting hooks; `.env.example`.

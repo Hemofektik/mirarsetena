@@ -1,0 +1,33 @@
+# Mirar Setena project configuration.
+# One file per project; adding a SETENA project = adding a file here (SCOPE §3 R5-Q1).
+# All routes, cache keys and layer namespaces derive from `slug`.
+slug: cdp-rio-general
+name: CDP Río General
+
+location:
+  province: San José
+  canton: Pérez Zeledón
+  district: General Viejo
+  sheet: San Isidro 1:50,000
+
+# Canonical project geometry (produced by the AOI reconstruction generator).
+aoi_path: data/projects/cdp-rio-general/aoi.geojson
+pois_path: data/projects/cdp-rio-general/pois.geojson
+
+# WGS84 [west, south, east, north], padded AOI used for satellite queries.
+bbox: [-83.675, 9.378, -83.660, 9.397]
+
+# Layer set (layer implies mission on the scrubber: S2 optical vs S1 radar).
+layers: [rgb, ndvi, mndwi, bsi, sigma0, coherence]
+
+timeline:
+  start: 2026-07-01          # scrubber window start (SCOPE R2-Q2)
+  works_start: 2026-08-01    # works began ~Aug 2026 — adjustable marker (SCOPE §7)
+
+cache:
+  max_zoom: 18               # hard zoom cap (SCOPE R3-Q6)
+  tile_budget_bytes: 2147483648   # 2 GB soft budget, LRU eviction (SCOPE R3-Q6)
+
+satellite:
+  s2_repeat_days: 5          # observed constellation cadence over this AOI
+  s1_repeat_days: 12         # observed Sentinel-1D cadence (SCOPE §2)
