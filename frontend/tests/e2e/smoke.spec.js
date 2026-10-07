@@ -176,3 +176,33 @@ test("active layer button toggles off and back on", async ({ page }) => {
     page.locator('#layer-buttons [aria-pressed="true"]'),
   ).toHaveText(name);
 });
+
+test("POI checkboxes toggle their label layers on the map", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+  await page.waitForFunction(
+    () => window.__mirarsetenaMap?.getLayer("poi-facilities"),
+    null,
+    { timeout: 15000 },
+  );
+  const read = () =>
+    page.evaluate(() => ({
+      facilities: window.__mirarsetenaMap.getLayoutProperty("poi-facilities", "visibility"),
+      inspection: window.__mirarsetenaMap.getLayoutProperty("poi-inspection", "visibility"),
+    }));
+
+  // both groups default on: the property must be explicitly set (it used to
+  // stay undefined because setTiles() invalidated the style mid-render)
+  await expect
+    .poll(async () => await read(), { timeout: 10000 })
+    .toEqual({ facilities: "visible", inspection: "visible" });
+
+  await page.locator("#poi-facilities").uncheck();
+  await expect.poll(async () => (await read()).facilities).toBe("none");
+
+  await page.locator("#poi-facilities").check();
+  await expect.poll(async () => (await read()).facilities).toBe("visible");
+
+  await page.locator("#poi-inspection").uncheck();
+  await expect.poll(async () => (await read()).inspection).toBe("none");
+});

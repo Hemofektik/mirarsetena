@@ -43,21 +43,31 @@ function overlayTemplate() {
   );
 }
 
+let lastOverlayTemplate = null;
+
 function updateOverlay() {
-  if (!map || !map.isStyleLoaded()) return;
-  const source = map && map.getSource("overlay");
+  if (!map || !map.getLayer("overlay")) return;
+  const source = map.getSource("overlay");
   if (!source) return;
   const enabled = Boolean(state.date && state.layer);
-  // setTiles for templates: setUrl() would fetch the template as TileJSON.
-  if (enabled) source.setTiles([overlayTemplate()]);
+  const template = enabled ? overlayTemplate() : null;
+  // Only touch the source when the template actually changed: setTiles()
+  // invalidates the style (isStyleLoaded() -> false) and would starve the
+  // guards of every later render step.
+  if (template && template !== lastOverlayTemplate) {
+    source.setTiles([template]);
+    lastOverlayTemplate = template;
+  }
   map.setLayoutProperty("overlay", "visibility", enabled ? "visible" : "none");
 }
 
 function updatePoiVisibility() {
-  if (!map || !map.isStyleLoaded()) return;
+  if (!map) return;
   for (const group of ["facilities", "inspection"]) {
+    const id = `poi-${group}`;
+    if (!map.getLayer(id)) continue; // style not parsed yet — 'load' re-renders
     map.setLayoutProperty(
-      `poi-${group}`,
+      id,
       "visibility",
       state.poiGroups[group] ? "visible" : "none"
     );
@@ -65,11 +75,13 @@ function updatePoiVisibility() {
 }
 
 function updateBasemap() {
-  if (!map || !map.isStyleLoaded()) return;
-  const source = map && map.getSource("base");
+  if (!map || !map.getLayer("base")) return;
+  const source = map.getSource("base");
   if (!source) return;
   const basemap = BASEMAPS[state.basemap] ?? BASEMAPS.osm;
-  source.setTiles(basemap.tiles);
+  if (!basemap.tiles.every((t, i) => source.tiles?.[i] === t)) {
+    source.setTiles(basemap.tiles);
+  }
   map.setAttributionControl({
     customAttribution: basemap.attribution,
   });
@@ -225,6 +237,10 @@ function buildMap() {
     preserveDrawingBuffer: true,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  // the style was built with this template (or none when disabled at boot)
+  lastOverlayTemplate = state.date && state.layer ? overlayTemplate() : null;
+  // debug/QA hook: inspect the live map from the console or automated checks
+  window.__mirarsetenaMap = map;
   // The inline style parses asynchronously: any renderAll() that ran before
   // "load" was skipped by the isStyleLoaded() guards — re-apply it once ready.
   map.once("load", renderAll);
