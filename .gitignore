@@ -30,3 +30,6 @@ dist/
 # OS / editor
 .DS_Store
 *.swp
+
+# Runtime cache (two-level tile/source cache)
+data/cache/
