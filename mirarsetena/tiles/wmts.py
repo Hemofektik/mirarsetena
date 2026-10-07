@@ -36,16 +36,26 @@ def _tile_matrix_set(max_zoom: int) -> str:
     )
 
 
-def _layer(name: str, endpoint: str) -> str:
+def _layer(name: str, endpoint: str, bbox=None) -> str:
     template = (
         f"{endpoint}?SERVICE=WMTS&amp;REQUEST=GetTile&amp;TILEMATRIXSET=GoogleMapsCompatible"
         f"&amp;LAYER={name}&amp;TILEMATRIX={{TileMatrix}}&amp;TILEROW={{TileRow}}"
-        "&amp;TILECOL={{TileCol}}"
+        "&amp;TILECOL={TileCol}"
     )
+    box = ""
+    if bbox is not None:
+        west, south, east, north = bbox
+        box = (
+            "      <ows:WGS84BoundingBox>\n"
+            f"        <ows:LowerCorner>{west} {south}</ows:LowerCorner>\n"
+            f"        <ows:UpperCorner>{east} {north}</ows:UpperCorner>\n"
+            "      </ows:WGS84BoundingBox>\n"
+        )
     return (
         "    <Layer>\n"
         f"      <ows:Identifier>{name}</ows:Identifier>\n"
         f"      <ows:Title>{name}</ows:Title>\n"
+        f"{box}"
         '      <Style isDefault="true"><ows:Identifier>default</ows:Identifier></Style>\n'
         "      <Format>image/png</Format>\n"
         "      <TileMatrixSet>GoogleMapsCompatible</TileMatrixSet>\n"
@@ -54,8 +64,10 @@ def _layer(name: str, endpoint: str) -> str:
     )
 
 
-def build_capabilities(layer_names: list[str], max_zoom: int, endpoint: str) -> bytes:
-    layers = "\n".join(_layer(name, endpoint) for name in layer_names)
+def build_capabilities(
+    layer_names: list[str], max_zoom: int, endpoint: str, bbox=None
+) -> bytes:
+    layers = "\n".join(_layer(name, endpoint, bbox) for name in layer_names)
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         '<Capabilities xmlns="http://www.opengis.net/wmts/1.0"\n'

@@ -38,3 +38,6 @@ data/cache/
 frontend/test-results/
 frontend/playwright-report/
 data/cache-e2e/
+
+# QGIS side-effect file when running the F.4 check
+symbology-style.db

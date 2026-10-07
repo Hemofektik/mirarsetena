@@ -70,6 +70,28 @@ def test_getcapabilities_lists_one_layer_per_date(client):
                for name in names)
 
 
+def test_getcapabilities_carries_wgs84_bounding_box(client):
+    """QGIS uses it to place the layer (otherwise: world-extent artifact)."""
+    response = client.get(
+        f"/p/{SLUG}/wmts", params={"SERVICE": "WMTS", "REQUEST": "GetCapabilities"}
+    )
+    root = ElementTree.fromstring(response.content)
+    layer = next(
+        l for l in root.findall(f".//{WMTS_NS}Layer")
+        if l.find(f"{OWS_NS}Identifier").text == "ndvi_2026-07-03"
+    )
+    bbox = layer.find(f"{OWS_NS}WGS84BoundingBox")
+    assert bbox is not None
+    lower = bbox.find(f"{OWS_NS}LowerCorner").text.split()
+    upper = bbox.find(f"{OWS_NS}UpperCorner").text.split()
+    lon_w, lat_s = map(float, lower)
+    lon_e, lat_n = map(float, upper)
+    assert lon_w < lon_e and lat_s < lat_n
+    # project bbox from config: [-83.675, 9.378, -83.660, 9.397]
+    assert lon_w == pytest.approx(-83.675, abs=1e-3)
+    assert lat_n == pytest.approx(9.397, abs=1e-3)
+
+
 def test_gettile_returns_png_for_seeded_date(client):
     response = client.get(
         f"/p/{SLUG}/wmts",

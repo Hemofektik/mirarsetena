@@ -19,13 +19,13 @@ Execution companion to **[SCOPE.md](./SCOPE.md)**. SCOPE answers *what and why*;
 | C. Backend foundation | `scaffold-backend` | 3 | 3 | ✅ |
 | D. Sentinel-2 pipeline | `s2-pipeline` | 4 | 4 | ✅ |
 | E. Sentinel-1 GRD pipeline | `s1-grd-pipeline` | 2 | 2 | ✅ |
-| F. Tiles & WMTS service | `wmts-service` | 4 | 3 | 🟡 |
+| F. Tiles & WMTS service | `wmts-service` | 4 | 4 | ✅ |
 | G. Freshness & jobs | `background-jobs` | 4 | 4 | ✅ |
 | H. Coherence (CDSE) | `cdse-coherence` | 4 | 4 | ✅ |
 | I. Frontend | `frontend` | 7 | 7 | ✅ |
 | J. CI | `ci-pipeline` | 1 | 1 | ✅ |
 | K. End-to-end verification | `e2e-verify` | 1 | 1 | ✅ |
-| **Total** | | **35** | **34** | |
+| **Total** | | **35** | **35** | |
 
 **Execution order** (parallel where branches are independent):
 
@@ -163,7 +163,7 @@ Depends: B, C. Parallel with D.
 
 ---
 
-## Phase F — Tiles & WMTS service (`wmts-service`)
+## Phase F — Tiles & WMTS service (`wmts-service`) ✅
 
 Depends: D, E.
 
@@ -188,8 +188,8 @@ Depends: D, E.
 
 ### F.4 QGIS conformance check
 - **Scenario (manual):** *Given the running service, when QGIS adds the WMTS via its URL, then GetCapabilities lists the layers/dates and tiles render identically to the browser view.*
-- **Status:** [ ] blocked (no QGIS on this host; no passwordless sudo to install it)
-- **Result:** substitute evidence collected instead — capabilities XML parses with every layer × date, XYZ↔WMTS byte-identity, and live browser rendering; the QGIS GUI check remains open (tracked in K.1).
+- **Status:** [x] done
+- **Result:** scripted acceptance `tools/qgis_wmts_check.py` inside the official `qgis/qgis` image (headless PyQGIS): QGIS's WMTS provider loads GetCapabilities, layer extent equals the AOI bbox, and the map renderer paints 78% of the canvas from live GetTile fetches. The check drove three conformance fixes: per-layer `WGS84BoundingBox` in GetCapabilities (TDD), `ResourceURL` `TILECOL={TileCol}` brace templating, and the documented `&`-joined URI format (`url` without query string).
 
 ---
 
@@ -332,9 +332,9 @@ Depends: G, H, I.
   8. Coherence: first plain-data view triggers the eager job; after a new SLC lands, exactly one pair job appends; sources purged.
   9. Mobile viewport usable.
   10. Container restart → caches and date index survive.
-- **Status:** [x] done (QGIS-only sub-item blocked: no QGIS on host — recorded in F.4)
+- **Status:** [x] done
 - **Results (2026-10-07, compose stack):**
-  1. WMTS GetCapabilities: 108 layer×date names, XML valid; browser render ✓; **QGIS: blocked (no QGIS, no sudo)** — XYZ↔WMTS byte-identity stands as substitute
+  1. WMTS GetCapabilities: 108 layer×date names, XML valid; browser render ✓; **QGIS ✓** — scripted check in official `qgis/qgis` image: layer loads, AOI extent correct, renderer paints 78% of canvas from live GetTile (F.4)
   2. All layers render at 14/4384/7762: RGB (AOI-masked), NDVI, MNDWI, BSI, σ⁰-change (LUT classes visible); cold S2 first-tile 45.7 s, warm 0.01 s; cold S1 2 s; **coherence tile 404 by design** (no processor/creds — jobs parked)
   3. Scrubber: works-start marker, cloud badges, hide-cloudy — Playwright ✓ (live catalog)
   4. POI groups + basemap swap + attributions — Playwright ✓; 5. baseline select (9 options) + raw/change radios — Playwright ✓

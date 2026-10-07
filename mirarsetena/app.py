@@ -222,6 +222,7 @@ def create_app(
                 service.capabilities_layer_names(),
                 config.cache.max_zoom,
                 endpoint,
+                bbox=config.bbox,
             )
             return Response(content=xml, media_type="application/xml")
 
