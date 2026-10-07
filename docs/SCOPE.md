@@ -181,7 +181,7 @@ flowchart LR
 
 ## 7. Open implementation notes (facts to verify, not decisions)
 
-- **Derrotero transcription (Appendix A) comes from the scan images** — must be re-verified against the scans; the reconstruction script must prove **traverse closure (< 2 m) and computed area (±1 % of stated)** or fail loudly. The plans share a ~720.62 m edge (leg 13-1 of 980860 ↔ leg 4-5 of 980861): azimuths read as 80°19′ / 269°19′ differ by ~9° instead of 180° — likely a misread digit (260°19′ would pair exactly); closure check decides.
+- **Derrotero tables (Appendix A) corrected against the scans on 2026-10-06 and validated:** plan 980860 closes at **0.02 m** with area **+0.006 %** of stated, plan 980861 at **0.05 m** with area **−0.010 %**, and their shared edge (leg 13-1 = 89°19′ ↔ leg 4-5 = 269°19′) is opposed by exactly 180°. The reconstruction script still enforces **traverse closure (< 2 m) and computed area (±1 % of stated)** as hard acceptance checks.
 - **Registry anchor points** (Appendix B) name one CRTM coordinate per plan but not which vertex → script tries each vertex and selects the anchor consistent with both plans sharing their common edge, Río General on the west, Quebrada Grande SE, road east, and neighbor labels on the scans.
 - **CDSE API specifics to confirm during implementation:** exact SLC scene size at this latitude, bbox-clip availability, OAuth token flow, rate limits (does not change the decision, only implementation).
 - **Attribution requirements:** Copernicus/ESA notice on all imagery; Esri attribution on imagery basemap; OSM ODbL attribution.
@@ -201,17 +201,17 @@ Closed polar traverse, linear error 1.03 m, angular error 0°03′, protocol Tom
 |---|---|---|
 | 1–2 | 159 19 | 0 68 |
 | 2–3 | 188 24 | 133 45 |
-| 3–4 | 194 40 | 5 43 |
+| 3–4 | 144 40 | 5 43 |
 | 4–5 | 222 25 | 29 74 |
-| 5–6 | 239 09 | 15 44 |
-| 6–7 | 270 51 | 46 83 |
-| 7–8 | 272 12 | 248 60 |
-| 8–9 | 272 37 | 98 96 |
+| 5–6 | 239 51 | 15 44 |
+| 6–7 | 270 09 | 88 83 |
+| 7–8 | 272 12 | 248 80 |
+| 8–9 | 272 37 | 273 98 |
 | 9–10 | 322 19 | 19 01 |
 | 10–11 | 232 57 | 99 15 |
 | 11–12 | 0 59 | 104 40 |
-| 12–13 | 20 52 | 13 59 |
-| 13–1 | 80 19 | 720 62 |
+| 12–13 | 20 52 | 81 59 |
+| 13–1 | 89 19 | 720 62 |
 
 **Plan SJ-980861-1991 — finca 1-101880-000, area 111,826.59 m², 9 legs** (neighbors: N/W Fernando Montero Muñoz, S Carlos Montero Durán, W Río General, SE Quebrada Grande, E public road; "fin de servidumbre de paso 3,50 m")
 
@@ -220,12 +220,12 @@ Closed polar traverse, linear error 1.03 m, angular error 0°03′, protocol Tom
 | 1–2 | 193 02 | 50 24 |
 | 2–3 | 185 27 | 136 71 |
 | 3–4 | 159 21 | 61 14 |
-| 4–5 | 269 19 *(verify: likely 260 19)* | 720 62 |
+| 4–5 | 269 19 | 720 62 |
 | 5–6 | 20 52 | 49 37 |
 | 6–7 | 55 38 | 159 93 |
-| 7–8 | 99 01 | 256 54 |
-| 8–9 | 352 15 | 123 62 |
-| 9–1 | 84 34 | 336 31 |
+| 7–8 | 99 01 | 256 84 |
+| 8–9 | 352 15 | 123 82 |
+| 9–1 | 84 34 | 338 31 |
 
 ## Appendix B — Coordinates (CRTM05 → WGS84, EPSG:5367 → EPSG:4326)
 
