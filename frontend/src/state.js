@@ -53,6 +53,11 @@ export function setLayer(state, layer, dates) {
   };
 }
 
+/** Disable the active layer (click the pressed pill): overlay off, scrubber kept. */
+export function disableLayer(state) {
+  return { ...state, layer: null };
+}
+
 export function applyDates(state, dates) {
   return setLayer(state, state.layer, dates);
 }
@@ -118,6 +123,7 @@ export function serializeState(state) {
   for (const key of URL_KEYS) {
     if (state[key]) params.set(key, String(state[key]));
   }
+  if (!state.layer) params.set("layer", "off"); // disabled layer travels as "off"
   params.set("hideCloudy", state.hideCloudy ? "1" : "0");
   params.set("maxCloud", String(state.maxCloud));
   const groups = Object.entries(state.poiGroups)

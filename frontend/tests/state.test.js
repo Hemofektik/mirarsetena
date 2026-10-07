@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import {
   MESSAGES,
   applyDates,
+  disableLayer,
   makeState,
   missionForLayer,
   parseState,
@@ -132,6 +133,35 @@ describe("POI groups and basemap (I.3)", () => {
     expect(after.layer).toBe(before.layer);
     expect(after.date).toBe(before.date);
     expect(after.poiGroups).toEqual(before.poiGroups);
+  });
+});
+
+
+describe("layer toggle: disable the active layer (user request)", () => {
+  const config = { slug: "cdp-rio-general", layers: ["rgb", "sigma0"] };
+
+  it("disableLayer clears the layer but keeps the scrubber dates", () => {
+    let state = setLayer(makeState(config), "rgb", DATES_S2);
+    state = { ...state, date: "2026-07-08" };
+    const off = disableLayer(state);
+    expect(off.layer).toBeNull();
+    expect(off.dates).toEqual(DATES_S2);
+    expect(off.date).toBe("2026-07-08");
+  });
+
+  it("serializes the disabled state as layer=off and parses it back", () => {
+    let state = setLayer(makeState(config), "rgb", DATES_S2);
+    state = disableLayer(state);
+    const query = serializeState(state);
+    expect(query).toContain("layer=off");
+    expect(query).not.toContain("layer=null");
+    expect(parseState(query).layer).toBe("off");
+  });
+
+  it("an enabled layer still serializes its own name (no off token)", () => {
+    const state = setLayer(makeState(config), "rgb", DATES_S2);
+    expect(serializeState(state)).toContain("layer=rgb");
+    expect(serializeState(state)).not.toContain("off");
   });
 });
 

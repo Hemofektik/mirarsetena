@@ -47,7 +47,7 @@ function updateOverlay() {
   if (!map || !map.isStyleLoaded()) return;
   const source = map && map.getSource("overlay");
   if (!source) return;
-  const enabled = Boolean(state.date);
+  const enabled = Boolean(state.date && state.layer);
   // setTiles for templates: setUrl() would fetch the template as TileJSON.
   if (enabled) source.setTiles([overlayTemplate()]);
   map.setLayoutProperty("overlay", "visibility", enabled ? "visible" : "none");
@@ -95,7 +95,15 @@ function renderLayerButtons() {
     button.type = "button";
     button.textContent = layer;
     button.setAttribute("aria-pressed", String(layer === state.layer));
-    button.addEventListener("click", () => selectLayer(layer));
+    button.addEventListener("click", () => {
+      if (state.layer === layer) {
+        // clicking the pressed pill disables the layer entirely
+        state = S.disableLayer(state);
+        renderAll();
+      } else {
+        selectLayer(layer);
+      }
+    });
     container.appendChild(button);
   }
 }
@@ -187,7 +195,12 @@ function buildMap() {
           tileSize: 256,
           attribution: basemap.attribution,
         },
-        overlay: { type: "raster", tiles: [overlayTemplate()], tileSize: 256 },
+        overlay: {
+          type: "raster",
+          // disabled boot (layer=off) has no layer/date for a valid template
+          tiles: state.date && state.layer ? [overlayTemplate()] : [],
+          tileSize: 256,
+        },
         pois: { type: "geojson", data: poisData },
       },
       layers: [
@@ -196,6 +209,11 @@ function buildMap() {
           id: "overlay",
           type: "raster",
           source: "overlay",
+          // disabled boot: hidden from the first frame — an empty tile list
+          // with a visible layer makes MapLibre crash building tile URLs
+          layout: {
+            visibility: state.date && state.layer ? "visible" : "none",
+          },
           paint: { "raster-opacity": 0.85, "raster-fade-duration": 150 },
         },
         poiLayer("poi-facilities", "facilities"),
@@ -317,6 +335,8 @@ async function boot() {
   if (restored) {
     if (restored.layer && config.layers.includes(restored.layer)) {
       state.layer = restored.layer;
+    } else if (restored.layer === "off") {
+      state.layer = null; // shared URL with the layer toggled off
     }
     state.hideCloudy = restored.hideCloudy;
     state.maxCloud = restored.maxCloud;
@@ -335,7 +355,7 @@ async function boot() {
   applyI18n();
   wireUi();
 
-  await fetchDates(state.layer);
+  if (state.layer) await fetchDates(state.layer);
   if (restored?.date && state.dates.some((d) => d.date === restored.date)) {
     state = S.setDate(state, restored.date);
   }

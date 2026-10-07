@@ -117,3 +117,62 @@ test("overlay and basemap switches request real numeric tiles", async ({ page })
   expect(tileRequests.filter((url) => url.includes("%7B"))).toEqual([]);
   expect(failed).toEqual([]);
 });
+
+test("active layer button toggles off and back on", async ({ page }) => {
+  const tiles = [];
+  const failed = [];
+  const errors = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/tiles/")) tiles.push(request.url());
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400) failed.push(`${response.status()} ${response.url()}`);
+  });
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+
+  // wait for the initial tile wave to quiesce: the style-load wave races
+  // the click otherwise (disable applies on map "load", a beat later)
+  let prev = -1;
+  let stable = 0;
+  for (let i = 0; i < 25 && stable < 3; i += 1) {
+    await page.waitForTimeout(400);
+    const now = tiles.length;
+    stable = now === prev ? stable + 1 : 0;
+    prev = now;
+  }
+
+  const active = page.locator('#layer-buttons [aria-pressed="true"]');
+  await expect(active).toHaveCount(1);
+  const name = (await active.textContent()).trim();
+  const beforeClick = tiles.length;
+
+  // click the active pill -> layer disabled, URL records the off state
+  await active.click();
+  await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveCount(0);
+  await expect(page).toHaveURL(/layer=off/);
+
+  // disabled overlay must not request any further tiles
+  await page.waitForTimeout(1500);
+  expect(tiles.length).toBe(beforeClick);
+
+  // share URL restores the disabled state (and fetches nothing)
+  await page.locator("#share-btn").click();
+  const shared = page.url();
+  await page.goto(shared);
+  await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveCount(0);
+  await page.waitForTimeout(1000);
+  expect(failed).toEqual([]);
+  // MapLibre must not crash on the disabled overlay's empty tile list
+  expect(errors).toEqual([]);
+
+  // click the same pill again -> re-enabled with the same layer name
+  await page.locator(`#layer-buttons button:text-is("${name}")`).click();
+  await expect(
+    page.locator('#layer-buttons [aria-pressed="true"]'),
+  ).toHaveText(name);
+});
