@@ -34,6 +34,35 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await page.locator("#about-btn").click();
   await expect(page.locator("#about-disclaimer")).toContainText("SETENA");
   await page.keyboard.press("Escape");
+
+  // works-start marker renders from config
+  await expect(page.locator("#works-marker")).toContainText("2026-08-01");
+
+  // hide-cloudy shrinks the strip
+  const before = await page.locator("#cloud-strip span").count();
+  await page.locator("#hide-cloudy").check();
+  const after = await page.locator("#cloud-strip span").count();
+  expect(after).toBeLessThan(before);
+  await page.locator("#hide-cloudy").uncheck();
+
+  // baseline select lists the S1 dates (radar controls)
+  await expect(page.locator("#baseline-select option")).toHaveCount(9); // 8 + default
+
+  // POI group toggle + basemap swap keep the app alive
+  await page.locator("#poi-facilities").uncheck();
+  await page.locator("#poi-facilities").check();
+  await page.locator("#basemap-select").selectOption("esri");
+  await expect(page.locator("#basemap-select")).toHaveValue("esri");
+  await page.locator("#basemap-select").selectOption("osm");
+
+  // share encodes state into the URL
+  await page.locator("#share-btn").click();
+  await expect(page).toHaveURL(/layer=sigma0/);
+
+  // status page renders the payload
+  await page.locator("#status-link").click();
+  await expect(page.locator("body")).toContainText("missions");
+  await page.goBack();
 });
 
 test("mobile viewport keeps the panel usable (I.7)", async ({ page }) => {

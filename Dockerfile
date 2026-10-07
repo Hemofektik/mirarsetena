@@ -10,7 +10,8 @@ FROM python:3.12-slim
 WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    AWS_NO_SIGN_REQUEST=YES
 
 COPY requirements.txt .
 RUN apt-get update \

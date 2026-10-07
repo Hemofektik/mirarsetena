@@ -52,3 +52,16 @@ def test_dedupe_makes_enqueue_idempotent(tmp_path):
 
 def test_run_once_on_empty_queue_returns_none(tmp_path):
     assert _queue(tmp_path).run_once({}) is None
+
+
+def test_jobs_without_handlers_are_parked_not_failed(tmp_path):
+    """Coherence jobs must wait for their processor instead of failing
+    when only the catalog handler is registered."""
+    queue = _queue(tmp_path)
+    queue.enqueue("coherence_eager", {"slug": "x"}, dedupe="e")
+    assert queue.run_once({}) is None
+    assert queue.counts() == {"pending": 1}  # parked, not failed
+
+    queue.enqueue("demo", {}, dedupe="d")
+    assert queue.run_once({"demo": lambda payload: None}) == "done"
+    assert queue.counts() == {"pending": 1, "done": 1}

@@ -175,6 +175,7 @@ The work is split into 35 TDD/BDD-sized increments — each with its failing tes
 - **CDSE API specifics to confirm during implementation:** exact SLC scene size at this latitude, bbox-clip availability, OAuth token flow, rate limits (does not change the decision, only implementation).
 - **Attribution requirements:** Copernicus/ESA notice on all imagery; Esri attribution on imagery basemap; OSM ODbL attribution.
 - **Works-start marker** is "~Aug 2026" — expose as config so it can be corrected.
+- **Sentinel-1 GRD value semantics (found during K.1):** Earth Search's vv/vh COGs are **uncalibrated DN** (no radiometric calibration in the converter, no scale metadata). Change-vs-baseline remains valid as a *relative* monotonic detector, but absolute dB (raw ramp) and change-magnitude thresholds (±0.5/1.5/3 dB) are not radiometrically certified; proper σ⁰ calibration via the shipped `schema-calibration-*` annotations is a phase-2 item. Note: if DN is amplitude-scaled, true dB deltas are 2× the computed ones.
 - **Sentinel-1 pairing rule:** same relative orbit + orbit state (descending 23:47 vs 11:22 passes observed), 12-day temporal baseline.
 - **AWS later:** only the storage interface + compose environment change (no auth code, LRU budget already sized for free tier).
 

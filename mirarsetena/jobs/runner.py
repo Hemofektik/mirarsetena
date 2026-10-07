@@ -9,7 +9,7 @@ import json
 import sqlite3
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 MAX_ATTEMPTS = 3
@@ -52,10 +52,19 @@ class JobQueue:
         self._conn.commit()
         return cursor.rowcount == 1
 
-    def pending(self) -> dict | None:
-        row = self._conn.execute(
-            "SELECT * FROM jobs WHERE status = 'pending' ORDER BY id LIMIT 1"
-        ).fetchone()
+    def pending(self, types: Sequence[str] | None = None) -> dict | None:
+        """Next pending job, optionally restricted to handler-registered
+        types (jobs whose handler isn't registered stay parked)."""
+        if types is not None and not types:
+            return None
+        sql = "SELECT * FROM jobs WHERE status = 'pending'"
+        params: tuple = ()
+        if types is not None:
+            placeholders = ",".join("?" for _ in types)
+            sql += f" AND type IN ({placeholders})"
+            params = tuple(types)
+        sql += " ORDER BY id LIMIT 1"
+        row = self._conn.execute(sql, params).fetchone()
         return dict(row) if row else None
 
     def last_job(self, job_type: str) -> dict | None:
@@ -72,8 +81,10 @@ class JobQueue:
         return {row["status"]: row["n"] for row in rows}
 
     def run_once(self, handlers: dict[str, Handler]) -> str | None:
-        """Run the next pending job; returns its resulting status (or None)."""
-        job = self.pending()
+        """Run the next pending job of a registered type; returns its
+        resulting status (None when nothing runnable remains — jobs whose
+        type has no handler are parked, not failed)."""
+        job = self.pending(list(handlers))
         if job is None:
             return None
 
@@ -83,11 +94,7 @@ class JobQueue:
         )
         self._conn.commit()
 
-        handler = handlers.get(job["type"])
-        if handler is None:
-            return self._finish(
-                job, status="failed", error=f"no handler for {job['type']!r}"
-            )
+        handler = handlers[job["type"]]
 
         try:
             handler(json.loads(job["payload"]))

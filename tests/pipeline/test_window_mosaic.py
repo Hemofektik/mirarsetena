@@ -88,3 +88,69 @@ def test_window_keys_are_project_namespaced():
     assert key_a.startswith("p/proj-a/")
     assert key_b.startswith("p/proj-b/")
     assert key_a != key_b
+
+
+def test_read_window_from_gcp_georeferenced_source(tmp_path):
+    """Sentinel-1 measurement COGs georeference via GCPs, not a
+    geotransform — the window reader must derive the affine from them."""
+    from rasterio.control import GroundControlPoint as GCP
+    from rasterio.crs import CRS
+
+    size = 60
+    place = from_origin(-83.68, 9.40, 0.001, 0.001)
+    path = tmp_path / "gcp.tif"
+    with rasterio.open(
+        path, "w", driver="GTiff", height=size, width=size, count=1,
+        dtype="uint16",
+    ) as dst:
+        dst.write(np.full((size, size), 42, dtype=np.uint16), 1)
+        gcps = []
+        for row in (0, size // 2, size - 1):
+            for col in (0, size // 2, size - 1):
+                x, y = place * (col, row)
+                gcps.append(GCP(row=row, col=col, x=x, y=y))
+        dst.gcps = (gcps, CRS.from_epsg(4326))
+
+    data = read_window(str(path), BBOX)
+    with MemoryFile(data) as memfile, memfile.open() as src:
+        assert src.crs is not None and src.crs.to_epsg() == 4326
+        west, south, east, north = src.bounds
+        pixel = 0.001
+        assert west == pytest.approx(BBOX[0], abs=pixel)
+        assert south == pytest.approx(BBOX[1], abs=pixel)
+        assert east == pytest.approx(BBOX[2], abs=pixel)
+        assert north == pytest.approx(BBOX[3], abs=pixel)
+        assert src.read(1).shape == (src.height, src.width)
+
+
+def test_mosaic_reprojects_mixed_crs_tiles(tmp_path):
+    """Live regression: the AOI straddles MGRS zones 16/17, so dual-tile
+    days arrive in EPSG:32616 AND EPSG:32617 (fixture: 16PHR + 17PKL)."""
+    from rasterio.transform import from_bounds
+    from rasterio.warp import transform_bounds
+
+    west_tile = _write_geotiff(tmp_path / "w4326.tif", -83.68, 9.37, -83.668, 9.40, value=1)
+
+    # East tile authored natively in UTM 17N (like the real S2 zone-17 tile).
+    corners = transform_bounds(
+        "EPSG:4326", "EPSG:32617", -83.668, 9.37, -83.66, 9.40, densify_pts=21
+    )
+    transform = from_bounds(*corners, 60, 60)
+    data = np.full((60, 60), 2, dtype=np.uint16)
+    east_tile = tmp_path / "e32617.tif"
+    with rasterio.open(
+        east_tile, "w", driver="GTiff", height=60, width=60, count=1,
+        dtype="uint16", crs="EPSG:32617", transform=transform, nodata=0,
+    ) as dst:
+        dst.write(data, 1)
+
+    combined = mosaic(
+        read_window(str(west_tile), BBOX),
+        read_window(str(east_tile), BBOX),
+    )
+    with MemoryFile(combined) as memfile, memfile.open() as src:
+        west, south, east, north = src.bounds
+        assert west <= BBOX[0] and east >= BBOX[2]
+        assert south <= BBOX[1] and north >= BBOX[3]
+        values = set(np.unique(src.read(1)).tolist())
+        assert {1, 2} <= values  # both zones contributed

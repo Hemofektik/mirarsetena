@@ -104,7 +104,9 @@ def _lut_rgba(classes: np.ndarray, style: dict) -> np.ndarray:
 def _rgb_rgba(rgb: np.ndarray) -> np.ndarray:
     rgba = np.zeros((4, TILE_SIZE, TILE_SIZE), dtype=np.uint8)
     rgba[:3] = rgb
-    rgba[3] = 255
+    # Zero-filled pixels are outside the scene window (nodata-less RGB):
+    # keep the overlay AOI-shaped instead of a black rectangle.
+    rgba[3] = np.where(rgb.max(axis=0) == 0, 0, 255)
     return rgba
 
 

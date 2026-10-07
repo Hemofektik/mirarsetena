@@ -115,6 +115,14 @@ def test_rgb_style_keeps_band_values():
     assert img.getpixel((128, 128)) == (10, 20, 30, 255)
 
 
+def test_rgb_style_masks_outside_aoi_fill():
+    """Zero-filled area (outside the scene window) renders transparent so
+    the overlay keeps the AOI shape instead of a black rectangle."""
+    product = _product(3, "uint8", [0, 0, 0])
+    img = _png(render_tile(product, 0, 0, 0, RGB_STYLE))
+    assert img.getpixel((128, 128))[3] == 0
+
+
 def test_lut_style_maps_classes_and_leaves_unclassified_transparent():
     product = _product(1, "uint8", [6], nodata=255)
     img = _png(render_tile(product, 0, 0, 0, LUT_STYLE))
