@@ -43,6 +43,8 @@ class Storage(Protocol):
 
     def size(self, key: str) -> int | None: ...
 
+    def modified_at(self, key: str) -> float | None: ...
+
     def list(self, prefix: str) -> list[str]: ...
 
     def total_size(self, prefix: str) -> int: ...
@@ -83,6 +85,13 @@ class LocalStore:
         if not path.is_file():
             return None
         return path.stat().st_size
+
+    def modified_at(self, key: str) -> float | None:
+        """mtime (epoch seconds) — the LRU signal for tile eviction."""
+        path = self._path(key)
+        if not path.is_file():
+            return None
+        return path.stat().st_mtime
 
     def list(self, prefix: str) -> list[str]:
         if not self._root.is_dir():

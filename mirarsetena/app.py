@@ -8,18 +8,22 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 
 from mirarsetena.pipeline import catalog as catalog_module
 from mirarsetena.pipeline.dates import UnknownLayer, list_dates
 from mirarsetena.projects.registry import ProjectNotFound, ProjectRegistry
 from mirarsetena.storage import LocalStore
+from mirarsetena.tiles.render import TileError
+from mirarsetena.tiles.service import TileService, make_processor
+from mirarsetena.tiles.wmts import build_capabilities
 
 
 def create_app(
     config_dir: str | Path | None = None,
     storage_root: str | Path | None = None,
     search_fn=None,
+    processor=None,
 ) -> FastAPI:
     config_dir = Path(
         config_dir or os.environ.get("MIRAR_CONFIG_DIR", "config/projects")
@@ -35,6 +39,16 @@ def create_app(
     app.state.registry = registry
     app.state.storage = storage
     app.state.search_fn = search_fn or catalog_module.search
+    app.state.processor_override = processor
+
+    def tile_service(slug: str) -> TileService:
+        config = registry.get(slug)  # ProjectNotFound handled by callers
+        processor = app.state.processor_override
+        if processor is None:
+            processor = make_processor(storage, config, app.state.search_fn)
+        return TileService(
+            storage, config, search_fn=app.state.search_fn, processor=processor
+        )
 
     @app.get("/healthz")
     def healthz() -> dict[str, str]:
@@ -69,6 +83,97 @@ def create_app(
             )
         except UnknownLayer as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @app.get("/p/{slug}/wmts")
+    def wmts(
+        request: Request,
+        slug: str,
+        SERVICE: str | None = None,
+        REQUEST: str | None = None,
+        LAYER: str | None = None,
+        TILEMATRIXSET: str | None = None,
+        TILEMATRIX: str | None = None,
+        TILEROW: str | None = None,
+        TILECOL: str | None = None,
+        STYLE: str | None = None,
+    ) -> Response:
+        try:
+            service = tile_service(slug)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        if REQUEST == "GetCapabilities":
+            endpoint = str(request.base_url).rstrip("/") + f"/p/{slug}/wmts"
+            config = registry.get(slug)
+            xml = build_capabilities(
+                service.capabilities_layer_names(),
+                config.cache.max_zoom,
+                endpoint,
+            )
+            return Response(content=xml, media_type="application/xml")
+
+        if REQUEST == "GetTile":
+            missing = [
+                name
+                for name, value in (
+                    ("LAYER", LAYER), ("TILEMATRIX", TILEMATRIX),
+                    ("TILEROW", TILEROW), ("TILECOL", TILECOL),
+                )
+                if value is None
+            ]
+            if missing:
+                raise HTTPException(
+                    status_code=400, detail=f"missing parameters: {missing}"
+                )
+            if "_" not in LAYER:
+                raise HTTPException(status_code=404, detail=f"unknown layer {LAYER!r}")
+            layer, date = LAYER.split("_", 1)
+            try:
+                z = int(TILEMATRIX)
+                row = int(TILEROW)
+                col = int(TILECOL)
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=400, detail="TILEMATRIX/TILEROW/TILECOL must be integers"
+                ) from exc
+            try:
+                png = service.get_tile(layer, date, z, col, row)
+            except TileError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+            if png is None:
+                raise HTTPException(status_code=404, detail="no tile for {LAYER!r}")
+            return Response(content=png, media_type="image/png")
+
+        raise HTTPException(
+            status_code=400, detail=f"unsupported REQUEST {REQUEST!r}"
+        )
+
+    @app.get("/p/{slug}/tiles/{layer}/{date}/{z}/{x}/{y}.png")
+    def xyz_tile(
+        slug: str,
+        layer: str,
+        date: str,
+        z: int,
+        x: int,
+        y: int,
+        baseline: str | None = Query(default=None),
+        mode: str = Query(default="change"),
+    ) -> Response:
+        try:
+            service = tile_service(slug)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        try:
+            png = service.get_tile(
+                layer, date, z, x, y, baseline=baseline, mode=mode
+            )
+        except TileError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if png is None:
+            raise HTTPException(
+                status_code=404, detail=f"no tile for {layer}/{date}/{z}/{x}/{y}"
+            )
+        return Response(content=png, media_type="image/png")
 
     return app
 

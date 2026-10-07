@@ -63,6 +63,13 @@ def test_size_reporting_per_prefix(store):
     assert store.total_size("p/missing/") == 0
 
 
+def test_modified_at_reports_mtime_and_none_for_missing(store):
+    store.put("p/a/x.bin", b"data")
+    stamp = store.modified_at("p/a/x.bin")
+    assert isinstance(stamp, float) and stamp > 0
+    assert store.modified_at("p/missing") is None
+
+
 def test_unsafe_keys_are_rejected(store):
     for bad in ("../escape", "/absolute/path", "a/../../b", "a\\b", "", "a//b"):
         with pytest.raises(StorageError):

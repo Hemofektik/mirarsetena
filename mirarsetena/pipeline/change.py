@@ -63,17 +63,12 @@ def _classify_vector(delta: np.ndarray) -> np.ndarray:
 
 def render_change(
     scene_bytes: bytes,
-    baseline_bytes: bytes,
+    baseline_bytes: bytes | None = None,
     *,
     mode: str = CHANGE_MODE,
 ) -> bytes:
     """Render one date's layer, either as change-vs-baseline or raw."""
     scene, scene_profile = _read_band(scene_bytes)
-    baseline, _ = _read_band(baseline_bytes)
-    if scene.shape != baseline.shape:
-        raise PipelineError(
-            f"scene grid {scene.shape} does not match baseline {baseline.shape}"
-        )
 
     if mode == RAW_MODE:
         valid = scene != NODATA
@@ -92,6 +87,14 @@ def render_change(
 
     if mode != CHANGE_MODE:
         raise PipelineError(f"unknown render mode {mode!r}")
+    if baseline_bytes is None:
+        raise PipelineError("change mode requires a baseline product")
+
+    baseline, _ = _read_band(baseline_bytes)
+    if scene.shape != baseline.shape:
+        raise PipelineError(
+            f"scene grid {scene.shape} does not match baseline {baseline.shape}"
+        )
 
     out = np.full(scene.shape, UNCLASSIFIED, dtype=np.uint8)
     valid = (scene != NODATA) & (baseline != NODATA)
