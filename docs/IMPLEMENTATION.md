@@ -15,8 +15,8 @@ Execution companion to **[SCOPE.md](./SCOPE.md)**. SCOPE answers *what and why*;
 | Phase | Todo | Increments | Done | Status |
 |---|---|---|---|---|
 | A. Repository & docs | `init-repo` | 2 | 2 | ✅ |
-| B. AOI reconstruction | `aoi-reconstruction` | 3 | 1 | 🟡 |
-| C. Backend foundation | `scaffold-backend` | 3 | 1 | 🟡 |
+| B. AOI reconstruction | `aoi-reconstruction` | 3 | 2 | 🟡 |
+| C. Backend foundation | `scaffold-backend` | 3 | 2 | 🟡 |
 | D. Sentinel-2 pipeline | `s2-pipeline` | 4 | 0 | ⬜ |
 | E. Sentinel-1 GRD pipeline | `s1-grd-pipeline` | 2 | 0 | ⬜ |
 | F. Tiles & WMTS service | `wmts-service` | 4 | 0 | ⬜ |
@@ -25,7 +25,7 @@ Execution companion to **[SCOPE.md](./SCOPE.md)**. SCOPE answers *what and why*;
 | I. Frontend | `frontend` | 7 | 0 | ⬜ |
 | J. CI | `ci-pipeline` | 1 | 0 | ⬜ |
 | K. End-to-end verification | `e2e-verify` | 1 | 0 | ⬜ |
-| **Total** | | **35** | **4** | |
+| **Total** | | **35** | **6** | |
 
 **Execution order** (parallel where branches are independent):
 
@@ -79,7 +79,8 @@ Depends: A. Produces the canonical project geometry consumed by C/D/E (`tools/ao
 ### B.2 Anchor resolution
 - **Deliverable:** algorithm choosing which vertex of each traverse corresponds to its registry CRTM coordinate, scored by the SCOPE §7 consistency checks.
 - **TDD:** `tests/aoi/test_anchor.py` — shared edge (980860 leg 13–1 ↔ 980861 leg 4–5) coincides within 0.5 m; parcels land west of the road / east of Río General; output WGS84 bbox within the SCOPE §1 extent (9.3797–9.3953 °N, −83.6734…−83.6621 °).
-- **Status:** [ ]
+- **Status:** [x] done
+- **Result:** edge aligns at **0.0196 m**; anchors chosen A midpoint leg 11–12 / B midpoint leg 6–7 with registry residual **23.89 m** (next-best passing candidate 48.95 m) — registry printouts self-declare "Verificado: No", so the physical control (river west within 4.7/26.2 m of the channel fix, road east, extent) does the real work. Facility/inspection POIs from the D1 design sit 140–600 m *north* of the reconstructed parcels — an unresolved document discrepancy noted in §7 of SCOPE.
 
 ### B.3 GeoJSON + POI emission
 - **Deliverable:** `data/projects/cdp-rio-general/aoi.geojson` (two parcel polygons, WGS84) + `pois.geojson` (10 points: 8 facilities, 2 inspection) with labels from Appendix B.
@@ -101,7 +102,7 @@ Depends: A. Runs in parallel with B.
 ### C.2 Storage interface (local now, S3 later)
 - **Deliverable:** `Storage` protocol + `LocalStore` (get/put/exists/list/delete) with per-project path namespacing and size accounting hooks; `.env.example`.
 - **TDD:** `tests/backend/test_storage.py` — round-trip, project isolation (same key in two projects → two files), size reporting; suite is interface-contract style so a future `S3Store` passes the same tests.
-- **Status:** [ ]
+- **Status:** [x] done
 
 ### C.3 FastAPI app + Docker Compose
 - **Deliverable:** app factory, `/healthz`, project-scoped routers mounted under `/p/{slug}`, `Dockerfile`, `docker-compose.yml` (api + storage volume).

@@ -1,0 +1,27 @@
+# CRTM05 (EPSG:5367) reference data for the CDP Río General AOI.
+#
+# Sources (docs/SCOPE.md Appendix B):
+#   registry  — registry printouts, one CRTM anchor per plan
+#               ("Verificado Zona Catastrada: No" — treated as approximate control)
+#   pois      — RES-1333-2017 design coordinates (facilities) and the 2016
+#               SETENA site-inspection GPS fixes (channel, quarry)
+registry:
+  SJ-980860-1991: {east: 536314.0, north: 1037219.0}
+  SJ-980861-1991: {east: 536414.0, north: 1037419.0}
+
+pois:
+  - {id: project-start, group: facilities, east: 536563.07, north: 1038887.01}
+  - {id: project-end, group: facilities, east: 535875.09, north: 1037161.53}
+  - {id: road-start, group: facilities, east: 537111.26, north: 1037658.20}
+  - {id: road-end, group: facilities, east: 535930.27, north: 1037621.41}
+  - {id: breaker, group: facilities, east: 536330.97, north: 1037785.53}
+  - {id: dumper-ramp, group: facilities, east: 536305.57, north: 1037794.19}
+  - {id: office, group: facilities, east: 536399.10, north: 1037730.11}
+  - {id: storage, group: facilities, east: 536340.21, north: 1037787.27}
+  - {id: channel, group: inspection, east: 536311.0, north: 1037790.0}
+  - {id: quarry, group: inspection, east: 536043.0, north: 1037805.0}
+
+# Physical control used by anchor resolution (SCOPE §7): Río General runs
+# along the western boundaries near the channel fix; the road is east of the
+# parcels; the parcels must fall inside the project extent.
+extent_wgs84: [-83.6734, 9.3797, -83.6621, 9.3953]
