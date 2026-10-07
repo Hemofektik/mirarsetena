@@ -77,10 +77,10 @@ Depends: A. Produces the canonical project geometry consumed by C/D/E (`tools/ao
 - **Status:** [x] done
 
 ### B.2 Anchor resolution
-- **Deliverable:** algorithm choosing which vertex of each traverse corresponds to its registry CRTM coordinate, scored by the SCOPE §7 consistency checks.
-- **TDD:** `tests/aoi/test_anchor.py` — shared edge (980860 leg 13–1 ↔ 980861 leg 4–5) coincides within 0.5 m; parcels land west of the road / east of Río General; output WGS84 bbox within the SCOPE §1 extent (9.3797–9.3953 °N, −83.6734…−83.6621 °).
-- **Status:** [x] done
-- **Result:** edge aligns at **0.0196 m**; anchors chosen A midpoint leg 11–12 / B midpoint leg 6–7 with registry residual **23.89 m** (next-best passing candidate 48.95 m) — registry printouts self-declare "Verificado: No", so the physical control (river west within 4.7/26.2 m of the channel fix, road east, extent) does the real work. Facility/inspection POIs from the D1 design sit 140–600 m *north* of the reconstructed parcels — an unresolved document discrepancy noted in §7 of SCOPE.
+- **Deliverable:** absolute CRTM placement of both traverses (relative geometry is exact via the shared edge): a translation search under physical control — hard: every RES-1333-2017 on-site work inside the parcels ("quebrador en parte interna de finca"); soft: west edges on the Río General bank, east edges clear of Quebrada Grande and the public road, all inside the SCOPE §1 extent. The unverified registry pair is a diagnostic, never fitted.
+- **TDD:** `tests/aoi/test_anchor.py` — shared edge (980860 leg 13–1 ↔ 980861 leg 4–5) coincides within 0.5 m; the six site points (breaker, dumper-ramp, office, storage, channel, quarry) fall inside the parcels; the west-most vertex of each parcel lies ≤ 30 m from the Río General polyline; Quebrada Grande stays east; output WGS84 bbox within the SCOPE §1 extent; registry conflict reported (50 m < residual < 600 m) instead of failing; deterministic.
+- **Status:** [x] done (reworked 2026-10-07 after user reported the parcels "too small, too far south")
+- **Result:** edge aligns at **0.0196 m**; coarse-to-fine translation search (4 m grid → 1 m refine) lands both parcels with **all six site points inside**, west-most vertices **4 m / 7 m** from the OSM Río General polyline, east edge west of Quebrada Grande, extent bbox (−83.6732…−83.6663 °, 9.38317…9.38706 °). The registry pair conflicts by **357.3 m** with the resolution's GPS/design control (100 m-rounded 1991 legacy coords, self-declared "Verificado: No") — carried as `registry_residual_m` diagnostic only; see SCOPE §7 for the full resolution of the POI-vs-parcel discrepancy.
 
 ### B.3 GeoJSON + POI emission
 - **Deliverable:** `data/projects/cdp-rio-general/aoi.geojson` (two parcel polygons, WGS84) + `pois.geojson` (10 points: 8 facilities, 2 inspection) with labels from Appendix B.

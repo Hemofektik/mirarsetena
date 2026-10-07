@@ -5,6 +5,10 @@
 #               ("Verificado Zona Catastrada: No" — treated as approximate control)
 #   pois      — RES-1333-2017 design coordinates (facilities) and the 2016
 #               SETENA site-inspection GPS fixes (channel, quarry)
+# NOTE (2026-10-07): the registry pair conflicts by ~360-390 m with the
+# resolution's GPS/design control below — it is derived from 100 m-rounded
+# 1991 legacy coordinates and self-declared unverified, so it is carried as a
+# diagnostic only; absolute placement uses river + on-site control.
 registry:
   SJ-980860-1991: {east: 536314.0, north: 1037219.0}
   SJ-980861-1991: {east: 536414.0, north: 1037419.0}
@@ -21,7 +25,73 @@ pois:
   - {id: channel, label: Channel, group: inspection, east: 536311.0, north: 1037790.0}
   - {id: quarry, label: Quarry, group: inspection, east: 536043.0, north: 1037805.0}
 
-# Physical control used by anchor resolution (SCOPE §7): Río General runs
-# along the western boundaries near the channel fix; the road is east of the
-# parcels; the parcels must fall inside the project extent.
+# Physical control used by anchor resolution (SCOPE §7): the parcels must
+# contain the on-site works (RES-1333-2017: "quebrador en parte interna de
+# finca"), their west edges follow the Río General bank, Quebrada Grande and
+# the public road stay east of them, everything inside the project extent.
+
+# Río General polyline in CRTM05 — source: OpenStreetMap ways named
+# 'Río General' (osm422258165 + adjacent), fetched 2026-10-07, ODbL;
+# clipped to the project window. W physical control (plan W neighbour).
+river:
+  -
+    - {east: 536353.9, north: 1038467.3}
+    - {east: 536321.1, north: 1038294.1}
+    - {east: 536256.4, north: 1038113.7}
+    - {east: 536158.7, north: 1037998.9}
+  -
+    - {east: 536158.7, north: 1037998.9}
+    - {east: 536034.0, north: 1037832.5}
+    - {east: 535895.3, north: 1037708.8}
+    - {east: 535899.3, north: 1037603.5}
+    - {east: 535904.6, north: 1037519.2}
+    - {east: 535917.1, north: 1037395.3}
+    - {east: 535917.0, north: 1037331.3}
+    - {east: 535893.7, north: 1037257.3}
+    - {east: 535866.2, north: 1037183.4}
+    - {east: 535856.6, north: 1037144.5}
+    - {east: 535861.4, north: 1037069.5}
+    - {east: 535934.0, north: 1036755.5}
+# Quebrada Grande (SE plan neighbour), same source/window.
+quebrada:
+  -
+    - {east: 536900.4, north: 1038469.4}
+    - {east: 536884.1, north: 1038421.3}
+    - {east: 536843.5, north: 1038387.7}
+    - {east: 536796.4, north: 1038353.0}
+    - {east: 536764.6, north: 1038332.9}
+    - {east: 536725.0, north: 1038298.5}
+    - {east: 536712.0, north: 1038243.9}
+    - {east: 536710.9, north: 1038199.4}
+    - {east: 536706.6, north: 1038146.6}
+    - {east: 536676.6, north: 1038119.1}
+    - {east: 536686.2, north: 1038071.5}
+    - {east: 536709.5, north: 1038012.4}
+    - {east: 536692.1, north: 1037969.8}
+    - {east: 536669.5, north: 1037903.9}
+    - {east: 536654.0, north: 1037770.9}
+    - {east: 536657.8, north: 1037660.9}
+    - {east: 536651.8, north: 1037611.1}
+    - {east: 536643.3, north: 1037580.1}
+    - {east: 536618.0, north: 1037548.3}
+    - {east: 536593.2, north: 1037515.4}
+    - {east: 536583.8, north: 1037483.1}
+    - {east: 536581.7, north: 1037433.3}
+    - {east: 536599.6, north: 1037384.1}
+    - {east: 536623.4, north: 1037320.8}
+    - {east: 536656.0, north: 1037259.2}
+    - {east: 536683.3, north: 1037212.7}
+    - {east: 536743.5, north: 1037100.6}
+    - {east: 536753.8, north: 1037032.8}
+    - {east: 536758.5, north: 1036966.5}
+    - {east: 536759.9, north: 1036928.2}
+    - {east: 536760.5, north: 1036869.8}
+    - {east: 536753.7, north: 1036852.7}
+    - {east: 536725.8, north: 1036831.3}
+    - {east: 536712.1, north: 1036819.5}
+    - {east: 536703.5, north: 1036804.4}
+    - {east: 536700.8, north: 1036787.6}
+    - {east: 536709.0, north: 1036749.1}
+    - {east: 536725.1, north: 1036725.9}
+
 extent_wgs84: [-83.6734, 9.3797, -83.6621, 9.3953]
