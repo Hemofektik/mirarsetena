@@ -148,4 +148,10 @@ describe("i18n catalog (I.6)", () => {
     expect(t("en", "layer")).toBe("Layer");
     expect(t("es", "does.not.exist")).toBe("does.not.exist");
   });
+
+  it("section headings used in index.html all resolve (no raw keys)", () => {
+    // <h2 data-i18n="pois"> rendered as the literal "pois" before this key.
+    expect(t("es", "pois")).toBe("Puntos de interés");
+    expect(t("en", "pois")).toBe("Points of interest");
+  });
 });

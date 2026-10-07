@@ -74,3 +74,46 @@ test("mobile viewport keeps the panel usable (I.7)", async ({ page }) => {
   ).toBeVisible();
   await expect(page.locator("#date-range")).toBeVisible();
 });
+
+test("boot does not race the map style (no render crash)", async ({ page }) => {
+  const errors = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") errors.push(message.text());
+  });
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+  // give the inline style time to parse and the boot sequence to settle
+  await page.waitForTimeout(3000);
+  await expect(page.locator("body")).not.toContainText("Failed to start");
+  expect(
+    errors.filter((text) => text.includes("Style is not done loading")),
+  ).toEqual([]);
+});
+
+test("overlay and basemap switches request real numeric tiles", async ({ page }) => {
+  const tileRequests = [];
+  const failed = [];
+  page.on("request", (request) => {
+    tileRequests.push(request.url());
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      failed.push(`${response.status()} ${response.url()}`);
+    }
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+  await page.waitForTimeout(2500);
+
+  // basemap swap must fetch imagery tiles, not the template as TileJSON
+  await page.locator("#basemap-select").selectOption("esri");
+  await page.waitForTimeout(2500);
+
+  expect(
+    tileRequests.filter((url) => url.includes("arcgisonline") && /\/tile\/\d+\/\d+\/\d+/.test(url)).length,
+  ).toBeGreaterThan(0);
+  // never request a template literally (URL-encoded braces)
+  expect(tileRequests.filter((url) => url.includes("%7B"))).toEqual([]);
+  expect(failed).toEqual([]);
+});

@@ -41,3 +41,4 @@ data/cache-e2e/
 
 # QGIS side-effect file when running the F.4 check
 symbology-style.db
+frontend/.audit/

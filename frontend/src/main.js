@@ -44,15 +44,17 @@ function overlayTemplate() {
 }
 
 function updateOverlay() {
+  if (!map || !map.isStyleLoaded()) return;
   const source = map && map.getSource("overlay");
   if (!source) return;
   const enabled = Boolean(state.date);
-  if (enabled) source.setUrl(overlayTemplate());
+  // setTiles for templates: setUrl() would fetch the template as TileJSON.
+  if (enabled) source.setTiles([overlayTemplate()]);
   map.setLayoutProperty("overlay", "visibility", enabled ? "visible" : "none");
 }
 
 function updatePoiVisibility() {
-  if (!map) return;
+  if (!map || !map.isStyleLoaded()) return;
   for (const group of ["facilities", "inspection"]) {
     map.setLayoutProperty(
       `poi-${group}`,
@@ -63,10 +65,11 @@ function updatePoiVisibility() {
 }
 
 function updateBasemap() {
+  if (!map || !map.isStyleLoaded()) return;
   const source = map && map.getSource("base");
   if (!source) return;
   const basemap = BASEMAPS[state.basemap] ?? BASEMAPS.osm;
-  source.setUrl(basemap.tiles[0]);
+  source.setTiles(basemap.tiles);
   map.setAttributionControl({
     customAttribution: basemap.attribution,
   });
@@ -204,6 +207,9 @@ function buildMap() {
     preserveDrawingBuffer: true,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  // The inline style parses asynchronously: any renderAll() that ran before
+  // "load" was skipped by the isStyleLoaded() guards — re-apply it once ready.
+  map.once("load", renderAll);
   map.on("moveend", () => {
     const bounds = map.getBounds();
     state = S.setViewport(state, [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], map.getZoom());
