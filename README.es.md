@@ -4,7 +4,7 @@
 
 Mirar Setena es una aplicación web SIG que muestra en un mapa el alcance geográfico de un proyecto autorizado por la Secretaría Técnica Nacional Ambiental (SETENA) de Costa Rica, y da seguimiento a los cambios del sitio en el tiempo usando datos libres de los satélites Sentinel de la ESA.
 
-> 🚧 Estado: desarrollo inicial. El alcance completo — decisiones, arquitectura y hoja de ruta — está documentado en **[docs/SCOPE.md](docs/SCOPE.md)**.
+> 🚧 Estado: desarrollo inicial. El alcance completo — decisiones, arquitectura y hoja de ruta — está documentado en **[docs/SCOPE.md](docs/SCOPE.md)**; el plan de ejecución TDD/BDD con casillas de progreso por incremento está en **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)**.
 
 ## ¿Por qué?
 

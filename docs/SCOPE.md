@@ -161,21 +161,9 @@ flowchart LR
 
 ---
 
-## 6. Todos (tracked in SQL `todos`)
+## 6. Implementation plan & progress
 
-| id | Todo | Depends on |
-|---|---|---|
-| `init-repo` | Initializing Mirar Setena repository (git init, MIT, bilingual README, create GitHub repo + push) | — |
-| `aoi-reconstruction` | Reconstructing AOI from plan derrotero (traverses → validated GeoJSON parcels + 10 POIs) | — |
-| `scaffold-backend` | Scaffolding FastAPI backend, Docker Compose, storage interface, project registry | `init-repo` |
-| `s2-pipeline` | Sentinel-2 pipeline (mosaic, 4 index layers, SCL cloud, two-level cache) | `scaffold-backend`, `aoi-reconstruction` |
-| `s1-grd-pipeline` | Sentinel-1 GRD σ⁰ change pipeline | `scaffold-backend`, `aoi-reconstruction` |
-| `wmts-service` | OGC WMTS 1.0.0 + XYZ service with cache policy | `scaffold-backend`, `s2-pipeline`, `s1-grd-pipeline` |
-| `background-jobs` | Background jobs: first-view trigger, catalog poll, ETA prediction, `/status` | `scaffold-backend`, `s2-pipeline` |
-| `cdse-coherence` | CDSE auth + SLC compute-and-purge coherence layer | `background-jobs`, `s1-grd-pipeline` |
-| `frontend` | MapLibre frontend (all UX decisions from rounds 2–5) | `wmts-service` |
-| `ci-pipeline` | GitHub Actions: lint + tests + Docker build | `init-repo`, `scaffold-backend` |
-| `e2e-verify` | End-to-end verification (compose up, WMTS in browser + QGIS, scrubber, coherence job, mobile) | `frontend`, `cdse-coherence`, `background-jobs` |
+The work is split into 35 TDD/BDD-sized increments — each with its failing tests first, an executable acceptance scenario, and a status checkbox — in **[docs/IMPLEMENTATION.md](./IMPLEMENTATION.md)**. That document is the single source of truth for *what is implemented and what is missing*; its progress board summarizes it. Phases map 1:1 to these coarse todos: `init-repo`→A, `aoi-reconstruction`→B, `scaffold-backend`→C, `s2-pipeline`→D, `s1-grd-pipeline`→E, `wmts-service`→F, `background-jobs`→G, `cdse-coherence`→H, `frontend`→I, `ci-pipeline`→J, `e2e-verify`→K.
 
 ---
 

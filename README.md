@@ -4,7 +4,7 @@
 
 Mirar Setena is a web GIS tool that shows the geographic scope of a project authorized by Costa Rica's *Secretaría Técnica Nacional Ambiental* (SETENA) on a map, and tracks how the site changes over time using freely available ESA Sentinel satellite data.
 
-> 🚧 Status: early development. The full scope — decisions, architecture and roadmap — is documented in **[docs/SCOPE.md](docs/SCOPE.md)**.
+> 🚧 Status: early development. The full scope — decisions, architecture and roadmap — is documented in **[docs/SCOPE.md](docs/SCOPE.md)**; the TDD/BDD execution plan with per-increment progress checkboxes is **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)**.
 
 ## Why
 
