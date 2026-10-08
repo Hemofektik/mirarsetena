@@ -45,6 +45,7 @@ function overlayTemplate() {
 }
 
 let lastOverlayTemplate = null;
+let attributionControl = null;
 
 function updateOverlay() {
   if (!map || !map.getLayer("overlay")) return;
@@ -95,9 +96,15 @@ function updateBasemap() {
   if (!basemap.tiles.every((t, i) => source.tiles?.[i] === t)) {
     source.setTiles(basemap.tiles);
   }
-  map.setAttributionControl({
+  // AttributionControl takes customAttribution at construction only — swap
+  // the tracked control whenever the basemap (and its credit) changes.
+  // (Map has no setAttributionControl; the source-level attribution field
+  // is static and would keep crediting the boot basemap.)
+  if (attributionControl) map.removeControl(attributionControl);
+  attributionControl = new maplibregl.AttributionControl({
     customAttribution: basemap.attribution,
   });
+  map.addControl(attributionControl, "bottom-right");
 }
 
 function pushUrl() {
@@ -197,26 +204,41 @@ function renderAll() {
 // from a previous one (last click wins, not last response).
 let datesSeq = 0;
 
-async function fetchDates(layer) {
+// Dates are fetched per layer and remembered so a re-switch picks a valid
+// date immediately — otherwise the overlay would briefly (or, on a failed
+// fetch, permanently) request tiles keyed on the previous layer's date.
+const datesByLayer = new Map();
+
+async function fetchDates(layer, { retried = false } = {}) {
   const token = ++datesSeq;
   try {
     const payload = await getJSON(
       `/p/${state.slug}/api/dates?layer=${encodeURIComponent(layer)}`
     );
     if (token !== datesSeq) return; // a newer switch owns the state
+    datesByLayer.set(layer, payload.dates);
     state = S.applyDates({ ...state, layer }, payload.dates);
     renderAll();
   } catch (error) {
     if (token !== datesSeq) return;
     console.error("dates request failed", error);
-    renderAll(); // stay usable on the optimistic state
+    // Honest state: no valid date is known for this layer — an overlay keyed
+    // on the previous layer's date would only 404 and blank the map.
+    state = S.setLayer(state, layer, []);
+    renderAll();
+    // One delayed retry for transient failures, unless the user moved on.
+    if (!retried) {
+      setTimeout(() => {
+        if (token === datesSeq) fetchDates(layer, { retried: true });
+      }, 2000);
+    }
   }
 }
 
 function selectLayer(layer) {
   // React first: the pill and its controls move without waiting for the
-  // catalog; the fetch below fills the dates in afterwards.
-  state = S.setLayer(state, layer, state.dates);
+  // catalog; known dates apply instantly, unknown ones wait for the fetch.
+  state = S.setLayer(state, layer, datesByLayer.get(layer) ?? []);
   renderAll();
   fetchDates(layer);
 }
@@ -238,7 +260,8 @@ function buildMap() {
           type: "raster",
           tiles: basemap.tiles,
           tileSize: 256,
-          attribution: basemap.attribution,
+          // no static attribution here: it is frozen to the boot basemap;
+          // the tracked AttributionControl follows the active one instead
         },
         overlay: {
           type: "raster",
@@ -297,6 +320,8 @@ function buildMap() {
     center: [-83.668, 9.383],
     zoom: 13,
     preserveDrawingBuffer: true,
+    // managed explicitly so it can follow basemap switches
+    attributionControl: false,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
   // the style was built with this template (or none when disabled at boot)
@@ -305,7 +330,10 @@ function buildMap() {
   window.__mirarsetenaMap = map;
   // The inline style parses asynchronously: any renderAll() that ran before
   // "load" was skipped by the isStyleLoaded() guards — re-apply it once ready.
-  map.once("load", renderAll);
+  map.once("load", () => {
+    renderAll();
+    updateBasemap(); // installs the initial basemap's credit
+  });
   map.on("moveend", () => {
     const bounds = map.getBounds();
     state = S.setViewport(state, [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], map.getZoom());

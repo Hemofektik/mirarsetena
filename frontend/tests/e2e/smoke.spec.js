@@ -308,9 +308,15 @@ test("layer switch reacts immediately while the dates API is stalled", async ({ 
 
 test("a failing dates request leaves the UI usable", async ({ page }) => {
   let fail = false;
+  const badTiles = [];
   await page.route("**/api/dates*", async (route) => {
     if (fail) await route.abort("failed");
     else await route.continue();
+  });
+  page.on("response", (response) => {
+    if (response.status() >= 400 && response.url().includes("/tiles/")) {
+      badTiles.push(`${response.status()} ${response.url().slice(0, 120)}`);
+    }
   });
 
   await page.goto(`/p/${SLUG}/`);
@@ -327,10 +333,46 @@ test("a failing dates request leaves the UI usable", async ({ page }) => {
   );
   await expect(page.locator("body")).not.toContainText("Failed to start");
 
+  // No valid dates are known for the new layer: the overlay must not keep
+  // requesting tiles keyed on the previous layer's date (those all 404 and
+  // blank the map), and the scrubber must say so honestly.
+  await page.waitForTimeout(1500);
+  expect(badTiles).toEqual([]);
+  await expect(page.locator("#date-value")).toHaveText("—");
+
   // and it recovers when the backend comes back
   fail = false;
   await page.locator('#layer-buttons button:has-text("ndvi")').click();
   await expect(page.locator("#cloud-strip span").first()).toBeVisible({
     timeout: 20_000,
   });
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("basemap switch swaps attribution without console errors", async ({ page }) => {
+  const errors = [];
+  page.on("pageerror", (error) => errors.push(String(error)));
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+
+  // the active basemap's credit is shown (customAttribution is
+  // constructor-only in MapLibre, so the control must follow the basemap)
+  await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText(
+    "OpenStreetMap",
+    { timeout: 15_000 },
+  );
+  await page.locator("#basemap-select").selectOption("esri");
+  await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText("Esri", {
+    timeout: 10_000,
+  });
+  await page.locator("#basemap-select").selectOption("osm");
+  await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText(
+    "OpenStreetMap",
+    { timeout: 10_000 },
+  );
+
+  expect(errors).toEqual([]);
 });
