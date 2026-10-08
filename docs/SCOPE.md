@@ -44,7 +44,7 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 | # | Decision |
 |---|---|
 | Q1 | Purpose: **own analytical tool** (b). Public read-only when deployed. |
-| Q2 | Window: recent years → refined in R2 to start **2026-07-01**. |
+| Q2 | Window: recent years → refined in R2 to start **2026-07-01** → changed 2026-10-07 to **2026-01-01** (user request; ~9 months of pre-works baseline). |
 | Q3 | Indicators: **bare-ground expansion + vegetation (NDVI) + river change + Sentinel-1 change** (a+b+c+e). |
 | Q4 | **Elevation out of scope v1** (honest explanation: S1 is not elevation data; DEM differencing deferred). |
 | Q5 | Architecture: on-demand tile service (d) → refined in R2-Q5/Q6 to WMTS with caching. |
@@ -58,7 +58,7 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 | # | Decision |
 |---|---|
 | Q1 | Sentinel-1 scope: **σ⁰ change + coherence**; preprocessing background job starts **after plain data is first viewed**. |
-| Q2 | Timeline start: **2026-07-01** (≈1 month clean baseline before works). Works-start marker ≈ Aug 2026 (adjustable). |
+| Q2 | Timeline start: **2026-01-01** (moved from 2026-07-01 on 2026-10-07; ~7 months clean baseline before works). Works-start marker ≈ Aug 2026 (adjustable). |
 | Q3 | Sentinel-2 layers: **RGB + NDVI + MNDWI + BSI**. |
 | Q4 | **Full OGC WMTS 1.0.0** + XYZ raster tiles from the same handlers (QGIS usable as second client). |
 | Q5 | Freshness: **hybrid** — scheduled catalog poll + orbit-repeat prediction of next acquisition. |
@@ -72,7 +72,7 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 | # | Decision |
 |---|---|
 | Q1 | SLC account: **Copernicus CDSE** (a); ASF fallback. |
-| Q2 | Coherence job: **full-window eager** from 2026-07-01, then one new pair appended per new scene, forever. |
+| Q2 | Coherence job: **full-window eager** from 2026-01-01, then one new pair appended per new scene, forever. |
 | Q3 | Export: **shareable URL state + PNG screenshot** (GeoTIFF deferred). |
 | Q4 | Basemap: **OSM default + Esri World Imagery toggle** (with attribution). |
 | Q5 | POIs: **single toggleable labeled layer, two groups** — project facilities vs inspection points. |
@@ -141,7 +141,7 @@ flowchart LR
 - **Tile service:** WMTS 1.0.0 (GetCapabilities/GetTile) + XYZ raster over shared handlers; per-project slug namespacing; zoom cap 18; tile LRU at 2 GB, sources retained.
 - **S2 pipeline:** STAC fetch → dual-tile mosaicking → RGB/NDVI/MNDWI/BSI + SCL cloud % → two-level cache.
 - **S1 pipeline:** GRD COG fetch → σ⁰ change-vs-baseline (baseline selector, raw toggle).
-- **Coherence pipeline:** CDSE token → SLC pairs (same orbit, 12-day, eager from 2026-07-01) → compute-and-purge → cached result only. Triggered after first plain-data view; thereafter append-only.
+- **Coherence pipeline:** CDSE token → SLC pairs (same orbit, 12-day, eager from the timeline start) → compute-and-purge → cached result only. Triggered after first plain-data view; thereafter append-only.
 - **Freshness:** scheduled catalog poll + orbit-repeat prediction surfaced on `/status` (per your Q5: the server knows from orbit/past data whether new data may be available).
 
 ---

@@ -64,7 +64,7 @@ def test_s2_layer_returns_sorted_dates_with_cloud(storage, registry):
     assert dates[0]["date"] == "2026-07-03"
     assert all(isinstance(d["cloud"], float) for d in dates)
     assert result["mission"] == "sentinel-2-l2a"
-    assert result["timeline"]["start"] == "2026-07-01"
+    assert result["timeline"]["start"] == "2026-01-01"
     assert result["timeline"]["works_start"] == "2026-08-01"
 
 
@@ -134,9 +134,9 @@ def test_index_is_reused_within_ttl_then_refreshed(storage, registry):
     assert calls["n"] > after_first  # stale -> refresh
 
 
-def test_route_serves_dates_and_maps_errors():
+def test_route_serves_dates_and_maps_errors(tmp_path):
     app = create_app(
-        config_dir=CONFIG_DIR, search_fn=fake_search
+        config_dir=CONFIG_DIR, storage_root=tmp_path, search_fn=fake_search
     )
     client = TestClient(app)
     ok = client.get("/p/cdp-rio-general/api/dates", params={"layer": "ndvi"})

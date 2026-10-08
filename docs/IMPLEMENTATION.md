@@ -96,7 +96,7 @@ Depends: A. Produces the canonical project geometry consumed by C/D/E (`tools/ao
 Depends: A. Runs in parallel with B.
 
 ### C.1 Config-driven project registry
-- **Deliverable:** `config/projects/cdp-rio-general.yaml` (slug, name, AOI/POI paths, layer set, timeline start `2026-07-01`, works-start marker, bbox) + loader with schema validation + namespacing helper producing `/p/{slug}/…` route and cache keys.
+- **Deliverable:** `config/projects/cdp-rio-general.yaml` (slug, name, AOI/POI paths, layer set, timeline start `2026-01-01`, works-start marker, bbox) + loader with schema validation + namespacing helper producing `/p/{slug}/…` route and cache keys.
 - **TDD:** `tests/backend/test_registry.py` — loads the real project file; unknown slug → 404/`ProjectNotFound`; missing required field → validation error; two projects namespace independently.
 - **Status:** [x] done
 
@@ -235,7 +235,7 @@ Depends: E, G.
 - **Result:** Client-credentials token cached with expiry margin; disabled without credentials; CoherenceUnavailable on 401/transport/non-JSON.
 
 ### H.2 SLC pair planner
-- **Deliverable:** pair selection from scene metadata: same relative orbit **and** same orbit state, nominal 12-day baseline, window from `2026-07-01` (observed passes: 23:47 descending, 11:22 — must never pair across states).
+- **Deliverable:** pair selection from scene metadata: same relative orbit **and** same orbit state, nominal 12-day baseline, window from the timeline start (observed passes: 23:47 descending, 11:22 — must never pair across states).
 - **TDD:** `tests/coherence/test_pair_planner.py` — fixture metadata covering both pass times → no cross-state pairs; golden expected pair list for Jul–Oct 2026; unpaired scenes reported.
 - **Status:** [x] done
 - **Result:** 6 golden pairs from the fixture (orbit 92 ascending x5, orbit 84 descending x1); the 09-09/09-21 state change never bridges; stable pair_key for dedupe.

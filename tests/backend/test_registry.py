@@ -21,7 +21,7 @@ def test_loads_the_real_project_configuration():
     assert cfg.slug == "cdp-rio-general"
     assert cfg.name == "CDP Río General"
     assert cfg.bbox == (-83.675, 9.378, -83.660, 9.397)
-    assert cfg.timeline.start.isoformat() == "2026-07-01"
+    assert cfg.timeline.start.isoformat() == "2026-01-01"
     assert cfg.timeline.works_start.isoformat() == "2026-08-01"
     assert {"rgb", "ndvi", "mndwi", "bsi", "sigma0", "coherence"} == set(cfg.layers)
     assert cfg.cache.max_zoom == 18
