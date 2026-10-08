@@ -5,7 +5,7 @@ import "./styles.css";
 import * as S from "./state.js";
 import { installTileLoaders, retireTileRequests } from "./tile-loaders.js";
 
-const LOCALE = "es";
+const LANG_KEY = "mirarsetena.lang";
 const slug = location.pathname.split("/").filter(Boolean)[1];
 let config;
 let state;
@@ -135,8 +135,17 @@ function renderLayerButtons() {
   for (const layer of state.layers) {
     const button = document.createElement("button");
     button.type = "button";
+    button.dataset.layer = layer;
     button.textContent = layer;
+    // hover help: what this index actually shows (localized)
+    button.title = S.t(state.lang, `layer_${layer}_help`);
     button.setAttribute("aria-pressed", String(layer === state.layer));
+    // always-visible affordance that a tooltip exists; CSS renders the "?"
+    // so the pill's textContent stays exactly the layer slug
+    const dot = document.createElement("span");
+    dot.className = "help-dot";
+    dot.setAttribute("aria-hidden", "true");
+    button.appendChild(dot);
     button.addEventListener("click", () => {
       if (state.layer === layer) {
         // clicking the pressed pill disables the layer entirely; the bump
@@ -165,7 +174,7 @@ function renderScrubber() {
   document.getElementById("date-value").textContent = state.date ?? "—";
   const cloud = state.cloudByDate?.[state.date];
   document.getElementById("cloud-badge").textContent =
-    cloud == null ? "" : `${S.t(LOCALE, "cloud")}: ${cloud}%`;
+    cloud == null ? "" : `${S.t(state.lang, "cloud")}: ${cloud}%`;
 
   const strip = document.getElementById("cloud-strip");
   strip.innerHTML = "";
@@ -177,7 +186,7 @@ function renderScrubber() {
     strip.appendChild(dot);
   }
   document.getElementById("works-marker").textContent =
-    `${S.t(LOCALE, "works_start")}: ${config.timeline.works_start}`;
+    `${S.t(state.lang, "works_start")}: ${config.timeline.works_start}`;
 }
 
 function renderRadarControls() {
@@ -429,20 +438,36 @@ function wireUi() {
     link.click();
   });
   document.getElementById("status-link").href = `/p/${state.slug}/status/page`;
+  document.getElementById("lang-select").addEventListener("change", (event) => {
+    state = S.setLang(state, event.target.value);
+    localStorage.setItem(LANG_KEY, state.lang);
+    applyI18n(); // static texts, tooltips, <html lang>, document title
+    renderAll(); // dynamic texts: layer pills, cloud badge, works marker
+    pushUrl(); // shared URLs carry lang=en (default es stays implicit)
+  });
   document.getElementById("about-btn").addEventListener("click", () => {
     document.getElementById("about-dialog").showModal();
   });
 }
 
 function applyI18n() {
+  const locale = state?.lang ?? "es";
+  document.documentElement.lang = locale;
   document.querySelectorAll("[data-i18n]").forEach((element) => {
-    element.textContent = S.t(LOCALE, element.dataset.i18n);
+    element.textContent = S.t(locale, element.dataset.i18n);
   });
-  document.getElementById("app-title").textContent = S.t(LOCALE, "app");
+  document.querySelectorAll("[data-i18n-title]").forEach((element) => {
+    element.title = S.t(locale, element.dataset.i18nTitle);
+  });
+  document.getElementById("lang-select").value = locale;
+  document.getElementById("app-title").textContent = S.t(locale, "app");
   document.getElementById("about-disclaimer").textContent = S.t(
-    LOCALE,
+    locale,
     "disclaimer"
   );
+  document.title = config
+    ? `${S.t(locale, "app")} — ${config.name}`
+    : S.t(locale, "app");
 }
 
 async function boot() {
@@ -452,6 +477,18 @@ async function boot() {
   }
   config = await getJSON(`/p/${slug}/config`);
   state = S.makeState(config);
+
+  // language: explicit URL param > stored preference > Spanish
+  const urlLang = new URLSearchParams(location.search).get("lang");
+  const storedLang = localStorage.getItem(LANG_KEY);
+  state = S.setLang(
+    state,
+    ["es", "en"].includes(urlLang)
+      ? urlLang
+      : ["es", "en"].includes(storedLang)
+        ? storedLang
+        : "es"
+  );
 
   const restored = S.parseState(location.search.slice(1));
   if (restored) {
@@ -474,7 +511,6 @@ async function boot() {
   }
 
   document.getElementById("project-name").textContent = config.name;
-  document.title = `${S.t(LOCALE, "app")} — ${config.name}`;
   applyI18n();
   wireUi();
 

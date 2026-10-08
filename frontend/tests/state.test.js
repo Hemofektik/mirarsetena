@@ -15,6 +15,7 @@ import {
   setBasemap,
   setHideCloudy,
   setLayer,
+  setLang,
   setShowProperties,
   t,
   tileUrl,
@@ -107,6 +108,7 @@ describe("tile URLs and URL state (I.5)", () => {
       properties: true,
       pois: "facilities",
       basemap: "esri",
+      lang: "es",
       bbox: state.bbox,
       zoom: state.zoom,
     });
@@ -208,5 +210,61 @@ describe("i18n catalog (I.6)", () => {
     // <h2 data-i18n="pois"> rendered as the literal "pois" before this key.
     expect(t("es", "pois")).toBe("Puntos de interés");
     expect(t("en", "pois")).toBe("Points of interest");
+  });
+});
+
+describe("language selection (ES/EN switch)", () => {
+  it("defaults to Spanish and setLang switches only to a known locale", () => {
+    const state = makeState({ slug: "cdp-rio-general", layers: ["ndvi"] });
+    expect(state.lang).toBe("es");
+    expect(setLang(state, "en").lang).toBe("en");
+    expect(setLang(state, "kl").lang).toBe("es"); // unknown locale rejected
+  });
+
+  it("keeps the default es out of shared URLs but round-trips lang=en", () => {
+    const es = makeState({ slug: "cdp-rio-general", layers: ["ndvi"] });
+    expect(serializeState(es)).not.toContain("lang=");
+    const en = setLang(es, "en");
+    const query = serializeState(en);
+    expect(query).toContain("lang=en");
+    expect(parseState(query).lang).toBe("en");
+    expect(parseState("layer=rgb").lang).toBe("es");
+  });
+
+  it("rejects an invalid lang param in a shared URL", () => {
+    expect(parseState("lang=zz")).toBeNull();
+  });
+});
+
+describe("layer help tooltips and resolution purpose text", () => {
+  const LAYERS = ["rgb", "ndvi", "mndwi", "bsi", "sigma0", "coherence"];
+
+  it("every configured layer has a help tooltip in both languages", () => {
+    for (const layer of LAYERS) {
+      for (const locale of ["es", "en"]) {
+        const key = `layer_${layer}_help`;
+        expect(t(locale, key), `${locale}/${key}`).not.toBe(key);
+        expect(t(locale, key).length).toBeGreaterThan(20);
+      }
+    }
+  });
+
+  it("mode and baseline controls have help texts in both languages", () => {
+    for (const key of ["mode_change_help", "mode_raw_help", "baseline_help"]) {
+      for (const locale of ["es", "en"]) {
+        expect(t(locale, key), `${locale}/${key}`).not.toBe(key);
+      }
+    }
+  });
+
+  it("the RES-1333-2017 purpose text resolves in both languages", () => {
+    expect(t("es", "purpose_title")).toContain("Propósito");
+    expect(t("en", "purpose_title")).toContain("Purpose");
+    expect(t("es", "purpose_p1")).toContain("1333-2017");
+    expect(t("en", "purpose_p1")).toContain("1333-2017");
+    expect(t("es", "purpose_p2")).toContain("11 hectáreas");
+    expect(t("en", "purpose_p2")).toContain("11-hectare");
+    expect(t("es", "purpose_p3")).toContain("semestrales");
+    expect(t("en", "purpose_p3")).toContain("every six months");
   });
 });

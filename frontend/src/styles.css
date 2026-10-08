@@ -88,6 +88,30 @@ body {
   background: rgba(255, 255, 255, 0.18);
 }
 
+#lang-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: #cde0d2;
+}
+
+#lang-switch select {
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.4rem;
+  color: #f2f7f3;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+#lang-switch select option {
+  color: var(--text);
+  background: #fff;
+}
+
 /* ---------- layout ---------- */
 
 main {
@@ -154,6 +178,30 @@ section h2 {
   border-color: var(--green-800);
   color: #fff;
   box-shadow: 0 1px 2px rgba(20, 41, 29, 0.3);
+}
+
+/* "?" affordance on every layer pill: hover shows the localized title */
+.help-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 5px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.55;
+  vertical-align: middle;
+}
+
+.help-dot::before {
+  content: "?";
+}
+
+#layer-buttons button:hover .help-dot {
+  opacity: 1;
 }
 
 /* ---------- date scrubber ---------- */
@@ -318,6 +366,18 @@ dialog::backdrop {
 
 dialog h2 {
   margin-top: 0;
+}
+
+dialog h3 {
+  font-size: 0.95rem;
+  color: var(--green-800);
+  margin: 0.9rem 0 0.35rem;
+}
+
+dialog p {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  margin: 0.45rem 0;
 }
 
 dialog form button {

@@ -66,7 +66,7 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 | Q7 | AOI: reconstruct from plans; **also add the POIs from the project plan** (8 named CRTM points + 2 GPS inspection points). |
 | Q8 | Stack: **Python FastAPI + rasterio/GDAL + pystac-client; MapLibre GL frontend; Docker Compose** locally, same compose on AWS later. |
 | Q9 | Access: **no auth ever** (public read-only when deployed). |
-| Q10 | UI language: **Spanish primary**, i18n-ready string layer (English later). |
+| Q10 | UI language: **Spanish primary**, full ES/EN switch in the topbar (English shipped; shared URLs carry `lang=en`, default Spanish stays implicit). |
 
 ### Round 3 — service & UX
 | # | Decision |
@@ -137,7 +137,7 @@ flowchart LR
   J --> S
 ```
 
-- **Frontend:** MapLibre GL, layer switcher → layer-driven date scrubber (works-start marker, cloud badges, hide-cloudy), POI toggle (facilities / inspection groups), OSM default + Esri imagery toggle, URL state sharing, PNG export, About panel, i18n-ready ES strings.
+- **Frontend:** MapLibre GL, layer switcher → layer-driven date scrubber (works-start marker, cloud badges, hide-cloudy), POI toggle (facilities / inspection groups), OSM default + Esri imagery toggle, URL state sharing, PNG export, About panel (incl. the RES-1333-2017 purpose/reason in ES+EN), ES/EN language switch, localized help tooltips on the layer pills and radar modes.
 - **Tile service:** WMTS 1.0.0 (GetCapabilities/GetTile) + XYZ raster over shared handlers; per-project slug namespacing; zoom cap 18; tile LRU at 2 GB, sources retained.
 - **S2 pipeline:** STAC fetch → dual-tile mosaicking → RGB/NDVI/MNDWI/BSI + SCL cloud % → two-level cache.
 - **S1 pipeline:** GRD COG fetch → σ⁰ change-vs-baseline (baseline selector, raw toggle).

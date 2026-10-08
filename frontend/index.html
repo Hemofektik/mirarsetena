@@ -11,8 +11,15 @@
       <h1 id="app-title">Mirar Setena</h1>
       <span id="project-name" class="muted"></span>
       <nav>
-        <a id="status-link" href="#">Status</a>
-        <button id="about-btn" type="button">Acerca de</button>
+        <a id="status-link" href="#" data-i18n="status">Estado</a>
+        <button id="about-btn" type="button" data-i18n="about">Acerca de</button>
+        <label id="lang-switch">
+          <span data-i18n="language">Idioma</span>
+          <select id="lang-select" aria-label="Idioma / Language">
+            <option value="es">Español</option>
+            <option value="en">English</option>
+          </select>
+        </label>
       </nav>
     </header>
 
@@ -43,14 +50,14 @@
         </section>
 
         <section id="radar-controls">
-          <h2 data-i18n="baseline">Línea base</h2>
+          <h2 data-i18n="baseline" data-i18n-title="baseline_help">Línea base</h2>
           <select id="baseline-select"></select>
           <div class="row">
-            <label
+            <label data-i18n-title="mode_change_help"
               ><input type="radio" name="mode" value="change" checked />
               <span data-i18n="mode_change">Cambio</span></label
             >
-            <label
+            <label data-i18n-title="mode_raw_help"
               ><input type="radio" name="mode" value="raw" />
               <span data-i18n="mode_raw">Crudo</span></label
             >
@@ -100,13 +107,17 @@
 
     <dialog id="about-dialog">
       <h2 data-i18n="about">Acerca de</h2>
+      <h3 id="purpose-title" data-i18n="purpose_title">Propósito de la Resolución</h3>
+      <p id="purpose-p1" data-i18n="purpose_p1"></p>
+      <p id="purpose-p2" data-i18n="purpose_p2"></p>
+      <p id="purpose-p3" data-i18n="purpose_p3"></p>
       <p id="about-disclaimer"></p>
       <p class="muted">
         <a href="https://github.com/Hemofektik/mirarsetena" target="_blank" rel="noopener"
           >github.com/Hemofektik/mirarsetena</a
         >
       </p>
-      <form method="dialog"><button>Cerrar</button></form>
+      <form method="dialog"><button data-i18n="close">Cerrar</button></form>
     </dialog>
 
     <script type="module" src="/src/main.js"></script>

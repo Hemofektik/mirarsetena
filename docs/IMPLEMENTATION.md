@@ -291,10 +291,10 @@ Depends: F. (G/H features plug in as they land.)
 - **Result:** serialize/parse round-trip over every shared field + garbage -> null (vitest); share button copies the URL, PNG export from the preserved canvas.
 
 ### I.6 About panel + i18n + attribution
-- **Deliverable:** About panel (RES-1333-2017 reference, Copernicus/ESA attribution, reconstruction method, unofficial-tool disclaimer — SCOPE R3-Q9); ES strings in i18n catalog with EN scaffold.
-- **TDD:** `tests/frontend/test_i18n.test.ts` — no hardcoded UI strings (every string from catalog); catalog key parity ES/EN; Playwright asserts disclaimer + attribution in DOM.
+- **Deliverable:** About panel (RES-1333-2017 reference, Copernicus/ESA attribution, reconstruction method, unofficial-tool disclaimer — SCOPE R3-Q9); the resolution's purpose/reason as ES+EN text (viability grant, 11 ha extraction + crushing plant, guarantee / regente / reporting conditions); topbar ES/EN language switch (localStorage + `?lang=` in shared URLs, `<html lang>` follows); localized `title` help on every layer pill (with a "?" affordance) and on the radar mode/baseline controls.
+- **TDD:** catalog key parity ES/EN; `setLang`/serialize/parse roundtrip (default es omitted, `lang=zz` rejected); purpose + help keys resolve in both locales (vitest); Playwright asserts the language switch + live dialog retranslation + tooltip attributes.
 - **Status:** [x] done
-- **Result:** ES/EN catalog key parity + t() fallbacks (vitest); About dialog disclaimer (SETENA + Copernicus attribution) asserted in Playwright.
+- **Result:** 24 vitest + 15 Playwright green; disclaimer, purpose text and tooltips all switch language without a reload.
 
 ### I.7 Responsive/mobile
 - **Deliverable:** layout pass for 390 px and 1280 px viewports.

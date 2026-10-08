@@ -24,6 +24,7 @@ export function makeState(config) {
     slug: config.slug,
     layers: [...config.layers],
     layer: config.layers[0],
+    lang: "es", // UI locale: es | en (Spanish-first)
     dates: [],
     cloudByDate: {},
     date: null,
@@ -101,6 +102,11 @@ export function setBasemap(state, name) {
   return { ...state, basemap: name };
 }
 
+export function setLang(state, lang) {
+  if (lang !== "es" && lang !== "en") return state;
+  return { ...state, lang };
+}
+
 export function setViewport(state, bbox, zoom) {
   return { ...state, bbox: bbox ?? null, zoom: zoom ?? null };
 }
@@ -138,6 +144,7 @@ export function serializeState(state) {
     .sort();
   params.set("pois", groups.join(","));
   params.set("basemap", state.basemap);
+  if (state.lang && state.lang !== "es") params.set("lang", state.lang);
   if (state.bbox) params.set("bbox", state.bbox.map((n) => n.toFixed(5)).join(","));
   if (state.zoom != null) params.set("zoom", String(state.zoom));
   return params.toString();
@@ -158,6 +165,8 @@ export function parseState(search) {
   }
   const mode = params.get("mode");
   if (mode && mode !== "change" && mode !== "raw") return null;
+  const lang = params.get("lang");
+  if (lang && lang !== "es" && lang !== "en") return null;
 
   const bboxRaw = params.get("bbox");
   let bbox = null;
@@ -186,6 +195,7 @@ export function parseState(search) {
     properties: params.get("properties") !== "0",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
+    lang: lang ?? "es",
     bbox,
     zoom,
   };
@@ -220,6 +230,61 @@ export const MESSAGES = {
     no_dates: "Sin fechas disponibles",
     status: "Estado",
     cloud: "Nube",
+    language: "Idioma",
+    close: "Cerrar",
+    purpose_title: "Propósito de la Resolución",
+    purpose_p1:
+      "La Resolución Nº 1333-2017-SETENA (7 de julio de 2017) resolvió " +
+      "otorgar la VIABILIDAD AMBIENTAL al proyecto CDP Río General, " +
+      "tras evaluar el Estudio de Impacto Ambiental (EsIA) presentado " +
+      "por la empresa Vientos del Noroeste ABM, S.A. (expediente " +
+      "D1-11642-2013-SETENA). El proyecto quedó sujeto a la etapa de " +
+      "Gestión Ambiental.",
+    purpose_p2:
+      "El proyecto consiste en extraer materiales del cauce del río " +
+      "General en una zona de 11 hectáreas, depositarlos en la finca " +
+      "aledaña de los solicitantes y procesarlos en una planta de " +
+      "quebrado para su venta a terceros, en forma húmeda y con agua " +
+      "de una concesión. El equipo previsto es un tractor D-8 y una " +
+      "excavadora igual o similar a una Cat 345.",
+    purpose_p3:
+      "La resolución exige como condiciones una garantía ambiental, un " +
+      "Responsable Ambiental con Bitácora Ambiental, e informes " +
+      "regenciales: uno consolidado de la fase constructiva y " +
+      "semestrales durante la extracción y beneficiado, más un informe " +
+      "final de cierre. Esta herramienta permite seguir ese avance de " +
+      "forma visual comparando imágenes Sentinel.",
+    layer_rgb_help:
+      "Composición en color natural (rojo, verde, azul): el aspecto del " +
+      "terreno tal como lo vería el ojo.",
+    layer_ndvi_help:
+      "Índice de vegetación NDVI: mide la cantidad y salud de la " +
+      "vegetación. Verde intenso = vegetación densa; marrón = suelo " +
+      "desnudo o vegetación escasa.",
+    layer_mndwi_help:
+      "Índice de agua MNDWI: resalta el agua superficial y la humedad. " +
+      "Azul = agua (ríos, lagunas de sedimentación); oscuro = seco.",
+    layer_bsi_help:
+      "Índice de superficie expuesta (BSI): resalta suelo desnudo, roca " +
+      "y terreno removido. Útil para ver dónde se expanden el patio de " +
+      "acopio y las terrazas de extracción.",
+    layer_sigma0_help:
+      "Retrodispersión Sigma0 (Sentinel-1, radar): intensidad del eco " +
+      "radar. Las diferencias frente a la línea base indican movimiento " +
+      "de tierra o obras.",
+    layer_coherence_help:
+      "Coherencia temporal (Sentinel-1): estabilidad del terreno entre " +
+      "la línea base y la fecha. Alta = sin cambios; baja = el terreno " +
+      "cambió (excavación, acopio, maquinaria).",
+    mode_change_help:
+      "Diferencia entre la fecha seleccionada y la línea base: muestra " +
+      "qué cambió desde entonces.",
+    mode_raw_help:
+      "La imagen de la fecha sin comparar (valor absoluto), igual que " +
+      "se recibe del satélite.",
+    baseline_help:
+      "Fecha de comparación; por defecto la última escena anterior al " +
+      "inicio de obras.",
   },
   en: {
     app: "Mirar Setena",
@@ -249,6 +314,60 @@ export const MESSAGES = {
     no_dates: "No dates available",
     status: "Status",
     cloud: "Cloud",
+    language: "Language",
+    close: "Close",
+    purpose_title: "Purpose of the Resolution",
+    purpose_p1:
+      "Resolution No. 1333-2017-SETENA (July 7, 2017) granted " +
+      "ENVIRONMENTAL VIABILITY to the CDP Río General project, after " +
+      "evaluating the Environmental Impact Study (EsIA) submitted by " +
+      "the company Vientos del Noroeste ABM, S.A. (administrative file " +
+      "D1-11642-2013-SETENA). The project remains open to the " +
+      "Environmental Management stage.",
+    purpose_p2:
+      "The project consists of extracting materials from the General " +
+      "River channel in an 11-hectare area, depositing them on the " +
+      "applicants' neighboring farm, and processing them in a crushing " +
+      "plant for sale to third parties, under wet conditions using " +
+      "water from a concession. The planned equipment is a D-8 tractor " +
+      "and an excavator equal to or similar to a Cat 345.",
+    purpose_p3:
+      "The resolution requires an environmental guarantee, an " +
+      "Environmental Manager with an Environmental Logbook, and " +
+      "oversight reports: one consolidated report for the construction " +
+      "phase and every six months during extraction and processing, " +
+      "plus a final closure report. This tool lets you follow that " +
+      "progress visually by comparing Sentinel imagery.",
+    layer_rgb_help:
+      "Natural colour composition (red, green, blue): how the terrain " +
+      "would look to the naked eye.",
+    layer_ndvi_help:
+      "NDVI vegetation index: measures how much vegetation is present " +
+      "and how healthy it is. Bright green = dense vegetation; brown = " +
+      "bare ground or sparse plants.",
+    layer_mndwi_help:
+      "MNDWI water index: highlights surface water and moisture. Blue " +
+      "= water (rivers, sedimentation lagoons); dark = dry.",
+    layer_bsi_help:
+      "Bare Soil Index (BSI): highlights bare soil, rock and disturbed " +
+      "ground. Useful for seeing where the storage yard and extraction " +
+      "terraces expand.",
+    layer_sigma0_help:
+      "Sigma0 backscatter (Sentinel-1, radar): strength of the radar " +
+      "echo. Differences against the baseline indicate earthworks or " +
+      "construction.",
+    layer_coherence_help:
+      "Temporal coherence (Sentinel-1): how stable the ground is " +
+      "between baseline and date. High = unchanged; low = the ground " +
+      "changed (excavation, stockpiles, machinery).",
+    mode_change_help:
+      "Difference between the selected date and the baseline: shows " +
+      "what changed since then.",
+    mode_raw_help:
+      "The date's image without comparison (absolute value), as " +
+      "received from the satellite.",
+    baseline_help:
+      "Comparison date; by default the last scene before works started.",
   },
 };
 

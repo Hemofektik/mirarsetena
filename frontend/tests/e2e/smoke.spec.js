@@ -472,3 +472,79 @@ test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
     timeout: 8_000,
   });
 });
+
+test("language switcher translates the UI and persists", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#about-btn")).toHaveText("Acerca de");
+  await expect(page.locator("html")).toHaveAttribute("lang", "es");
+
+  await page.locator("#lang-select").selectOption("en");
+  await expect(page.locator("#about-btn")).toHaveText("About");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.locator("#panel section h2").first()).toHaveText("Layer");
+  await expect(
+    page.locator('#layer-buttons [data-layer="ndvi"]'),
+  ).toHaveAttribute("title", /vegetation/i);
+
+  // the choice survives a fresh visit (localStorage, no URL param)
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#about-btn")).toHaveText("About");
+
+  // and switching back drops lang=en from the shared URL
+  await page.locator("#lang-select").selectOption("es");
+  await expect(page.locator("#about-btn")).toHaveText("Acerca de");
+  await expect(page).not.toHaveURL(/lang=en/);
+});
+
+test("About dialog explains the RES-1333-2017 purpose in both languages", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await page.locator("#about-btn").click();
+  await expect(page.locator("#purpose-title")).toHaveText(
+    "Propósito de la Resolución",
+  );
+  await expect(page.locator("#purpose-p1")).toContainText(/viabilidad ambiental/i);
+  await expect(page.locator("#purpose-p2")).toContainText("11 hectáreas");
+
+  // switch language while the dialog is open: the texts follow live
+  await page.evaluate(() => {
+    const select = document.getElementById("lang-select");
+    select.value = "en";
+    select.dispatchEvent(new Event("change"));
+  });
+  await expect(page.locator("#purpose-title")).toHaveText(
+    "Purpose of the Resolution",
+  );
+  await expect(page.locator("#purpose-p1")).toContainText(/environmental viability/i);
+  await expect(page.locator("#purpose-p2")).toContainText("11-hectare");
+});
+
+test("layer and mode buttons carry help tooltips", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#layer-buttons button")).toHaveCount(6);
+
+  // every layer pill explains what it shows, in the active language
+  await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
+    "title",
+    /vegetación/,
+  );
+  await expect(page.locator('#layer-buttons [data-layer="bsi"]')).toHaveAttribute(
+    "title",
+    /superficie expuesta/,
+  );
+  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(6);
+
+  // the radar mode radios are documented as well
+  await expect(
+    page.locator('#radar-controls label:has(input[value="change"])'),
+  ).toHaveAttribute("title", /\S/);
+
+  await page.locator("#lang-select").selectOption("en");
+  await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
+    "title",
+    /vegetation/,
+  );
+  await expect(page.locator('#layer-buttons [data-layer="bsi"]')).toHaveAttribute(
+    "title",
+    /Bare Soil/,
+  );
+});
