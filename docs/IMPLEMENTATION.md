@@ -284,11 +284,11 @@ Depends: F. (G/H features plug in as they land.)
 - **Status:** [x] done
 - **Result:** POI group toggles independent + basemap swap preserves overlays (vitest). Reworked rendering: MapLibre symbol layers silently hide colliding text, so POIs are now HTML markers — a dot pinned to the true position plus a label placed by the pure `poi-layout` declutter (first-fit anchors around the dot, relaxation to separate stragglers, leader line when a label is pushed away; repainted on every move/zoom frame). Playwright pins: at cluster zoom all 10 dots + 10 labels visible, zero label overlaps, no dot hidden behind a label; `tests/poi-layout.test.js` covers the geometry (tight cluster, collapsed 10-point input, viewport bounds). Pin names are i18n catalog entries (`poi_<id>`) carrying the **official RES-1333-2017 names** (Quebrador, Rampa-quebrador, Oficina, Acopio, Cauce, Camino interno existente inicio/final …) and re-translate live with the language switch (vitest pins every project POI id resolves in ES+EN; Playwright flips the pins ES↔EN).
 
-### I.4 S1 baseline selector UI
-- **Deliverable:** baseline picker (default last pre-works July 2026 scene) + raw-grayscale toggle wired to E.2 request params.
-- **TDD:** `tests/frontend/test_baseline.test.ts` — state → request URL params mapping for both modes.
+### I.4 Radar range slider (replaces baseline dropdown + raw/change radios)
+- **Deliverable:** the date scrubber becomes a **start→end range slider** on radar layers (σ⁰, coherence): the map shows the change between the two selected dates. The baseline dropdown and the raw/change radio pair were removed — only change mode makes sense (user decision); tile URLs carry just `baseline=` (server renders change by default).
+- **TDD:** vitest `radar range model` (default-baseline mirror of `pipeline.change.default_baseline_date`, explicit-baseline preference, `ensureRadarRange` keeping start < end, cross-mission baseline drop) + Playwright `radar range slider drives start and end of the change` (dynamic input min/max keep the invariant; drags write `baseline=`/`date=` into the shared URL).
 - **Status:** [x] done
-- **Result:** baseline/mode -> tile URL parameter mapping (vitest); radar-only controls with change/raw radios verified in Playwright.
+- **Result:** dual-thumb slider (start input hidden for optical layers, readout `start → end`); radar lands on the latest scene as range end when the remembered date is invalid; **dates-loading spinner**: an uncached layer switch shows `#date-loading` instead of an empty slider (Playwright stalls the dates API and pins spinner → controls), and an honest `#date-empty` when the fetch fails. `visibleDates` now keeps cloudless (radar) dates under "hide cloudy" so the radar scrubber can never empty itself.
 
 ### I.5 Shareable URL state + PNG export
 - **Deliverable:** encode layer, date, baseline, bbox, zoom, toggles in URL; restore on load; canvas PNG download.

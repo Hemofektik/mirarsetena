@@ -32,35 +32,46 @@
 
         <section>
           <h2 data-i18n="date">Fecha</h2>
-          <input id="date-range" type="range" min="0" max="0" value="0" />
-          <div id="date-readout">
-            <span id="date-value"></span>
-            <span id="cloud-badge" class="muted"></span>
+          <div id="date-loading">
+            <span class="mini-spinner" aria-hidden="true"></span>
+            <span data-i18n="loading_dates">Cargando fechas…</span>
           </div>
-          <div id="cloud-strip" title=""></div>
-          <label class="row">
-            <input id="hide-cloudy" type="checkbox" />
-            <span data-i18n="hide_cloudy">Ocultar fechas nubladas</span>
-          </label>
-          <label class="row">
-            <span data-i18n="max_cloud">Máx. nube %</span>
-            <input id="max-cloud" type="number" min="0" max="100" value="20" />
-          </label>
-          <div id="works-marker" class="marker muted"></div>
-        </section>
-
-        <section id="radar-controls">
-          <h2 data-i18n="baseline" data-i18n-title="baseline_help">Línea base</h2>
-          <select id="baseline-select"></select>
-          <div class="row">
-            <label data-i18n-title="mode_change_help"
-              ><input type="radio" name="mode" value="change" checked />
-              <span data-i18n="mode_change">Cambio</span></label
-            >
-            <label data-i18n-title="mode_raw_help"
-              ><input type="radio" name="mode" value="raw" />
-              <span data-i18n="mode_raw">Crudo</span></label
-            >
+          <div id="date-empty" hidden data-i18n="no_dates">Sin fechas disponibles</div>
+          <div id="date-controls" hidden>
+            <div id="date-slider">
+              <div class="range-track"><div class="range-span" id="range-span" hidden></div></div>
+              <input
+                id="date-start"
+                type="range"
+                min="0"
+                max="0"
+                value="0"
+                hidden
+                data-i18n-label="range_start"
+              />
+              <input
+                id="date-end"
+                type="range"
+                min="0"
+                max="0"
+                value="0"
+                data-i18n-label="range_end"
+              />
+            </div>
+            <div id="date-readout">
+              <span id="date-value"></span>
+              <span id="cloud-badge" class="muted"></span>
+            </div>
+            <div id="cloud-strip" title=""></div>
+            <label class="row">
+              <input id="hide-cloudy" type="checkbox" />
+              <span data-i18n="hide_cloudy">Ocultar fechas nubladas</span>
+            </label>
+            <label class="row">
+              <span data-i18n="max_cloud">Máx. nube %</span>
+              <input id="max-cloud" type="number" min="0" max="100" value="20" />
+            </label>
+            <div id="works-marker" class="marker muted"></div>
           </div>
         </section>
 

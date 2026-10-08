@@ -17,6 +17,11 @@ export function missionForLayer(layer) {
   return MISSION_BY_LAYER[layer] ?? null;
 }
 
+export function isRadarLayer(layer) {
+  const mission = missionForLayer(layer);
+  return mission === "sentinel-1-grd" || mission === "sentinel-1-slc";
+}
+
 export const BASEMAPS = ["osm", "esri"];
 
 export function makeState(config) {
@@ -26,10 +31,11 @@ export function makeState(config) {
     layer: config.layers[0],
     lang: "es", // UI locale: es | en (Spanish-first)
     dates: [],
+    datesLoading: Boolean(config.layers[0]), // boot fetch starts immediately
     cloudByDate: {},
     date: null,
-    baseline: null, // null -> server default (latest pre-works scene)
-    mode: "change", // radar render mode: change | raw
+    baseline: null, // range start; null -> server default (last pre-works scene)
+    worksStart: config.timeline?.works_start ?? null,
     hideCloudy: false,
     maxCloud: 20,
     showProperties: true, // two 1991 plan parcels drawn as outlines
@@ -40,24 +46,41 @@ export function makeState(config) {
   };
 }
 
+export function setDatesLoading(state, loading) {
+  return { ...state, datesLoading: Boolean(loading) };
+}
+
 export function setLayer(state, layer, dates) {
   const list = dates ?? [];
   const remembered = state.date;
   const stillValid = list.some((entry) => entry.date === remembered);
+  const radar = isRadarLayer(layer);
+  // Radar sliders are a start->end range: when the remembered date does not
+  // exist in this mission's list, the range END starts at the latest scene
+  // (change against the pre-works default baseline). Optical keeps its
+  // oldest-first behaviour.
+  const fallback =
+    radar && list.length ? list[list.length - 1].date : (list[0]?.date ?? null);
   return {
     ...state,
     layer,
     dates: list,
+    datesLoading: false,
     cloudByDate: Object.fromEntries(
       list.map((entry) => [entry.date, entry.cloud])
     ),
-    date: stillValid ? remembered : list[0]?.date ?? null,
+    date: stillValid ? remembered : fallback,
+    // a baseline from another mission's list would 404 every tile
+    baseline:
+      state.baseline && list.some((entry) => entry.date === state.baseline)
+        ? state.baseline
+        : null,
   };
 }
 
 /** Disable the active layer (click the pressed pill): overlay off, scrubber kept. */
 export function disableLayer(state) {
-  return { ...state, layer: null };
+  return { ...state, layer: null, datesLoading: false };
 }
 
 export function applyDates(state, dates) {
@@ -72,9 +95,53 @@ export function setBaseline(state, baseline) {
   return { ...state, baseline };
 }
 
-export function setMode(state, mode) {
-  if (mode !== "change" && mode !== "raw") return state;
-  return { ...state, mode };
+/**
+ * Baseline = range start of the change comparison. Mirrors the server's
+ * pipeline.change.default_baseline_date: latest acquisition before works
+ * started, earliest overall as fallback (index within `dates`, ascending).
+ */
+export function defaultBaselineIndex(dates, worksStart) {
+  if (!dates.length) return 0;
+  if (!worksStart) return 0;
+  let found = 0;
+  for (let i = 0; i < dates.length; i += 1) {
+    if (dates[i].date < worksStart) found = i;
+  }
+  return found;
+}
+
+/** Which slider position the range start currently sits at. */
+export function baselineIndex(state, dates) {
+  if (!dates.length) return 0;
+  if (state.baseline) {
+    const idx = dates.findIndex((entry) => entry.date === state.baseline);
+    if (idx >= 0) return idx;
+  }
+  return defaultBaselineIndex(dates, state.worksStart);
+}
+
+/**
+ * Keep the radar range strictly start < end: when the resolved baseline is
+ * not before the end date (default baseline == latest scene, or the end sits
+ * earlier in the list), materialize the start one step before the end.
+ */
+export function ensureRadarRange(state, dates) {
+  if (!state.layer || !isRadarLayer(state.layer) || !dates.length) return state;
+  let endIdx = dates.findIndex((entry) => entry.date === state.date);
+  if (endIdx < 0) return state; // setLayer() owns date validity
+  let startIdx = baselineIndex(state, dates);
+  if (startIdx < endIdx) return state;
+  if (endIdx === 0) {
+    // nothing before the end: move the end to the latest scene first
+    const latest = dates[dates.length - 1].date;
+    endIdx = dates.length - 1;
+    startIdx = baselineIndex({ ...state, date: latest }, dates);
+    if (startIdx >= endIdx) {
+      return { ...state, date: latest, baseline: dates[endIdx - 1]?.date ?? null };
+    }
+    return { ...state, date: latest };
+  }
+  return { ...state, baseline: dates[endIdx - 1].date };
 }
 
 export function setHideCloudy(state, hideCloudy, maxCloud) {
@@ -116,7 +183,6 @@ export function settingsFromState(state) {
     basemap: state.basemap,
     hideCloudy: Boolean(state.hideCloudy),
     maxCloud: state.maxCloud,
-    mode: state.mode,
     poiGroups: { ...state.poiGroups },
     showProperties: Boolean(state.showProperties),
   };
@@ -131,7 +197,6 @@ export function restoreSettings(state, saved) {
   if (!saved || typeof saved !== "object") return state;
   let next = state;
   if (typeof saved.basemap === "string") next = setBasemap(next, saved.basemap);
-  if (typeof saved.mode === "string") next = setMode(next, saved.mode);
   if (typeof saved.hideCloudy === "boolean") next = { ...next, hideCloudy: saved.hideCloudy };
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
   if (
@@ -158,21 +223,24 @@ export function setViewport(state, bbox, zoom) {
 
 export function visibleDates(state) {
   if (!state.hideCloudy) return state.dates;
+  // Cloudless dates (Sentinel-1 radar, missing scores) are NOT cloudy —
+  // hiding them would empty the whole radar scrubber.
   return state.dates.filter(
-    (entry) => entry.cloud != null && entry.cloud <= state.maxCloud
+    (entry) => entry.cloud == null || entry.cloud <= state.maxCloud
   );
 }
 
 export function tileUrl(state, z, x, y) {
-  const params = new URLSearchParams({ mode: state.mode });
+  const params = new URLSearchParams();
   if (state.baseline) params.set("baseline", state.baseline);
+  const query = params.toString();
   return (
     `/p/${state.slug}/tiles/${state.layer}/${state.date}/${z}/${x}/${y}.png` +
-    `?${params.toString()}`
+    (query ? `?${query}` : "")
   );
 }
 
-const URL_KEYS = ["layer", "date", "baseline", "mode"];
+const URL_KEYS = ["layer", "date", "baseline"];
 
 export function serializeState(state) {
   const params = new URLSearchParams();
@@ -208,8 +276,6 @@ export function parseState(search) {
   } else if ([...params.keys()].length === 0) {
     return null;
   }
-  const mode = params.get("mode");
-  if (mode && mode !== "change" && mode !== "raw") return null;
   const lang = params.get("lang");
   if (lang && lang !== "es" && lang !== "en") return null;
 
@@ -234,7 +300,6 @@ export function parseState(search) {
     layer: params.get("layer"),
     date: params.get("date"),
     baseline: params.get("baseline"),
-    mode: mode ?? "change",
     hideCloudy: params.get("hideCloudy") === "1",
     maxCloud,
     properties: params.get("properties") !== "0",
@@ -251,9 +316,6 @@ export const MESSAGES = {
     app: "Mirar Setena",
     layer: "Capa",
     date: "Fecha",
-    baseline: "Línea base",
-    mode_change: "Cambio",
-    mode_raw: "Crudo",
     hide_cloudy: "Ocultar fechas nubladas",
     max_cloud: "Máx. nube %",
     basemap: "Mapa base",
@@ -275,6 +337,9 @@ export const MESSAGES = {
     no_dates: "Sin fechas disponibles",
     status: "Estado",
     cloud: "Nube",
+    loading_dates: "Cargando fechas…",
+    range_start: "Inicio del rango",
+    range_end: "Fin del rango",
     // POI pin names — official labels from the RES-1333-2017 coordinate
     // table and the 2016 GPS record (ids from pois.geojson)
     "poi_project-start": "Inicio",
@@ -333,23 +398,11 @@ export const MESSAGES = {
       "Coherencia temporal (Sentinel-1): estabilidad del terreno entre " +
       "la línea base y la fecha. Alta = sin cambios; baja = el terreno " +
       "cambió (excavación, acopio, maquinaria).",
-    mode_change_help:
-      "Diferencia entre la fecha seleccionada y la línea base: muestra " +
-      "qué cambió desde entonces.",
-    mode_raw_help:
-      "La imagen de la fecha sin comparar (valor absoluto), igual que " +
-      "se recibe del satélite.",
-    baseline_help:
-      "Fecha de comparación; por defecto la última escena anterior al " +
-      "inicio de obras.",
   },
   en: {
     app: "Mirar Setena",
     layer: "Layer",
     date: "Date",
-    baseline: "Baseline",
-    mode_change: "Change",
-    mode_raw: "Raw",
     hide_cloudy: "Hide cloudy dates",
     max_cloud: "Max cloud %",
     basemap: "Basemap",
@@ -371,6 +424,9 @@ export const MESSAGES = {
     no_dates: "No dates available",
     status: "Status",
     cloud: "Cloud",
+    loading_dates: "Loading dates…",
+    range_start: "Range start",
+    range_end: "Range end",
     // POI pin names (ids from pois.geojson; English names as published)
     "poi_project-start": "Project start",
     "poi_project-end": "Project end",
@@ -428,14 +484,6 @@ export const MESSAGES = {
       "Temporal coherence (Sentinel-1): how stable the ground is " +
       "between baseline and date. High = unchanged; low = the ground " +
       "changed (excavation, stockpiles, machinery).",
-    mode_change_help:
-      "Difference between the selected date and the baseline: shows " +
-      "what changed since then.",
-    mode_raw_help:
-      "The date's image without comparison (absolute value), as " +
-      "received from the satellite.",
-    baseline_help:
-      "Comparison date; by default the last scene before works started.",
   },
 };
 

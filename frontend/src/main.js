@@ -38,11 +38,12 @@ function isRadar(layer) {
 }
 
 function overlayTemplate() {
-  const params = new URLSearchParams({ mode: state.mode });
+  const params = new URLSearchParams();
   if (state.baseline) params.set("baseline", state.baseline);
+  const query = params.toString();
   return (
     `${location.origin}/p/${state.slug}/tiles/${state.layer}/` +
-    `${state.date}/{z}/{x}/{y}.png?${params}`
+    `${state.date}/{z}/{x}/{y}.png${query ? `?${query}` : ""}`
   );
 }
 
@@ -185,16 +186,48 @@ function renderLayerButtons() {
 }
 
 function renderScrubber() {
+  const loading = state.datesLoading;
   const dates = S.visibleDates(state);
-  const range = document.getElementById("date-range");
-  range.max = String(Math.max(dates.length - 1, 0));
-  const index = Math.max(
-    dates.findIndex((entry) => entry.date === state.date),
-    0
-  );
-  range.value = String(index);
+  const empty = !loading && dates.length === 0;
+  document.getElementById("date-loading").hidden = !loading;
+  document.getElementById("date-empty").hidden = !empty;
+  document.getElementById("date-controls").hidden = loading || empty;
+  if (loading || empty) return;
 
-  document.getElementById("date-value").textContent = state.date ?? "—";
+  // Radar layers get a start->end range (change between the two thumbs);
+  // optical layers keep a single thumb on the acquisition date.
+  const radar = isRadar(state.layer);
+  const startInput = document.getElementById("date-start");
+  const endInput = document.getElementById("date-end");
+  startInput.hidden = !radar;
+
+  const lastIndex = dates.length - 1;
+  let endIdx = dates.findIndex((entry) => entry.date === state.date);
+  if (endIdx < 0) endIdx = lastIndex;
+  let startIdx = radar
+    ? Math.min(S.baselineIndex(state, dates), Math.max(endIdx - 1, 0))
+    : 0;
+  if (startIdx > endIdx) startIdx = Math.max(endIdx - 1, 0);
+
+  endInput.min = radar ? String(Math.min(startIdx + 1, lastIndex)) : "0";
+  endInput.max = String(lastIndex);
+  endInput.value = String(endIdx);
+  startInput.min = "0";
+  startInput.max = String(Math.max(endIdx - 1, 0));
+  startInput.value = String(startIdx);
+
+  const span = document.getElementById("range-span");
+  if (radar && lastIndex > 0) {
+    span.hidden = false;
+    span.style.left = `calc(8px + ${(startIdx / lastIndex).toFixed(4)} * (100% - 16px))`;
+    span.style.width = `calc(${((endIdx - startIdx) / lastIndex).toFixed(4)} * (100% - 16px))`;
+  } else {
+    span.hidden = true;
+  }
+
+  document.getElementById("date-value").textContent = radar
+    ? `${dates[startIdx].date} → ${dates[endIdx].date}`
+    : dates[endIdx].date;
   const cloud = state.cloudByDate?.[state.date];
   document.getElementById("cloud-badge").textContent =
     cloud == null ? "" : `${S.t(state.lang, "cloud")}: ${cloud}%`;
@@ -212,29 +245,11 @@ function renderScrubber() {
     `${S.t(state.lang, "works_start")}: ${config.timeline.works_start}`;
 }
 
-function renderRadarControls() {
-  const section = document.getElementById("radar-controls");
-  section.hidden = !isRadar(state.layer);
-  if (section.hidden) return;
-  const select = document.getElementById("baseline-select");
-  select.innerHTML = "";
-  const defaultOption = document.createElement("option");
-  defaultOption.value = "";
-  defaultOption.textContent = "—";
-  select.appendChild(defaultOption);
-  for (const entry of S.visibleDates(state)) {
-    const option = document.createElement("option");
-    option.value = entry.date;
-    option.textContent = entry.date;
-    select.appendChild(option);
-  }
-  select.value = state.baseline ?? "";
-}
-
 function renderAll() {
+  // radar: keep the range start strictly before its end before rendering
+  state = S.ensureRadarRange(state, S.visibleDates(state));
   renderLayerButtons();
   renderScrubber();
-  renderRadarControls();
   updateOverlay();
   updatePoiVisibility();
   updateAoiVisibility();
@@ -254,9 +269,6 @@ function syncControlsFromState() {
   document.getElementById("max-cloud").value = String(state.maxCloud);
   document.getElementById("show-properties").checked = state.showProperties;
   document.getElementById("basemap-select").value = state.basemap;
-  for (const radio of document.querySelectorAll('input[name="mode"]')) {
-    radio.checked = radio.value === state.mode;
-  }
 }
 
 // Sequence tokens: a layer switch must never be undone by a slower response
@@ -296,8 +308,11 @@ async function fetchDates(layer, { retried = false } = {}) {
 
 function selectLayer(layer) {
   // React first: the pill and its controls move without waiting for the
-  // catalog; known dates apply instantly, unknown ones wait for the fetch.
-  state = S.setLayer(state, layer, datesByLayer.get(layer) ?? []);
+  // catalog; known dates apply instantly, unknown ones show the spinner
+  // (an empty slider must never appear — user report).
+  const cached = datesByLayer.get(layer);
+  state = S.setLayer(state, layer, cached ?? []);
+  if (!cached) state = S.setDatesLoading(state, true);
   renderAll();
   fetchDates(layer);
 }
@@ -405,10 +420,19 @@ function buildMap() {
 }
 
 function wireUi() {
-  document.getElementById("date-range").addEventListener("input", (event) => {
+  document.getElementById("date-end").addEventListener("input", (event) => {
     const dates = S.visibleDates(state);
     const entry = dates[Number(event.target.value)];
     if (entry) applyDate(entry.date);
+  });
+  document.getElementById("date-start").addEventListener("input", (event) => {
+    // the input's dynamic max keeps this strictly before the end thumb
+    const dates = S.visibleDates(state);
+    const entry = dates[Number(event.target.value)];
+    if (entry) {
+      state = S.setBaseline(state, entry.date);
+      renderAll();
+    }
   });
   document.getElementById("hide-cloudy").addEventListener("change", (event) => {
     state = S.setHideCloudy(
@@ -422,16 +446,6 @@ function wireUi() {
     state = S.setHideCloudy(state, state.hideCloudy, Number(event.target.value));
     renderAll();
   });
-  document.getElementById("baseline-select").addEventListener("change", (event) => {
-    state = S.setBaseline(state, event.target.value || null);
-    renderAll();
-  });
-  for (const radio of document.querySelectorAll('input[name="mode"]')) {
-    radio.addEventListener("change", (event) => {
-      state = S.setMode(state, event.target.value);
-      renderAll();
-    });
-  }
   for (const group of ["facilities", "inspection"]) {
     document.getElementById(`poi-${group}`).addEventListener("change", () => {
       state = S.togglePoiGroup(state, group);
@@ -479,6 +493,9 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-title]").forEach((element) => {
     element.title = S.t(locale, element.dataset.i18nTitle);
   });
+  document.querySelectorAll("[data-i18n-label]").forEach((element) => {
+    element.setAttribute("aria-label", S.t(locale, element.dataset.i18nLabel));
+  });
   document.getElementById("lang-select").value = locale;
   document.getElementById("app-title").textContent = S.t(locale, "app");
   document.getElementById("about-disclaimer").textContent = S.t(
@@ -521,12 +538,12 @@ async function boot() {
       state.layer = restored.layer;
     } else if (restored.layer === "off") {
       state.layer = null; // shared URL with the layer toggled off
+      state.datesLoading = false; // nothing will be fetched
     }
     state.hideCloudy = restored.hideCloudy;
     state.maxCloud = restored.maxCloud;
     state.baseline = restored.baseline;
     state.showProperties = restored.properties;
-    state = S.setMode(state, restored.mode);
     state = S.setBasemap(state, restored.basemap);
     const groups = restored.pois.split(",");
     state.poiGroups = {

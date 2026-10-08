@@ -19,6 +19,12 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   const s2Count = await page.locator("#cloud-strip span").count();
   expect(s2Count).toBeGreaterThan(10);
 
+  // hide-cloudy shrinks the optical strip (dates with a cloud score)
+  await page.locator("#hide-cloudy").check();
+  const shrunk = await page.locator("#cloud-strip span").count();
+  expect(shrunk).toBeLessThan(s2Count);
+  await page.locator("#hide-cloudy").uncheck();
+
   // switch to a radar layer: controls appear, dates become the S1 set
   // (count comes from the API — the live catalog grows over time)
   const s1Count = await page.evaluate(async (slug) => {
@@ -26,14 +32,21 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
     return (await response.json()).dates.length;
   }, SLUG);
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await expect(page.locator("#radar-controls")).toBeVisible();
+  // radar = range slider (two thumbs), no mode radios, no baseline dropdown
+  await expect(page.locator("#date-start")).toBeVisible();
+  await expect(page.locator("#date-end")).toBeVisible();
+  await expect(page.locator('input[name="mode"]')).toHaveCount(0);
+  await expect(page.locator("#baseline-select")).toHaveCount(0);
   await expect(page.locator("#cloud-strip span")).toHaveCount(s1Count, {
     timeout: 30_000,
   });
-
-  // raw/change mode switch keeps the app alive
-  await page.locator('input[name="mode"][value="raw"]').check();
-  await expect(page.locator("#date-value")).not.toHaveText("—");
+  // the readout shows the range and start sits strictly before end
+  await expect(page.locator("#date-value")).toContainText("→");
+  const [startIdx, endIdx] = await page.evaluate(() => [
+    Number(document.getElementById("date-start").value),
+    Number(document.getElementById("date-end").value),
+  ]);
+  expect(startIdx).toBeLessThan(endIdx);
 
   // About dialog shows the disclaimer (i18n + attribution)
   await page.locator("#about-btn").click();
@@ -43,15 +56,15 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   // works-start marker renders from config
   await expect(page.locator("#works-marker")).toContainText("2026-08-01");
 
-  // hide-cloudy shrinks the strip
+  // hide-cloudy never hides the (cloudless) radar dates
   const before = await page.locator("#cloud-strip span").count();
   await page.locator("#hide-cloudy").check();
   const after = await page.locator("#cloud-strip span").count();
-  expect(after).toBeLessThan(before);
+  expect(after).toBe(before);
   await page.locator("#hide-cloudy").uncheck();
 
   // baseline select lists the S1 dates (radar controls)
-  await expect(page.locator("#baseline-select option")).toHaveCount(s1Count + 1); // dates + default
+  await expect(page.locator("#date-start")).toBeVisible(); // range mode on radar
 
   // POI group toggle + basemap swap keep the app alive
   await page.locator("#poi-facilities").uncheck();
@@ -77,7 +90,8 @@ test("mobile viewport keeps the panel usable (I.7)", async ({ page }) => {
   await expect(
     page.locator("#layer-buttons button").first()
   ).toBeVisible();
-  await expect(page.locator("#date-range")).toBeVisible();
+  await expect(page.locator("#date-start")).toBeHidden(); // optical: one thumb
+  await expect(page.locator("#date-end")).toBeVisible();
 });
 
 test("boot does not race the map style (no render crash)", async ({ page }) => {
@@ -341,12 +355,14 @@ test("layer switch reacts immediately while the dates API is stalled", async ({ 
   stall = true;
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
 
-  // the pill and the radar controls must react now, not after the fetch
+  // the pill must react NOW, and the empty slider must be replaced by the
+  // loading spinner while the stalled dates fetch is in flight
   await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveText(
     "sigma0",
     { timeout: 2_000 },
   );
-  await expect(page.locator("#radar-controls")).toBeVisible({ timeout: 2_000 });
+  await expect(page.locator("#date-loading")).toBeVisible({ timeout: 2_000 });
+  await expect(page.locator("#date-controls")).toBeHidden();
 
   // a second switch while the first is still in flight must win
   await page.locator('#layer-buttons button:has-text("ndvi")').click();
@@ -354,7 +370,7 @@ test("layer switch reacts immediately while the dates API is stalled", async ({ 
     "ndvi",
     { timeout: 2_000 },
   );
-  await expect(page.locator("#radar-controls")).toBeHidden({ timeout: 2_000 });
+  await expect(page.locator("#date-loading")).toBeVisible({ timeout: 2_000 });
 
   // once the stalled responses land, the surviving selection gets its dates
   stall = false;
@@ -393,10 +409,13 @@ test("a failing dates request leaves the UI usable", async ({ page }) => {
 
   // No valid dates are known for the new layer: the overlay must not keep
   // requesting tiles keyed on the previous layer's date (those all 404 and
-  // blank the map), and the scrubber must say so honestly.
+  // blank the map), and the scrubber must say so honestly — no empty
+  // slider, no perpetual spinner.
   await page.waitForTimeout(1500);
   expect(badTiles).toEqual([]);
-  await expect(page.locator("#date-value")).toHaveText("—");
+  await expect(page.locator("#date-empty")).toBeVisible();
+  await expect(page.locator("#date-loading")).toBeHidden();
+  await expect(page.locator("#date-controls")).toBeHidden();
 
   // and it recovers when the backend comes back
   fail = false;
@@ -500,7 +519,7 @@ test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
   });
 
   // scrub to the slow date: its tiles go in flight
-  await page.locator("#date-range").evaluate((el) => {
+  await page.locator("#date-end").evaluate((el) => {
     el.value = "1";
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
@@ -511,7 +530,7 @@ test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
 
   // scrub back: the abandoned date must be aborted, not waited out, and
   // the cached first date must render without it
-  await page.locator("#date-range").evaluate((el) => {
+  await page.locator("#date-end").evaluate((el) => {
     el.value = "0";
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
@@ -591,11 +610,6 @@ test("layer and mode buttons carry help tooltips", async ({ page }) => {
   );
   await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(6);
 
-  // the radar mode radios are documented as well
-  await expect(
-    page.locator('#radar-controls label:has(input[value="change"])'),
-  ).toHaveAttribute("title", /\S/);
-
   await page.locator("#lang-select").selectOption("en");
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
     "title",
@@ -647,7 +661,7 @@ test("restored URL state drives every control (no inverted checkboxes)", async (
   // Esri basemap, raw mode. Every input must SHOW that state — otherwise
   // the next click inverts what the user thinks they are changing.
   await page.goto(
-    `/p/${SLUG}/?layer=ndvi&date=2026-01-04&hideCloudy=1&maxCloud=50&properties=1&pois=facilities&basemap=esri&mode=raw`,
+    `/p/${SLUG}/?layer=ndvi&date=2026-01-04&hideCloudy=1&maxCloud=50&properties=1&pois=facilities&basemap=esri`,
   );
   await expect(page.locator("#date-value")).toHaveText("2026-01-04");
   await expect(page.locator("#poi-inspection")).not.toBeChecked();
@@ -656,7 +670,9 @@ test("restored URL state drives every control (no inverted checkboxes)", async (
   await expect(page.locator("#max-cloud")).toHaveValue("50");
   await expect(page.locator("#show-properties")).toBeChecked();
   await expect(page.locator("#basemap-select")).toHaveValue("esri");
-  await expect(page.locator('input[name="mode"][value="raw"]')).toBeChecked();
+  // raw/change mode selection no longer exists anywhere
+  await expect(page.locator('input[name="mode"]')).toHaveCount(0);
+  await expect(page.locator("#baseline-select")).toHaveCount(0);
 
   // state and UI agree on the map itself
   await page.waitForFunction(() => window.__mirarsetenaMap, null, { timeout: 15000 });
@@ -725,4 +741,54 @@ test("POI pins speak the active language", async ({ page }) => {
   await expect(page.locator('#poi-markers .poi-label:text-is("Breaker")')).toHaveCount(1);
   await expect(page.locator('#poi-markers .poi-label:text-is("Storage")')).toHaveCount(1);
   await expect(page.locator('#poi-markers .poi-label:text-is("Quebrador")')).toHaveCount(0);
+});
+
+test("radar range slider drives start and end of the change", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-end")).toBeVisible();
+  await expect(page.locator("#date-start")).toBeHidden(); // optical default
+
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+
+  const read = () =>
+    page.evaluate(() => ({
+      start: Number(document.getElementById("date-start").value),
+      end: Number(document.getElementById("date-end").value),
+      startMax: Number(document.getElementById("date-start").max),
+      endMin: Number(document.getElementById("date-end").min),
+      readout: document.getElementById("date-value").textContent,
+    }));
+
+  let v = await read();
+  expect(v.start).toBeLessThan(v.end); // range start strictly before end
+  expect(v.startMax).toBe(v.end - 1); // inputs keep the invariant themselves
+  expect(v.endMin).toBe(v.start + 1);
+  expect(v.readout).toContain("→");
+
+  // dragging the start writes the range start into the shared URL
+  await page.locator("#date-start").evaluate((el) => {
+    el.value = "0";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page).toHaveURL(/baseline=\d{4}-\d{2}-\d{2}/);
+  v = await read();
+  expect(v.start).toBe(0);
+  expect(v.readout).toContain("→");
+
+  // dragging the end moves the shown date while staying after the start
+  const endBefore = v.end;
+  await page.locator("#date-end").evaluate((el) => {
+    const next = Math.max(Number(el.min), Number(el.value) - 1);
+    el.value = String(next);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page).toHaveURL(/date=\d{4}-\d{2}-\d{2}/);
+  v = await read();
+  expect(v.end).toBeLessThanOrEqual(endBefore);
+  expect(v.end).toBeGreaterThanOrEqual(v.start + 1);
+  expect(v.readout).toContain("→");
 });

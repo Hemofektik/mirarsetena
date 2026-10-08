@@ -8,7 +8,11 @@ import { describe, expect, it } from "vitest";
 import {
   MESSAGES,
   applyDates,
+  baselineIndex,
+  defaultBaselineIndex,
   disableLayer,
+  ensureRadarRange,
+  isRadarLayer,
   makeState,
   missionForLayer,
   parseState,
@@ -16,10 +20,10 @@ import {
   serializeState,
   settingsFromState,
   setBasemap,
+  setDatesLoading,
   setHideCloudy,
   setLayer,
   setLang,
-  setMode,
   setShowProperties,
   t,
   tileUrl,
@@ -53,19 +57,38 @@ describe("scrubber date model", () => {
   it("switching layer replaces the date list and keeps a valid date", () => {
     let state = makeState({ slug: "cdp-rio-general", layers: ["ndvi", "sigma0"] });
     state = setLayer(state, "ndvi", DATES_S2);
-    expect(state.date).toBe("2026-07-03");
+    expect(state.date).toBe("2026-07-03"); // optical: earliest first
     state = setLayer(state, "sigma0", DATES_S1);
-    expect(state.date).toBe("2026-07-11");
+    expect(state.date).toBe("2026-07-23"); // radar: range END = latest scene
     state = setLayer(state, "ndvi", DATES_S2);
-    expect(state.date).toBe("2026-07-03"); // remembered per layer? falls back to first
+    expect(state.date).toBe("2026-07-03"); // remembered date invalid -> earliest again
   });
 
-  it("hide-cloudy filters by maxCloud and drops cloudless dates", () => {
+  it("loading flag: new layer starts loading, dates arriving clear it", () => {
+    let state = makeState({ slug: "p", layers: ["ndvi"] });
+    expect(state.datesLoading).toBe(true);
+    state = setDatesLoading(state, true);
+    expect(state.datesLoading).toBe(true);
+    state = setLayer(state, "ndvi", DATES_S2);
+    expect(state.datesLoading).toBe(false);
+    state = setDatesLoading(state, false);
+    expect(state.datesLoading).toBe(false);
+    expect(disableLayer(state).datesLoading).toBe(false);
+  });
+
+  it("hide-cloudy filters by maxCloud and keeps cloudless dates", () => {
     let state = setLayer(makeState({ slug: "p", layers: ["ndvi"] }), "ndvi", DATES_S2);
     state = setHideCloudy(state, true, 20);
     expect(visibleDates(state).map((d) => d.date)).toEqual([
       "2026-07-03",
       "2026-07-10",
+    ]);
+    // radar dates have no cloud score — they are not cloudy and must stay
+    let radar = setLayer(makeState({ slug: "p", layers: ["sigma0"] }), "sigma0", DATES_S1);
+    radar = setHideCloudy(radar, true, 20);
+    expect(visibleDates(radar).map((d) => d.date)).toEqual([
+      "2026-07-11",
+      "2026-07-23",
     ]);
   });
 
@@ -82,11 +105,15 @@ describe("scrubber date model", () => {
 });
 
 describe("tile URLs and URL state (I.5)", () => {
-  it("tileUrl encodes layer, date, mode and baseline", () => {
+  it("tileUrl carries layer and date; baseline only when chosen (always change)", () => {
     const config = { slug: "cdp-rio-general", layers: ["sigma0"] };
     let state = setLayer(makeState(config), "sigma0", DATES_S1);
     expect(tileUrl(state, 0, 0, 0)).toBe(
-      "/p/cdp-rio-general/tiles/sigma0/2026-07-11/0/0/0.png?mode=change"
+      "/p/cdp-rio-general/tiles/sigma0/2026-07-23/0/0/0.png"
+    );
+    state = { ...state, baseline: "2026-07-11" };
+    expect(tileUrl(state, 0, 0, 0)).toBe(
+      "/p/cdp-rio-general/tiles/sigma0/2026-07-23/0/0/0.png?baseline=2026-07-11"
     );
   });
 
@@ -96,7 +123,7 @@ describe("tile URLs and URL state (I.5)", () => {
       "ndvi",
       DATES_S2,
     );
-    state = { ...state, date: "2026-07-10", baseline: "2026-07-03", mode: "raw" };
+    state = { ...state, date: "2026-07-10", baseline: "2026-07-03" };
     state = setHideCloudy(state, true, 15);
     state = togglePoiGroup(state, "inspection");
     state = setBasemap(state, "esri");
@@ -106,7 +133,6 @@ describe("tile URLs and URL state (I.5)", () => {
       layer: "ndvi",
       date: "2026-07-10",
       baseline: "2026-07-03",
-      mode: "raw",
       hideCloudy: true,
       maxCloud: 15,
       properties: true,
@@ -253,11 +279,13 @@ describe("layer help tooltips and resolution purpose text", () => {
     }
   });
 
-  it("mode and baseline controls have help texts in both languages", () => {
-    for (const key of ["mode_change_help", "mode_raw_help", "baseline_help"]) {
-      for (const locale of ["es", "en"]) {
-        expect(t(locale, key), `${locale}/${key}`).not.toBe(key);
-      }
+  it("mode radio help texts are gone with the radios", () => {
+    // raw/change selection was removed: only change makes sense
+    for (const locale of ["es", "en"]) {
+      expect(MESSAGES[locale].mode_change).toBeUndefined();
+      expect(MESSAGES[locale].mode_raw).toBeUndefined();
+      expect(MESSAGES[locale].mode_change_help).toBeUndefined();
+      expect(MESSAGES[locale].baseline_help).toBeUndefined();
     }
   });
 
@@ -307,15 +335,14 @@ describe("remembered settings (bare-URL loads)", () => {
       hideCloudy: true,
       maxCloud: 55,
       showProperties: false,
-      mode: "raw",
       poiGroups: { facilities: false, inspection: true },
     });
     expect(state.basemap).toBe("esri");
     expect(state.hideCloudy).toBe(true);
     expect(state.maxCloud).toBe(55);
     expect(state.showProperties).toBe(false);
-    expect(state.mode).toBe("raw");
     expect(state.poiGroups).toEqual({ facilities: false, inspection: true });
+    expect(state.mode).toBeUndefined(); // raw/change mode was removed
 
     // garbage from an old/broken localStorage payload must never corrupt state
     const dirty = restoreSettings(makeState({ slug: "p", layers: ["ndvi"] }), {
@@ -323,35 +350,107 @@ describe("remembered settings (bare-URL loads)", () => {
       hideCloudy: "yes",
       maxCloud: "banana",
       showProperties: 0,
-      mode: "weird",
+      mode: "weird", // legacy field from an older build: ignored
       poiGroups: { bogus: false, facilities: 1 },
     });
     expect(dirty.basemap).toBe("osm");
     expect(dirty.hideCloudy).toBe(false);
     expect(dirty.maxCloud).toBe(20);
     expect(dirty.showProperties).toBe(true); // 0 is not a boolean -> default kept
-    expect(dirty.mode).toBe("change");
     expect(dirty.poiGroups).toEqual({ facilities: true, inspection: true });
   });
 
   it("settings round-trip through the stored payload shape", () => {
     let state = makeState({ slug: "cdp-rio-general", layers: ["ndvi", "sigma0"] });
     state = setBasemap(state, "esri");
-    state = setMode(state, "raw");
     state = setHideCloudy(state, true, 30);
     state = setShowProperties(state, false);
     state = togglePoiGroup(state, "inspection");
     const saved = settingsFromState(state);
     const restored = restoreSettings(makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }), saved);
     expect(restored.basemap).toBe("esri");
-    expect(restored.mode).toBe("raw");
     expect(restored.hideCloudy).toBe(true);
     expect(restored.maxCloud).toBe(30);
     expect(restored.showProperties).toBe(false);
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
     // settings payload never carries transient view state
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "hideCloudy", "maxCloud", "mode", "poiGroups", "showProperties"],
+      ["basemap", "hideCloudy", "maxCloud", "poiGroups", "showProperties"],
     );
+  });
+});
+
+describe("radar range model (start -> end change)", () => {
+  const WORKS = "2026-08-01";
+  const S1_DATES = [
+    { date: "2026-01-05", cloud: null },
+    { date: "2026-07-11", cloud: null },
+    { date: "2026-07-23", cloud: null },
+  ];
+  const radarConfig = {
+    slug: "cdp-rio-general",
+    layers: ["sigma0"],
+    timeline: { start: "2026-01-01", works_start: WORKS },
+  };
+
+  it("isRadarLayer marks the two Sentinel-1 layers only", () => {
+    expect(isRadarLayer("sigma0")).toBe(true);
+    expect(isRadarLayer("coherence")).toBe(true);
+    expect(isRadarLayer("ndvi")).toBe(false);
+    expect(isRadarLayer(null)).toBe(false);
+  });
+
+  it("default baseline mirrors the server: latest acquisition before works", () => {
+    // all three dates pre-date works -> the latest one wins
+    expect(defaultBaselineIndex(S1_DATES, WORKS)).toBe(2);
+    // post-works dates exist -> the last pre-works date wins
+    const later = [...S1_DATES, { date: "2026-10-01", cloud: null }];
+    expect(defaultBaselineIndex(later, WORKS)).toBe(2);
+    // no pre-works date -> earliest overall (server fallback)
+    expect(defaultBaselineIndex([{ date: "2026-09-01", cloud: null }], WORKS)).toBe(0);
+    expect(defaultBaselineIndex([], WORKS)).toBe(0);
+  });
+
+  it("baselineIndex prefers an explicit baseline over the default", () => {
+    let state = setLayer(makeState(radarConfig), "sigma0", S1_DATES);
+    expect(state.date).toBe("2026-07-23"); // range end = latest
+    expect(baselineIndex(state, S1_DATES)).toBe(2); // default (== end here)
+    state = { ...state, baseline: "2026-07-11" };
+    expect(baselineIndex(state, S1_DATES)).toBe(1);
+    state = { ...state, baseline: "1999-01-01" }; // not in this list -> default
+    expect(baselineIndex(state, S1_DATES)).toBe(2);
+  });
+
+  it("ensureRadarRange keeps start strictly before end", () => {
+    // default baseline equals the latest end -> materialize start at end-1
+    let state = setLayer(makeState(radarConfig), "sigma0", S1_DATES);
+    state = ensureRadarRange(state, S1_DATES);
+    expect(state.baseline).toBe("2026-07-11");
+
+    // a mid-list end with the default sitting after it -> start moves to end-1
+    state = { ...state, baseline: null, date: "2026-07-11" };
+    state = ensureRadarRange(state, S1_DATES);
+    expect(state.baseline).toBe("2026-01-05");
+
+    // a valid range passes through untouched
+    state = { ...state, baseline: "2026-01-05", date: "2026-07-23" };
+    const untouched = ensureRadarRange(state, S1_DATES);
+    expect(untouched.baseline).toBe("2026-01-05");
+    expect(untouched.date).toBe("2026-07-23");
+
+    // optical layers never get a range
+    const optical = setLayer(makeState({ slug: "p", layers: ["ndvi"] }), "ndvi", DATES_S2);
+    expect(ensureRadarRange(optical, DATES_S2).baseline).toBeNull();
+  });
+
+  it("setLayer drops a baseline that is not part of the new date list", () => {
+    let state = setLayer(makeState(radarConfig), "sigma0", S1_DATES);
+    state = { ...state, baseline: "2026-07-11" };
+    const other = [
+      { date: "2026-02-01", cloud: null },
+      { date: "2026-02-13", cloud: null },
+    ];
+    state = setLayer(state, "coherence", other);
+    expect(state.baseline).toBeNull();
   });
 });
