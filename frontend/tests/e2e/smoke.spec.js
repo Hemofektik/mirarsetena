@@ -182,34 +182,92 @@ test("active layer button toggles off and back on", async ({ page }) => {
   ).toHaveText(name);
 });
 
-test("POI checkboxes toggle their label layers on the map", async ({ page }) => {
+test("POI checkboxes toggle the markers on the map", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
   await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
-  await page.waitForFunction(
-    () => window.__mirarsetenaMap?.getLayer("poi-facilities"),
-    null,
-    { timeout: 15000 },
-  );
-  const read = () =>
-    page.evaluate(() => ({
-      facilities: window.__mirarsetenaMap.getLayoutProperty("poi-facilities", "visibility"),
-      inspection: window.__mirarsetenaMap.getLayoutProperty("poi-inspection", "visibility"),
-    }));
-
-  // both groups default on: the property must be explicitly set (it used to
-  // stay undefined because setTiles() invalidated the style mid-render)
-  await expect
-    .poll(async () => await read(), { timeout: 10000 })
-    .toEqual({ facilities: "visible", inspection: "visible" });
+  // 8 facilities + 2 inspection points, each an always-visible dot
+  await expect(page.locator("#poi-markers .poi-dot")).toHaveCount(10, {
+    timeout: 15000,
+  });
+  await expect(
+    page.locator('#poi-markers .poi-dot[data-group="facilities"]'),
+  ).toHaveCount(8);
+  await expect(
+    page.locator('#poi-markers .poi-dot[data-group="inspection"]'),
+  ).toHaveCount(2);
 
   await page.locator("#poi-facilities").uncheck();
-  await expect.poll(async () => (await read()).facilities).toBe("none");
+  await expect(
+    page.locator('#poi-markers [data-group="facilities"]').first(),
+  ).toBeHidden();
+  await expect(
+    page.locator('#poi-markers .poi-dot[data-group="inspection"]').first(),
+  ).toBeVisible();
 
   await page.locator("#poi-facilities").check();
-  await expect.poll(async () => (await read()).facilities).toBe("visible");
+  await expect(
+    page.locator('#poi-markers .poi-dot[data-group="facilities"]').first(),
+  ).toBeVisible();
 
   await page.locator("#poi-inspection").uncheck();
-  await expect.poll(async () => (await read()).inspection).toBe("none");
+  await expect(
+    page.locator('#poi-markers [data-group="inspection"]').first(),
+  ).toBeHidden();
+});
+
+test("all POI dots and labels stay visible without overlapping", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#poi-markers .poi-dot")).toHaveCount(10, {
+    timeout: 15000,
+  });
+  // zoom into the core cluster where breaker/dumper-ramp/storage/channel
+  // sit within ~15 m — plain symbol layers would hide colliding labels
+  await page.evaluate(() =>
+    window.__mirarsetenaMap.jumpTo({ center: [-83.6693, 9.3854], zoom: 16 }),
+  );
+  await page.waitForTimeout(500);
+
+  const result = await page.evaluate(() => {
+    const shown = (el) => getComputedStyle(el).display !== "none";
+    const labels = [...document.querySelectorAll("#poi-markers .poi-label")]
+      .filter(shown)
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, r: r.right, b: r.bottom };
+      });
+    let overlapPairs = 0;
+    for (let i = 0; i < labels.length; i += 1) {
+      for (let j = i + 1; j < labels.length; j += 1) {
+        const a = labels[i];
+        const b = labels[j];
+        if (
+          Math.min(a.r, b.r) - Math.max(a.x, b.x) > 1 &&
+          Math.min(a.b, b.b) - Math.max(a.y, b.y) > 1
+        ) {
+          overlapPairs += 1;
+        }
+      }
+    }
+    const inView = labels.every(
+      (r) => r.x >= 0 && r.y >= 0 && r.r <= innerWidth && r.b <= innerHeight,
+    );
+    const dots = [...document.querySelectorAll("#poi-markers .poi-dot")]
+      .filter(shown)
+      .map((el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      });
+    const covered = dots.filter((d) =>
+      labels.some((r) => d.x > r.x && d.x < r.r && d.y > r.y && d.y < r.b),
+    ).length;
+    return { labels: labels.length, dots: dots.length, overlapPairs, inView, covered };
+  });
+
+  expect(result.dots).toBe(10);
+  expect(result.labels).toBe(10);
+  expect(result.overlapPairs).toBe(0);
+  expect(result.inView).toBe(true);
+  expect(result.covered).toBe(0);
 });
 
 test("property perimeter layer renders and toggles", async ({ page }) => {

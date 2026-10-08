@@ -276,7 +276,7 @@ Depends: F. (G/H features plug in as they land.)
 - **Deliverable:** POI layer with two toggle groups and labels; OSM default + Esri imagery toggle; attributions.
 - **TDD:** `tests/frontend/test_layers.test.ts` — group toggles independent; basemap swap keeps overlays.
 - **Status:** [x] done
-- **Result:** POI group toggles independent + basemap swap preserves overlays (vitest); POI symbol layers with labels over OSM/Esri raster sources.
+- **Result:** POI group toggles independent + basemap swap preserves overlays (vitest). Reworked rendering: MapLibre symbol layers silently hide colliding text, so POIs are now HTML markers — a dot pinned to the true position plus a label placed by the pure `poi-layout` declutter (first-fit anchors around the dot, relaxation to separate stragglers, leader line when a label is pushed away; repainted on every move/zoom frame). Playwright pins: at cluster zoom all 10 dots + 10 labels visible, zero label overlaps, no dot hidden behind a label; `tests/poi-layout.test.js` covers the geometry (tight cluster, collapsed 10-point input, viewport bounds).
 
 ### I.4 S1 baseline selector UI
 - **Deliverable:** baseline picker (default last pre-works July 2026 scene) + raw-grayscale toggle wired to E.2 request params.

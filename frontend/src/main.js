@@ -3,6 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 import * as S from "./state.js";
+import { installPoiMarkers } from "./poi-markers.js";
 import { installTileLoaders, retireTileRequests } from "./tile-loaders.js";
 
 const LANG_KEY = "mirarsetena.lang";
@@ -47,6 +48,7 @@ function overlayTemplate() {
 
 let lastOverlayTemplate = null;
 let attributionControl = null;
+let poiMarkers = null;
 
 function updateOverlay() {
   if (!map || !map.getLayer("overlay")) return;
@@ -74,16 +76,9 @@ function updateOverlay() {
 }
 
 function updatePoiVisibility() {
-  if (!map) return;
-  for (const group of ["facilities", "inspection"]) {
-    const id = `poi-${group}`;
-    if (!map.getLayer(id)) continue; // style not parsed yet — 'load' re-renders
-    map.setLayoutProperty(
-      id,
-      "visibility",
-      state.poiGroups[group] ? "visible" : "none"
-    );
-  }
+  if (!poiMarkers) return;
+  poiMarkers.setVisible("facilities", state.poiGroups.facilities);
+  poiMarkers.setVisible("inspection", state.poiGroups.inspection);
 }
 
 function updateAoiVisibility() {
@@ -288,7 +283,6 @@ function buildMap() {
           tiles: state.date && state.layer ? [overlayTemplate()] : [],
           tileSize: 256,
         },
-        pois: { type: "geojson", data: poisData },
         aoi: { type: "geojson", data: aoiData },
       },
       layers: [
@@ -332,8 +326,6 @@ function buildMap() {
           },
           paint: { "line-color": "#1d4ed8", "line-width": 2.5 },
         },
-        poiLayer("poi-facilities", "facilities"),
-        poiLayer("poi-inspection", "inspection"),
       ],
     },
     center: [-83.668, 9.383],
@@ -345,6 +337,8 @@ function buildMap() {
   map.addControl(new maplibregl.NavigationControl(), "top-right");
   // spinners over every in-flight overlay tile (cold scenes take seconds)
   installTileLoaders(map);
+  // dots + decluttered labels (symbol layers would hide colliding text)
+  poiMarkers = installPoiMarkers(map, poisData);
   // the style was built with this template (or none when disabled at boot)
   lastOverlayTemplate = state.date && state.layer ? overlayTemplate() : null;
   // debug/QA hook: inspect the live map from the console or automated checks
@@ -360,28 +354,6 @@ function buildMap() {
     state = S.setViewport(state, [bounds.getWest(), bounds.getSouth(), bounds.getEast(), bounds.getNorth()], map.getZoom());
     pushUrl();
   });
-}
-
-function poiLayer(id, group) {
-  return {
-    id,
-    type: "symbol",
-    source: "pois",
-    filter: ["==", ["get", "group"], group],
-    layout: {
-      "text-field": ["get", "label"],
-      "text-font": ["Noto Sans Regular"],
-      "text-size": 11,
-      "text-offset": [0, 0.9],
-      "text-anchor": "top",
-      "text-allow-overlap": false,
-    },
-    paint: {
-      "text-color": group === "facilities" ? "#143321" : "#7a2e12",
-      "text-halo-color": "#ffffff",
-      "text-halo-width": 1.2,
-    },
-  };
 }
 
 function wireUi() {
