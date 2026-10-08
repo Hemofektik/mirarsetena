@@ -7,9 +7,13 @@ control — Río General along the western boundaries near the channel inspectio
 fix, the road east of the parcels, the parcels inside the project extent —
 then ranked by registry consistency.
 
-The registry printouts self-declare "Verificado Zona Catastrada: No", so
-registry points are treated as approximate control: the best hypothesis must
-still fit within MAX_REGISTRY_RESIDUAL_M, otherwise resolution fails loudly.
+The registry printouts self-declare "Verificado Zona Catastrada: No", and
+their printed CRTM column is a rigid translation of the 1991 legacy pair
+whose legacy->CRTM step is off ~ (8.7, 308.7) m vs the authoritative
+EPSG:5457->5367 operation (the legacy pair *properly converted* lands at
+the placed parcels' south edges). Registry points are therefore treated as
+approximate control: the best hypothesis must still fit within
+MAX_REGISTRY_RESIDUAL_M, otherwise resolution fails loudly.
 """
 from __future__ import annotations
 

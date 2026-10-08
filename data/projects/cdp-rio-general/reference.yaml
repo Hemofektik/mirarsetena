@@ -5,10 +5,14 @@
 #               ("Verificado Zona Catastrada: No" — treated as approximate control)
 #   pois      — RES-1333-2017 design coordinates (facilities) and the 2016
 #               SETENA site-inspection GPS fixes (channel, quarry)
-# NOTE (2026-10-07): the registry pair conflicts by ~360-390 m with the
-# resolution's GPS/design control below — it is derived from 100 m-rounded
-# 1991 legacy coordinates and self-declared unverified, so it is carried as a
-# diagnostic only; absolute placement uses river + on-site control.
+# NOTE (2026-10-07): the printed CRTM column conflicts by ~360-390 m with the
+# resolution's GPS/design control below. Forensics: it is a rigid translation
+# of the 1991 legacy pair (identical offset for both plans) whose legacy->CRTM
+# step deviates ~ (8.7, 308.7) m from the authoritative EPSG:5457->5367
+# operation; the legacy pair *properly converted* lands at the south edge of
+# the placed parcels, corroborating them. Self-declared unverified, so the
+# printed column is carried as a diagnostic only; absolute placement uses
+# river + on-site control.
 registry:
   SJ-980860-1991: {east: 536314.0, north: 1037219.0}
   SJ-980861-1991: {east: 536414.0, north: 1037419.0}

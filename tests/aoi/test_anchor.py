@@ -91,6 +91,13 @@ def _point_in_ring(pt, ring):
     return inside
 
 
+def _distance_to_ring(pt, ring):
+    """0 when inside the ring, otherwise metres to its nearest boundary."""
+    if _point_in_ring(pt, ring):
+        return 0.0
+    return _distance_to_polyline(pt, list(ring) + [ring[0]])
+
+
 def test_resolution_site_points_inside_their_fincas(solution, reference):
     """RES-1333-2017: "sitio de quebrador en parte interna de finca".
 
@@ -151,12 +158,70 @@ def test_wgs84_bbox_within_scope_extent(solution, reference):
 
 
 def test_registry_conflict_is_reported_not_fatal(solution):
-    """The registry pair (self-declared "Verificado Zona Catastrada: No",
-    converted from 100 m-rounded 1991 legacy coordinates) disagrees with the
-    resolution's GPS/design control by ~360-390 m. Resolution control wins;
-    the conflict stays visible as a diagnostic instead of failing the build.
+    """The printed registry CRTM pair (self-declared "Verificado Zona
+    Catastrada: No") disagrees with the resolution's GPS/design control by
+    ~360-390 m. Resolution control wins; the conflict stays visible as a
+    diagnostic instead of failing the build.
     """
     assert 50 < solution.registry_residual_m < 600
+
+
+# Printout fields (Consulta de Plano, plans 980860/980861): the 1991 legacy
+# grid pair and the registry system's own legacy->CRTM conversion of it.
+LEGACY = {PLAN_A: (499500.0, 370500.0), PLAN_B: (499600.0, 370700.0)}
+PRINTED_CRTM = {PLAN_A: (536314.0, 1037219.0), PLAN_B: (536414.0, 1037419.0)}
+
+
+def test_legacy_coordinates_corroborate_the_placement(solution):
+    """The 1991 legacy pair, converted properly (EPSG:5457 Costa Rica Sur ->
+    EPSG:5367 CRTM05, the grid in force when the plans were inscribed), lands
+    at the south edge of each placed parcel — independent corroboration that
+    does not go through the registry's CRTM column at all.
+    """
+    from pyproj import Transformer
+
+    transformer = Transformer.from_crs("EPSG:5457", "EPSG:5367", always_xy=True)
+    for plan_id, legacy in LEGACY.items():
+        converted = transformer.transform(*legacy)
+        ring = solution.vertices[plan_id]
+        boundary = _distance_to_ring(converted, ring)
+        assert boundary <= 50, (
+            f"{plan_id} legacy {legacy} converts {boundary:.1f} m from its parcel"
+        )
+
+
+def test_printed_crtm_column_is_a_rigid_translation_of_the_legacy_pair():
+    """Both printouts' CRTM pairs equal the legacy pair plus the SAME offset
+    (36814, 666719) to the meter — the column is a deterministic function of
+    the legacy pair and carries no independent positional information.
+    """
+    offsets = {
+        plan_id: (
+            PRINTED_CRTM[plan_id][0] - LEGACY[plan_id][0],
+            PRINTED_CRTM[plan_id][1] - LEGACY[plan_id][1],
+        )
+        for plan_id in LEGACY
+    }
+    assert offsets[PLAN_A] == offsets[PLAN_B] == (36814.0, 666719.0)
+
+
+def test_printed_crtm_column_deviates_from_the_authoritative_conversion():
+    """The registry's legacy->CRTM step is systematically off: the EPSG:5457
+    -> 5367 operation (8 m accuracy) differs from the printed pair by a
+    near-constant (~8.7, ~308.7) m on BOTH plans — a conversion error, not
+    rounding and not noise. This is why the printed column is diagnostic-only.
+    """
+    from pyproj import Transformer
+
+    transformer = Transformer.from_crs("EPSG:5457", "EPSG:5367", always_xy=True)
+    deltas = []
+    for plan_id, legacy in LEGACY.items():
+        converted = transformer.transform(*legacy)
+        printed = PRINTED_CRTM[plan_id]
+        deltas.append((converted[0] - printed[0], converted[1] - printed[1]))
+    for de, dn in deltas:
+        assert abs(de - 8.7) < 1.0, f"Easting deviation {de:+.2f} m"
+        assert abs(dn - 308.7) < 1.0, f"Northing deviation {dn:+.2f} m"
 
 
 def test_resolution_is_deterministic(plans, reference):
