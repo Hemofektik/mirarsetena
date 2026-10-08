@@ -79,3 +79,56 @@ def test_stale_index_refreshes_once_under_concurrency(tmp_path):
         "sentinel-1-grd": 1,
         "sentinel-1-slc": 1,
     }
+
+
+def test_app_shares_one_processor_across_concurrent_tile_requests(tmp_path):
+    """The APP must hand every tile request the SAME make_processor closure.
+
+    tile_service() used to build a fresh closure per request, so each
+    concurrent tile got its own single-flight: N duplicate productions AND
+    N concurrent budget walks (measured: 22 s scene_enforce + 8.4 s tile
+    enforce per call under a 6-tile wave — responses trickled out in clumps
+    and the UI showed nothing until the last spinner cleared).
+
+    Seam: create_app + the XYZ tile route — production wiring, no override.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi.testclient import TestClient
+
+    from mirarsetena.app import create_app
+
+    produce_calls: dict[str, int] = {}
+
+    def slow_search(collection, bbox, start, end):
+        if start == end:  # produce()'s narrow call
+            produce_calls[collection] = produce_calls.get(collection, 0) + 1
+            time.sleep(0.5)
+            return []  # no assets: production ends without writing a product
+        time.sleep(0.5)
+        # catalog query (dates index): offer the requested date
+        from mirarsetena.pipeline.catalog import Scene
+
+        return [
+            Scene(
+                id="fake-2026-10-06",
+                collection=collection,
+                datetime="2026-10-06T15:00:00Z",
+                date="2026-10-06",
+                cloud=1.0,
+            )
+        ]
+
+    app = create_app(
+        config_dir=CONFIG_DIR,
+        storage_root=tmp_path,
+        search_fn=slow_search,
+    )
+    url = "/p/cdp-rio-general/tiles/mndwi/2026-10-06/17/35073/62103.png"
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=6) as pool:
+        responses = list(pool.map(lambda _: client.get(url), range(6)))
+
+    # the product does not exist (empty search) — status is irrelevant here
+    assert all(r.status_code in (200, 404) for r in responses)
+    # ONE production shared by the whole wave, not one per request
+    assert produce_calls.get("sentinel-2-l2a", 0) == 1

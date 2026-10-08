@@ -110,3 +110,68 @@ def test_enforce_budget_is_a_noop_under_budget(store):
     store.put("p/demo/scenes/only.tif", b"y" * 500)
     enforce_budget(store, ("p/demo/scenes/",), budget_bytes=10_000)
     assert store.exists("p/demo/scenes/only.tif")
+
+
+def test_enforce_budget_enumerates_each_prefix_exactly_once(store):
+    """Budget enforcement runs after EVERY cold tile render and production;
+    each call may enumerate its prefixes once — re-listing per eviction
+    iteration turned one call into dozens of full tree walks (22 s stalls
+    under a tile wave, user report: tiles only appear once all spinners
+    are gone)."""
+    import os
+
+    from mirarsetena.storage import enforce_budget
+
+    class CountingStore:
+        def __init__(self, inner):
+            self._inner = inner
+            self.list_calls = 0
+
+        def __getattr__(self, name):
+            return getattr(self._inner, name)
+
+        def list(self, prefix):
+            self.list_calls += 1
+            return self._inner.list(prefix)
+
+    spy = CountingStore(store)
+    # 12 files of 1000 bytes against a 3000-byte budget -> 9 evictions
+    for i in range(12):
+        key = f"p/demo/tiles/item-{i}.bin"
+        store.put(key, b"x" * 1000)
+        ts = 1_700_000_000 + i
+        os.utime(store._path(key), (ts, ts))
+
+
+    enforce_budget(spy, ("p/demo/tiles/",), budget_bytes=3000)
+
+    assert spy.list_calls == 1
+    remaining = store.list("p/demo/tiles/")
+    assert len(remaining) == 3  # oldest nine evicted
+
+
+def test_list_enumerates_only_the_prefix_subtree(store, tmp_path, monkeypatch):
+    """list(prefix) must not walk the whole cache root: the root holds every
+    project's scenes/layers/tiles (thousands of files) and rglob-over-root
+    per budget check made each cold tile render pay for the entire cache."""
+    from pathlib import Path
+
+    store.put("p/demo/tiles/a.png", b"x")
+    store.put("p/demo/scenes/s.tif", b"y")
+    store.put("p/other/file.txt", b"z")
+
+    starts = []
+    original = Path.rglob
+
+    def spy_rglob(self, pattern, *args, **kwargs):
+        starts.append(self)
+        return original(self, pattern, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "rglob", spy_rglob)
+    keys = store.list("p/demo/tiles/")
+
+    assert keys == ["p/demo/tiles/a.png"]
+    assert starts, "list() must enumerate something"
+    tiles_root = tmp_path / "p" / "demo" / "tiles"
+    outside = [s for s in starts if not str(s).startswith(str(tiles_root))]
+    assert outside == [], f"enumerated outside the prefix: {outside}"

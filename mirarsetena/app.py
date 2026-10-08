@@ -71,14 +71,21 @@ def create_app(
     app.state.queue = queue
     app.state.search_fn = search_fn or catalog_module.search
     app.state.processor_override = processor
+    # ONE processor closure per project: make_processor owns the
+    # single-flight (in_flight + guard). Building it per request gave every
+    # concurrent tile its own flight — N duplicate productions and N
+    # concurrent budget walks (measured: 22 s + 8.4 s per call under a wave).
+    app.state.processors: dict = {}
 
     def tile_service(slug: str) -> TileService:
         config = registry.get(slug)  # ProjectNotFound handled by callers
-        processor = app.state.processor_override
-        if processor is None:
-            processor = make_processor(storage, config, app.state.search_fn)
+        processor_ = app.state.processor_override
+        if processor_ is None:
+            processor_ = app.state.processors.setdefault(
+                slug, make_processor(storage, config, app.state.search_fn)
+            )
         return TileService(
-            storage, config, search_fn=app.state.search_fn, processor=processor
+            storage, config, search_fn=app.state.search_fn, processor=processor_
         )
 
     @app.get("/healthz")

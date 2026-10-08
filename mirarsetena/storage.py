@@ -97,8 +97,14 @@ class LocalStore:
         if not self._root.is_dir():
             return []
         _components(prefix, allow_trailing_slash=True)
+        # Enumerate ONLY the prefix subtree: the root holds every project's
+        # whole cache (thousands of files) and budget checks run after every
+        # cold tile render — a root-wide rglob made each one pay for all of it.
+        sub = self._root.joinpath(*prefix.rstrip("/").split("/"))
+        if not sub.is_dir():
+            return []
         keys = []
-        for path in self._root.rglob("*"):
+        for path in sub.rglob("*"):
             if path.is_file():
                 key = path.relative_to(self._root).as_posix()
                 if key.startswith(prefix):
@@ -116,18 +122,23 @@ def enforce_budget(storage: Storage, prefixes: tuple[str, ...], budget_bytes: in
     One budget can span several prefixes: the tile cache uses it for its
     tiles/ prefix, the source-level guardrail for scenes/ + layers/ +
     coherence/ together (SCOPE R2-Q6).
-    """
-    def total() -> int:
-        return sum(storage.total_size(prefix) for prefix in prefixes)
 
-    while total() > budget_bytes:
-        oldest: str | None = None
-        oldest_mtime = float("inf")
-        for prefix in prefixes:
-            for key in storage.list(prefix):
-                mtime = storage.modified_at(key) or 0.0
-                if oldest is None or mtime < oldest_mtime:
-                    oldest, oldest_mtime = key, mtime
-        if oldest is None:
-            break  # nothing left to evict
-        storage.delete(oldest)
+    Exactly one enumeration per prefix: this runs after every cold tile
+    render and production, so re-listing the tree per eviction iteration
+    (the old while-total()-re-walk) is what stalled tile waves for 8-22 s.
+    """
+    entries: list[tuple[float, int, str]] = []  # (mtime, size, key)
+    total = 0
+    for prefix in prefixes:
+        for key in storage.list(prefix):
+            size = storage.size(key) or 0
+            entries.append((storage.modified_at(key) or 0.0, size, key))
+            total += size
+    if total <= budget_bytes:
+        return
+    entries.sort()  # oldest first
+    for _mtime, size, key in entries:
+        if total <= budget_bytes:
+            break
+        if storage.delete(key):
+            total -= size
