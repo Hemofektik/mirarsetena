@@ -29,3 +29,15 @@ def test_geo_routes_404_for_unknown_project():
     app = create_app(config_dir=CONFIG_DIR, storage_root=REPO_ROOT / "data" / "cache")
     client = TestClient(app)
     assert client.get("/p/unknown/aoi.geojson").status_code == 404
+
+
+def test_geo_routes_are_never_cached():
+    """Geometry is re-anchored server-side; a stale browser cache would keep
+    drawing the old perimeter after a data fix. These responses must always
+    be revalidated."""
+    app = create_app(config_dir=CONFIG_DIR, storage_root=REPO_ROOT / "data" / "cache")
+    client = TestClient(app)
+    for route in ("aoi.geojson", "pois.geojson"):
+        response = client.get(f"/p/{SLUG}/{route}")
+        assert response.status_code == 200
+        assert response.headers["cache-control"] == "no-store", route

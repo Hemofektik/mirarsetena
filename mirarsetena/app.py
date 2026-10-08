@@ -166,6 +166,7 @@ def create_app(
         return Response(
             content=path.read_text(encoding="utf-8"),
             media_type="application/geo+json",
+            headers={"Cache-Control": "no-store"},
         )
 
     # Built SPA (frontend/dist) — same origin as the API when present.
