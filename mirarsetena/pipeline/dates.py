@@ -7,6 +7,7 @@ index refreshed at most every INDEX_TTL (SCOPE R2-Q5 hybrid freshness).
 from __future__ import annotations
 
 import json
+import threading
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
@@ -64,6 +65,33 @@ def _fresh(index: dict | None, now: datetime) -> bool:
     return now - updated < INDEX_TTL
 
 
+# Single-flight for the catalog refresh: fetchDates + the tile fan-out of one
+# layer switch observe the same stale index in the same instant, and a
+# refresh is three catalog searches — they must share exactly one round.
+_REFRESH_LOCKS: dict[str, threading.Lock] = {}
+_REFRESH_LOCKS_GUARD = threading.Lock()
+
+
+def _refresh_once(
+    storage: Storage,
+    config: ProjectConfig,
+    *,
+    search_fn: SearchFn,
+    now: datetime,
+) -> dict:
+    with _refresh_lock(config.slug):
+        stored = storage.get(index_key(config.slug))
+        index = json.loads(stored) if stored else None
+        if _fresh(index, now):
+            return index  # a concurrent caller refreshed while we waited
+        return refresh_index(storage, config, search_fn=search_fn, now=now)
+
+
+def _refresh_lock(slug: str) -> threading.Lock:
+    with _REFRESH_LOCKS_GUARD:
+        return _REFRESH_LOCKS.setdefault(slug, threading.Lock())
+
+
 def refresh_index(
     storage: Storage,
     config: ProjectConfig,
@@ -115,7 +143,7 @@ def list_dates(
     raw = storage.get(index_key(slug))
     index = json.loads(raw) if raw else None
     if not _fresh(index, now):
-        index = refresh_index(storage, config, search_fn=search_fn, now=now)
+        index = _refresh_once(storage, config, search_fn=search_fn, now=now)
 
     entries = list(index["missions"].get(mission, []))
 

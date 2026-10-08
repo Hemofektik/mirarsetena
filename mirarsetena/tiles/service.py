@@ -5,7 +5,9 @@ the XYZ route (SCOPE R2-Q4), so parity is structural, not incidental.
 """
 from __future__ import annotations
 
+import threading
 from collections.abc import Callable
+from concurrent.futures import Future
 
 from mirarsetena.pipeline.catalog import group_by_date, search
 from mirarsetena.pipeline.change import default_baseline_date, render_change
@@ -26,14 +28,17 @@ VALID_MODES = {"change", "raw"}
 def make_processor(storage: Storage, config: ProjectConfig, search_fn) -> Callable:
     """Lazy on-demand processing of one (layer, date) — used on cache miss.
 
+    Single-flight: a layer switch fans ~20 tile requests onto the same cold
+    product; they share one catalog search + scene download instead of
+    racing (otherwise the threadpool saturates and /api/dates stalls).
+
     Coherence (sentinel-1-slc) has no lazy path: those products are
     produced exclusively by the background coherence jobs (Phase H).
     """
+    in_flight: dict[tuple[str, str], Future] = {}
+    guard = threading.Lock()
 
-    def process(layer: str, date: str) -> None:
-        mission = mission_for_layer(layer)
-        if mission == "sentinel-1-slc":
-            return
+    def produce(mission: str, date: str) -> None:
         groups = group_by_date(search_fn(mission, config.bbox, date, date))
         if not groups:
             return
@@ -42,6 +47,33 @@ def make_processor(storage: Storage, config: ProjectConfig, search_fn) -> Callab
             process_s2_daily(storage, config.slug, daily, config.bbox)
         else:
             process_s1_daily(storage, config.slug, daily, config.bbox)
+
+    def process(layer: str, date: str) -> None:
+        mission = mission_for_layer(layer)
+        if mission == "sentinel-1-slc":
+            return
+        key = (mission, date)
+        with guard:
+            future = in_flight.get(key)
+            if future is None:
+                future = Future()
+                in_flight[key] = future
+                owner = True
+            else:
+                owner = False
+        if not owner:
+            future.result()  # wait for the producer; re-raises its error
+            return
+        try:
+            produce(mission, date)
+        except BaseException as exc:  # followers must not hang on failure
+            future.set_exception(exc)
+            raise
+        else:
+            future.set_result(None)
+        finally:
+            with guard:
+                in_flight.pop(key, None)
 
     return process
 
