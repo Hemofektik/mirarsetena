@@ -11,7 +11,7 @@ from datetime import date
 import numpy as np
 
 from mirarsetena.pipeline import PipelineError
-from mirarsetena.pipeline.indices import NODATA, _encode, _read_band
+from mirarsetena.pipeline.indices import NODATA, _align_to_grid, _encode, _read_band
 
 UNCLASSIFIED = 255
 CHANGE_MODE = "change"
@@ -90,7 +90,14 @@ def render_change(
     if baseline_bytes is None:
         raise PipelineError("change mode requires a baseline product")
 
-    baseline, _ = _read_band(baseline_bytes)
+    baseline, baseline_profile = _read_band(baseline_bytes)
+    # Scene and baseline can sit on different grids: dual-scene dates merge
+    # onto a north-up grid while single-scene dates keep per-date GCP
+    # geometry, and footprints may cover only part of the AOI. Alignment is
+    # identity when the grids already match; otherwise the baseline is
+    # reprojected onto the scene grid and outside its footprint it stays
+    # NODATA, rendering unclassified.
+    baseline = _align_to_grid(baseline, baseline_profile, scene_profile)
     if scene.shape != baseline.shape:
         raise PipelineError(
             f"scene grid {scene.shape} does not match baseline {baseline.shape}"

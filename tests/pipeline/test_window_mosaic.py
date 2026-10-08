@@ -154,3 +154,54 @@ def test_mosaic_reprojects_mixed_crs_tiles(tmp_path):
         assert south <= BBOX[1] and north >= BBOX[3]
         values = set(np.unique(src.read(1)).tolist())
         assert {1, 2} <= values  # both zones contributed
+
+
+def test_s3_access_defaults_to_anonymous(monkeypatch):
+    """Sentinel asset buckets are public; a host ~/.aws profile with an
+    expired session token must never break scene fetches locally (the
+    Docker entrypoint already sets this — the app must not depend on it).
+    """
+    import importlib
+
+    from mirarsetena.pipeline import window
+
+    monkeypatch.delenv("AWS_NO_SIGN_REQUEST", raising=False)
+    importlib.reload(window)
+    assert window.os.environ["AWS_NO_SIGN_REQUEST"] == "YES"
+
+
+def test_s3_signing_can_still_be_opted_in(monkeypatch):
+    import importlib
+
+    from mirarsetena.pipeline import window
+
+    monkeypatch.setenv("AWS_NO_SIGN_REQUEST", "NO")
+    importlib.reload(window)
+    assert window.os.environ["AWS_NO_SIGN_REQUEST"] == "NO"
+
+
+def test_mosaic_merges_rotated_same_crs_windows(tmp_path):
+    """GCP-derived GRD windows carry a rotated affine (slant-range geometry).
+    Two scenes on one acquisition date must still merge: rio_merge refuses
+    rotation outright, so mosaic has to re-encode such windows north-up first
+    (regression: 500 on S1 dual-scene dates)."""
+    from rasterio.transform import Affine
+
+    def rotated_window(path, c, value):
+        # ~26 degree rotation: b and d are non-zero
+        transform = Affine(0.0012, 0.0006, c, -0.0006, 0.0012, 9.42)
+        with rasterio.open(
+            path, "w", driver="GTiff", height=60, width=60, count=1,
+            dtype="float32", crs="EPSG:4326", transform=transform, nodata=0,
+        ) as dst:
+            dst.write(np.full((60, 60), value, dtype=np.float32), 1)
+        return path.read_bytes()
+
+    west = rotated_window(tmp_path / "a.tif", -83.70, 1)
+    east = rotated_window(tmp_path / "b.tif", -83.66, 2)
+
+    combined = mosaic(west, east)
+    with MemoryFile(combined) as memfile, memfile.open() as src:
+        assert src.transform.b == 0 and src.transform.d == 0  # north-up now
+        values = set(np.unique(src.read(1)).tolist())
+        assert {1.0, 2.0} <= values

@@ -39,12 +39,12 @@ def test_default_baseline_falls_back_to_earliest_when_all_post_works():
     assert default_baseline_date(dates, date(2026, 8, 1)) == "2026-08-04"
 
 
-def _geo_bytes(values: np.ndarray) -> bytes:
+def _geo_bytes(values: np.ndarray, grid=GRID) -> bytes:
     data = values.astype(np.float32)
     profile = {
         "driver": "GTiff", "dtype": "float32", "count": 1,
         "height": data.shape[0], "width": data.shape[1],
-        "crs": "EPSG:4326", "transform": GRID, "nodata": NODATA,
+        "crs": "EPSG:4326", "transform": grid, "nodata": NODATA,
         "compress": "deflate",
     }
     with MemoryFile() as mem:
@@ -75,3 +75,24 @@ def test_render_raw_mode_returns_stretched_grayscale():
         assert src.dtypes[0] == "uint8"
         # constant input -> percentile stretch collapses to zero
         assert set(np.unique(raw).tolist()) == {0}
+
+
+def test_render_change_aligns_baseline_from_another_grid():
+    """Scene and baseline can land on different grids: dual-scene dates go
+    through a north-up merge while single-scene dates keep the per-date GCP
+    geometry, and footprints may cover only part of the AOI. The baseline
+    must be reprojected onto the scene's grid; pixels outside its footprint
+    render unclassified (regression: PipelineError -> 500 on radar change
+    tiles)."""
+    top_left = from_origin(-83.672, 9.392, 0.001, 0.001)  # one pixel only
+    baseline = _geo_bytes(np.array([[-10.0]]), grid=top_left)
+    scene = _geo_bytes(np.array([[-10.0, -13.0], [-10.0, -8.5]]))
+
+    out = render_change(scene, baseline)
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        classes = src.read(1)
+        assert classes.shape == (2, 2)
+        assert classes[0, 0] == 3   # covered by baseline: delta 0 -> neutral
+        assert classes[0, 1] == 255  # outside baseline footprint
+        assert classes[1, 0] == 255
+        assert classes[1, 1] == 255

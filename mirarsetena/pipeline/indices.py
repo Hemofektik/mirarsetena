@@ -91,16 +91,30 @@ def _read_band(window_bytes: bytes) -> tuple[np.ndarray, dict]:
 
 
 def _align_to_grid(data: np.ndarray, profile: dict, like: dict) -> np.ndarray:
-    if data.shape == (like["height"], like["width"]):
+    """Warp onto the target grid (nearest: preserves class/reflectance/dB
+    values). Identity when already on it; pixels outside the source
+    footprint become NODATA instead of uninitialised memory."""
+    same_grid = (
+        data.shape == (like["height"], like["width"])
+        and profile["transform"] == like["transform"]
+        and profile["crs"] == like["crs"]
+    )
+    if same_grid:
         return data
-    destination = np.empty((like["height"], like["width"]), dtype=data.dtype)
+    floating = np.issubdtype(data.dtype, np.floating)
+    fill = NODATA if floating else 0
+    destination = np.full(
+        (like["height"], like["width"]), fill, dtype=data.dtype
+    )
     warp_reproject(
         source=data,
         destination=destination,
         src_transform=profile["transform"],
         src_crs=profile["crs"],
+        src_nodata=NODATA if floating else None,
         dst_transform=like["transform"],
         dst_crs=like["crs"],
+        dst_nodata=NODATA if floating else None,
         resampling=Resampling.nearest,
     )
     return destination

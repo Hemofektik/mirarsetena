@@ -7,6 +7,7 @@ project-namespaced key so future S3Store swaps are transparent.
 from __future__ import annotations
 
 import math
+import os
 from collections.abc import Callable, Sequence
 
 import numpy as np
@@ -25,6 +26,14 @@ from mirarsetena.storage import Storage
 
 Bbox = tuple[float, float, float, float]  # west, south, east, north (WGS84)
 Opener = Callable[[str, Bbox], bytes]
+
+# Sentinel asset buckets (sentinel-cds, sentinel-s1-l1c, sentinel-s2-l2a)
+# are public: read them anonymously. Without this, GDAL picks up the host's
+# ~/.aws profile and scene fetches die on its expired session token ("The
+# provided token has expired") — observed on local/e2e runs where the Docker
+# AWS_NO_SIGN_REQUEST=YES env is absent. Set AWS_NO_SIGN_REQUEST=NO explicitly
+# to opt back in for private buckets.
+os.environ.setdefault("AWS_NO_SIGN_REQUEST", "YES")
 
 
 def window_key(slug: str, collection: str, date: str, band: str | None = None) -> str:
@@ -83,18 +92,26 @@ def read_window(uri: str, bbox: Bbox, *, opener: Opener | None = None) -> bytes:
 
 def _reproject_window_to(window_bytes: bytes, target_crs) -> bytes:
     """Re-encode one window into the target CRS at equivalent native
-    resolution (nearest: preserves class and reflectance values)."""
+    resolution (nearest: preserves class and reflectance values). A window
+    that is already in the target CRS but carries a rotated affine (GCP-
+    fitted GRD geometry) is re-encoded north-up — rio_merge refuses
+    rotation."""
     with MemoryFile(window_bytes) as memfile, memfile.open() as src:
-        if src.crs == target_crs:
+        transform = src.transform
+        north_up = transform.b == 0 and transform.d == 0
+        if src.crs == target_crs and north_up:
             return window_bytes
+        # Pixel size along the grid axes, rotation-aware.
+        col_px = math.hypot(transform.a, transform.d)
+        row_px = math.hypot(transform.b, transform.e)
         px_left, px_bottom = src.bounds.left, src.bounds.bottom
         px_west, px_south, px_east, px_north = transform_bounds(
             src.crs,
             target_crs,
             px_left,
             px_bottom,
-            px_left + abs(src.transform.a),
-            px_bottom + abs(src.transform.e),
+            px_left + col_px,
+            px_bottom + row_px,
             densify_pts=5,
         )
         res_x = max(abs(px_east - px_west), 1e-9)
@@ -142,14 +159,18 @@ def mosaic(*window_bytes: bytes) -> bytes:
         return window_bytes[0]
 
     crs_list = []
+    aligned = []
     for raw in window_bytes:
         with MemoryFile(raw) as memfile, memfile.open() as src:
             crs_list.append(src.crs)
-    target_crs = crs_list[0]
-    aligned = [
-        raw if crs == target_crs else _reproject_window_to(raw, target_crs)
-        for raw, crs in zip(window_bytes, crs_list)
-    ]
+            transform = src.transform
+            rotated = transform.b != 0 or transform.d != 0
+        # Mixed CRS (MGRS zones) or rotated affine (GCP-fitted GRD) both
+        # need a north-up re-encode on the target grid before merging.
+        if crs_list[-1] == crs_list[0] and not rotated:
+            aligned.append(raw)
+        else:
+            aligned.append(_reproject_window_to(raw, crs_list[0]))
 
     memfiles = [MemoryFile(chunk) for chunk in aligned]
     sources = []
