@@ -56,6 +56,8 @@ class CacheSettings(BaseModel):
 
     max_zoom: int = Field(ge=0, le=18)
     tile_budget_bytes: int = Field(gt=0)
+    # LRU cap over the source prefixes (scenes/ + layers/ + coherence/).
+    scene_budget_bytes: int = Field(gt=0)
 
 
 class SatelliteSettings(BaseModel):

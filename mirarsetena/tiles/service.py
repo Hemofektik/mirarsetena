@@ -15,7 +15,7 @@ from mirarsetena.pipeline.dates import list_dates, mission_for_layer
 from mirarsetena.pipeline.grd import process_s1_daily
 from mirarsetena.pipeline.indices import layer_key, process_s2_daily
 from mirarsetena.projects.registry import ProjectConfig, cache_key
-from mirarsetena.storage import Storage
+from mirarsetena.storage import Storage, enforce_budget
 from mirarsetena.tiles.cache import TileCache
 from mirarsetena.tiles.render import TileError, render_tile, validate_tile
 from mirarsetena.tiles.styles import RADAR_LAYERS, style_for
@@ -37,6 +37,12 @@ def make_processor(storage: Storage, config: ProjectConfig, search_fn) -> Callab
     """
     in_flight: dict[tuple[str, str], Future] = {}
     guard = threading.Lock()
+    # Source-level LRU: scene windows, derived layer products and coherence
+    # pairs share one budget (scene_budget_bytes in the project config).
+    source_prefixes = tuple(
+        cache_key(config.slug, name) + "/"
+        for name in ("scenes", "layers", "coherence")
+    )
 
     def produce(mission: str, date: str) -> None:
         groups = group_by_date(search_fn(mission, config.bbox, date, date))
@@ -74,6 +80,10 @@ def make_processor(storage: Storage, config: ProjectConfig, search_fn) -> Callab
         finally:
             with guard:
                 in_flight.pop(key, None)
+            # Even a failed production may have written partial windows.
+            enforce_budget(
+                storage, source_prefixes, config.cache.scene_budget_bytes
+            )
 
     return process
 

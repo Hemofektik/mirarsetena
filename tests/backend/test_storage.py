@@ -74,3 +74,39 @@ def test_unsafe_keys_are_rejected(store):
     for bad in ("../escape", "/absolute/path", "a/../../b", "a\\b", "", "a//b"):
         with pytest.raises(StorageError):
             store.put(bad, b"x")
+
+
+def test_enforce_budget_evicts_oldest_across_prefixes(store):
+    """Source-level guardrail: scene/layer/coherence products share one
+    LRU budget (10 GB in the project config); oldest files go first."""
+    import os
+
+    from mirarsetena.storage import enforce_budget
+
+    keys = []
+    for i, prefix in enumerate(
+        ("p/demo/scenes/", "p/demo/layers/", "p/demo/coherence/")
+    ):
+        key = f"{prefix}item-{i}.tif"
+        store.put(key, b"x" * 1000)
+        os.utime(store._path(key), (1_700_000_000 + i * 100,) * 2)
+        keys.append(key)
+
+    # Budget holds exactly two of the three files -> the oldest is evicted.
+    enforce_budget(
+        store,
+        ("p/demo/scenes/", "p/demo/layers/", "p/demo/coherence/"),
+        budget_bytes=2500,
+    )
+    assert not store.exists(keys[0])
+    assert store.exists(keys[1]) and store.exists(keys[2])
+    total = sum(store.total_size(p) for p in ("p/demo/scenes/", "p/demo/layers/", "p/demo/coherence/"))
+    assert total <= 2500
+
+
+def test_enforce_budget_is_a_noop_under_budget(store):
+    from mirarsetena.storage import enforce_budget
+
+    store.put("p/demo/scenes/only.tif", b"y" * 500)
+    enforce_budget(store, ("p/demo/scenes/",), budget_bytes=10_000)
+    assert store.exists("p/demo/scenes/only.tif")

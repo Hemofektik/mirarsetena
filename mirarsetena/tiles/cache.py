@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from mirarsetena.projects.registry import cache_key
-from mirarsetena.storage import Storage
+from mirarsetena.storage import Storage, enforce_budget
 
 
 class TileCache:
@@ -32,12 +32,4 @@ class TileCache:
         return payload
 
     def _enforce_budget(self) -> None:
-        while self._storage.total_size(self._prefix) > self._budget:
-            keys = self._storage.list(self._prefix)
-            if not keys:
-                break
-            oldest = min(
-                keys,
-                key=lambda key: self._storage.modified_at(key) or 0.0,
-            )
-            self._storage.delete(oldest)
+        enforce_budget(self._storage, (self._prefix,), self._budget)

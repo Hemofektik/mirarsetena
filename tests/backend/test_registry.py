@@ -25,7 +25,8 @@ def test_loads_the_real_project_configuration():
     assert cfg.timeline.works_start.isoformat() == "2026-08-01"
     assert {"rgb", "ndvi", "mndwi", "bsi", "sigma0", "coherence"} == set(cfg.layers)
     assert cfg.cache.max_zoom == 18
-    assert cfg.cache.tile_budget_bytes == 2 * 1024**3
+    assert cfg.cache.tile_budget_bytes == 10 * 1024**3
+    assert cfg.cache.scene_budget_bytes == 10 * 1024**3
     assert cfg.aoi_path.endswith("aoi.geojson")
     assert cfg.satellite.s2_repeat_days == 5
     assert cfg.satellite.s1_repeat_days == 12
@@ -47,7 +48,11 @@ def _minimal_project(slug: str) -> dict:
         "bbox": [-83.68, 9.37, -83.66, 9.40],
         "layers": ["ndvi"],
         "timeline": {"start": "2026-07-01", "works_start": "2026-08-01"},
-        "cache": {"max_zoom": 18, "tile_budget_bytes": 2147483648},
+        "cache": {
+            "max_zoom": 18,
+            "tile_budget_bytes": 2147483648,
+            "scene_budget_bytes": 2147483648,
+        },
     }
 
 

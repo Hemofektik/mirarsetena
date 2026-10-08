@@ -107,3 +107,27 @@ class LocalStore:
 
     def total_size(self, prefix: str) -> int:
         return sum(self.size(key) or 0 for key in self.list(prefix))
+
+
+def enforce_budget(storage: Storage, prefixes: tuple[str, ...], budget_bytes: int) -> None:
+    """Evict oldest entries (LRU by mtime) until the combined size of the
+    given prefixes fits budget_bytes.
+
+    One budget can span several prefixes: the tile cache uses it for its
+    tiles/ prefix, the source-level guardrail for scenes/ + layers/ +
+    coherence/ together (SCOPE R2-Q6).
+    """
+    def total() -> int:
+        return sum(storage.total_size(prefix) for prefix in prefixes)
+
+    while total() > budget_bytes:
+        oldest: str | None = None
+        oldest_mtime = float("inf")
+        for prefix in prefixes:
+            for key in storage.list(prefix):
+                mtime = storage.modified_at(key) or 0.0
+                if oldest is None or mtime < oldest_mtime:
+                    oldest, oldest_mtime = key, mtime
+        if oldest is None:
+            break  # nothing left to evict
+        storage.delete(oldest)

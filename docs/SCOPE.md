@@ -76,7 +76,7 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 | Q3 | Export: **shareable URL state + PNG screenshot** (GeoTIFF deferred). |
 | Q4 | Basemap: **OSM default + Esri World Imagery toggle** (with attribution). |
 | Q5 | POIs: **single toggleable labeled layer, two groups** — project facilities vs inspection points. |
-| Q6 | Cache: **cap zoom 18; 2 GB soft budget for rendered tiles with LRU eviction**; source-scene cache always retained (tiles re-renderable). |
+| Q6 | Cache: **cap zoom 18; 10 GB soft budget each for rendered tiles and for source products (scenes/layers/coherence), LRU eviction both** (raised from 2 GB tiles-only / sources unbounded, 2026-10-08). |
 | Q7 | **`/status` page**: cache sizes, last catalog check, pending jobs, **predicted next acquisition** per mission (from repeat cycles), last scene seen. |
 | Q8 | **Cloud intelligence**: per-date AOI cloud % computed from SCL, badges on scrubber, "hide cloudy dates" toggle. |
 | Q9 | **About panel**: resolution source, Copernicus/ESA attribution (mandatory), parcel reconstruction method, "unofficial tool, not affiliated with SETENA" disclaimer. |
