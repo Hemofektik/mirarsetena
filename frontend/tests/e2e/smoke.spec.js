@@ -606,3 +606,38 @@ test("layer and mode buttons carry help tooltips", async ({ page }) => {
     /Bare Soil/,
   );
 });
+
+test("overlay overzooms past the service cap instead of 400ing", async ({ page }) => {
+  const bad = [];
+  page.on("response", (r) => {
+    if (r.url().includes("/tiles/") && r.status() >= 400) {
+      bad.push(`${r.status()} ${r.url()}`);
+    }
+  });
+  const pageErrors = [];
+  page.on("pageerror", (e) => pageErrors.push(String(e)));
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30000,
+  });
+  // the map object is created after the geo fetches — wait for it
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30000,
+  });
+
+  // the overlay source must declare the service's zoom cap so MapLibre
+  // overzooms the deepest tiles instead of requesting z19+ (400s)
+  const maxzoom = await page.evaluate(
+    () => window.__mirarsetenaMap.getSource("overlay").maxzoom,
+  );
+  expect(maxzoom).toBe(18);
+
+  // deep zoom (z19+) over the site: no tile may fail
+  await page.evaluate(() =>
+    window.__mirarsetenaMap.jumpTo({ center: [-83.6693, 9.3854], zoom: 19.5 }),
+  );
+  await page.waitForTimeout(4000);
+  expect(bad).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});

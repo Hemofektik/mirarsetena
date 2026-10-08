@@ -263,7 +263,7 @@ Depends: F. (G/H features plug in as they land.)
 - **Deliverable:** Vite + MapLibre app; router on `/p/{slug}/` prefix; project config load; link to `/status`.
 - **TDD:** `tests/frontend/test_shell.test.ts` — route namespacing resolves config; missing project → error state.
 - **Status:** [x] done
-- **Result:** Vite shell boots from /p/{slug}/ config, namespaced routing; map+panel wired; no-WebGL environments degrade to a panel-only message (tested by design).
+- **Result:** Vite shell boots from /p/{slug}/ config, namespaced routing; map+panel wired; no-WebGL environments degrade to a panel-only message (tested by design). The overlay raster source declares `maxzoom` from `config.cache.max_zoom` (18) so MapLibre overzooms the deepest tiles past the service cap instead of requesting z19+ and collecting 400s (Playwright: deep-zoom jump → zero 4xx/5xx tile responses).
 
 ### I.2 Layer switcher + scrubber date model
 - **Deliverable:** pure state logic (layer → mission → dates → selection; works-start marker; cloud badges; hide-cloudy filter) + UI; Playwright smoke.

@@ -282,6 +282,9 @@ function buildMap() {
           // disabled boot (layer=off) has no layer/date for a valid template
           tiles: state.date && state.layer ? [overlayTemplate()] : [],
           tileSize: 256,
+          // the tile service caps at cache.max_zoom; without this MapLibre
+          // keeps requesting z19+ and the server answers 400 for each tile
+          maxzoom: config.cache.max_zoom,
         },
         aoi: { type: "geojson", data: aoiData },
       },
