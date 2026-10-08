@@ -641,3 +641,88 @@ test("overlay overzooms past the service cap instead of 400ing", async ({ page }
   expect(bad).toEqual([]);
   expect(pageErrors).toEqual([]);
 });
+
+test("restored URL state drives every control (no inverted checkboxes)", async ({ page }) => {
+  // A shared URL says: inspection OFF, hide-cloudy ON, max cloud 50,
+  // Esri basemap, raw mode. Every input must SHOW that state — otherwise
+  // the next click inverts what the user thinks they are changing.
+  await page.goto(
+    `/p/${SLUG}/?layer=ndvi&date=2026-01-04&hideCloudy=1&maxCloud=50&properties=1&pois=facilities&basemap=esri&mode=raw`,
+  );
+  await expect(page.locator("#date-value")).toHaveText("2026-01-04");
+  await expect(page.locator("#poi-inspection")).not.toBeChecked();
+  await expect(page.locator("#poi-facilities")).toBeChecked();
+  await expect(page.locator("#hide-cloudy")).toBeChecked();
+  await expect(page.locator("#max-cloud")).toHaveValue("50");
+  await expect(page.locator("#show-properties")).toBeChecked();
+  await expect(page.locator("#basemap-select")).toHaveValue("esri");
+  await expect(page.locator('input[name="mode"][value="raw"]')).toBeChecked();
+
+  // state and UI agree on the map itself
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, { timeout: 15000 });
+  const view = await page.evaluate(() => ({
+    inspection:
+      document.querySelector('#poi-markers [data-group="inspection"]') &&
+      getComputedStyle(document.querySelector('#poi-markers [data-group="inspection"]')).display !== "none",
+    base: window.__mirarsetenaMap.getSource("base").tiles?.[0] ?? "",
+  }));
+  expect(view.inspection).toBe(false);
+  expect(view.base).toContain("arcgisonline");
+
+  // flipping the checkbox now flips the map (not the other way around)
+  await page.locator("#poi-inspection").check();
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () =>
+            getComputedStyle(document.querySelector('#poi-markers [data-group="inspection"]')).display !== "none",
+        ),
+      { timeout: 5000 },
+    )
+    .toBe(true);
+});
+
+test("settings are memorized for bare-URL visits", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30000,
+  });
+
+  await page.locator("#basemap-select").selectOption("esri");
+  await page.locator("#poi-inspection").uncheck();
+  await page.locator("#hide-cloudy").check();
+  await page.waitForTimeout(300);
+
+  // fresh visit WITHOUT any query string: remembered settings re-apply
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30000,
+  });
+  await expect(page.locator("#basemap-select")).toHaveValue("esri");
+  await expect(page.locator("#poi-inspection")).not.toBeChecked();
+  await expect(page.locator("#hide-cloudy")).toBeChecked();
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, { timeout: 15000 });
+  const base = await page.evaluate(
+    () => window.__mirarsetenaMap.getSource("base").tiles?.[0] ?? "",
+  );
+  expect(base).toContain("arcgisonline");
+});
+
+test("POI pins speak the active language", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#poi-markers .poi-dot")).toHaveCount(10, {
+    timeout: 30000,
+  });
+
+  // default Spanish-first UI shows the official RES-1333-2017 names
+  await expect(page.locator('#poi-markers .poi-label:text-is("Quebrador")')).toHaveCount(1);
+  await expect(page.locator('#poi-markers .poi-label:text-is("Acopio")')).toHaveCount(1);
+  await expect(page.locator('#poi-markers .poi-label:text-is("Breaker")')).toHaveCount(0);
+
+  // switching language rewrites the pins live
+  await page.locator("#lang-select").selectOption("en");
+  await expect(page.locator('#poi-markers .poi-label:text-is("Breaker")')).toHaveCount(1);
+  await expect(page.locator('#poi-markers .poi-label:text-is("Storage")')).toHaveCount(1);
+  await expect(page.locator('#poi-markers .poi-label:text-is("Quebrador")')).toHaveCount(0);
+});

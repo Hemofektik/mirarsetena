@@ -7,7 +7,7 @@ import { layoutPois } from "./poi-layout.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-export function installPoiMarkers(map, geojson) {
+export function installPoiMarkers(map, geojson, labelFor) {
   const container = document.createElement("div");
   container.id = "poi-markers";
   const leaders = document.createElementNS(SVG_NS, "svg");
@@ -17,10 +17,12 @@ export function installPoiMarkers(map, geojson) {
 
   const markers = [];
   const hiddenGroups = new Set();
+  const label = (marker) =>
+    (labelFor && labelFor(marker.id, marker.fallback)) || marker.fallback;
 
   for (const feature of geojson?.features ?? []) {
     if (feature.geometry?.type !== "Point") continue;
-    const { id, label, group } = feature.properties;
+    const { id, group } = feature.properties;
     const [lng, lat] = feature.geometry.coordinates;
 
     const dot = document.createElement("div");
@@ -29,15 +31,27 @@ export function installPoiMarkers(map, geojson) {
     const text = document.createElement("div");
     text.className = "poi-label";
     text.dataset.group = group;
-    text.textContent = label;
+    const marker = {
+      id,
+      fallback: feature.properties.label,
+      lng,
+      lat,
+      group,
+      dot,
+      label: text,
+      w: 0,
+      h: 0,
+    };
+    text.textContent = label(marker);
     container.append(dot, text);
 
     const line = document.createElementNS(SVG_NS, "line");
     line.setAttribute("class", "poi-leader");
     line.style.display = "none";
     leaders.appendChild(line);
+    marker.line = line;
 
-    markers.push({ id, lng, lat, group, dot, label: text, line, w: 0, h: 0 });
+    markers.push(marker);
   }
 
   // labels never change text: measure once (0 until laid out, so lazily too)
@@ -98,6 +112,24 @@ export function installPoiMarkers(map, geojson) {
     repaint();
   }
 
+  /**
+   * Re-translate pin texts (language switch): labels change width, so their
+   * cached measurements reset and the declutter re-runs.
+   */
+  function updateLabels(provider) {
+    labelFor = provider;
+    for (const marker of markers) {
+      const text = (labelFor && labelFor(marker.id, marker.fallback)) || marker.fallback;
+      if (marker.label.textContent !== text) {
+        marker.label.textContent = text;
+        marker.w = 0;
+        marker.h = 0;
+      }
+      measure(marker);
+    }
+    repaint();
+  }
+
   map.on("move", repaint);
   map.on("zoom", repaint);
   map.on("resize", repaint);
@@ -112,6 +144,7 @@ export function installPoiMarkers(map, geojson) {
 
   return {
     setVisible,
+    updateLabels,
     repaint,
     destroy() {
       map.off("move", repaint);

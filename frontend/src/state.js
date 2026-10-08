@@ -107,6 +107,51 @@ export function setLang(state, lang) {
   return { ...state, lang };
 }
 
+/**
+ * The subset of state worth remembering between visits (localStorage):
+ * display settings only — never the scrubber position or viewport.
+ */
+export function settingsFromState(state) {
+  return {
+    basemap: state.basemap,
+    hideCloudy: Boolean(state.hideCloudy),
+    maxCloud: state.maxCloud,
+    mode: state.mode,
+    poiGroups: { ...state.poiGroups },
+    showProperties: Boolean(state.showProperties),
+  };
+}
+
+/**
+ * Merge a stored settings payload into state. Type-strict: anything that is
+ * not exactly what we wrote (old formats, hand-edited storage, garbage) is
+ * ignored so a broken payload can never invert or corrupt the UI.
+ */
+export function restoreSettings(state, saved) {
+  if (!saved || typeof saved !== "object") return state;
+  let next = state;
+  if (typeof saved.basemap === "string") next = setBasemap(next, saved.basemap);
+  if (typeof saved.mode === "string") next = setMode(next, saved.mode);
+  if (typeof saved.hideCloudy === "boolean") next = { ...next, hideCloudy: saved.hideCloudy };
+  if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
+  if (
+    typeof saved.maxCloud === "number" &&
+    Number.isFinite(saved.maxCloud) &&
+    saved.maxCloud >= 0 &&
+    saved.maxCloud <= 100
+  ) {
+    next = { ...next, maxCloud: saved.maxCloud };
+  }
+  if (saved.poiGroups && typeof saved.poiGroups === "object") {
+    const groups = { ...next.poiGroups };
+    for (const key of ["facilities", "inspection"]) {
+      if (typeof saved.poiGroups[key] === "boolean") groups[key] = saved.poiGroups[key];
+    }
+    next = { ...next, poiGroups: groups };
+  }
+  return next;
+}
+
 export function setViewport(state, bbox, zoom) {
   return { ...state, bbox: bbox ?? null, zoom: zoom ?? null };
 }
@@ -230,6 +275,18 @@ export const MESSAGES = {
     no_dates: "Sin fechas disponibles",
     status: "Estado",
     cloud: "Nube",
+    // POI pin names — official labels from the RES-1333-2017 coordinate
+    // table and the 2016 GPS record (ids from pois.geojson)
+    "poi_project-start": "Inicio",
+    "poi_project-end": "Final",
+    "poi_road-start": "Camino interno existente inicio",
+    "poi_road-end": "Camino interno existente final",
+    "poi_breaker": "Quebrador",
+    "poi_dumper-ramp": "Rampa-quebrador",
+    "poi_office": "Oficina",
+    "poi_storage": "Acopio",
+    "poi_channel": "Cauce",
+    "poi_quarry": "Cantera",
     language: "Idioma",
     close: "Cerrar",
     purpose_title: "Propósito de la Resolución",
@@ -314,6 +371,17 @@ export const MESSAGES = {
     no_dates: "No dates available",
     status: "Status",
     cloud: "Cloud",
+    // POI pin names (ids from pois.geojson; English names as published)
+    "poi_project-start": "Project start",
+    "poi_project-end": "Project end",
+    "poi_road-start": "Internal road start",
+    "poi_road-end": "Internal road end",
+    "poi_breaker": "Breaker",
+    "poi_dumper-ramp": "Dumper ramp",
+    "poi_office": "Office",
+    "poi_storage": "Storage",
+    "poi_channel": "Channel",
+    "poi_quarry": "Quarry",
     language: "Language",
     close: "Close",
     purpose_title: "Purpose of the Resolution",

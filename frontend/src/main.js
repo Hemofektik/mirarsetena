@@ -50,6 +50,33 @@ let lastOverlayTemplate = null;
 let attributionControl = null;
 let poiMarkers = null;
 
+// Display settings remembered between visits (bare-URL loads re-apply
+// them; an explicit URL always wins because it is restored afterwards).
+const SETTINGS_KEY = "mirarsetena.settings";
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(S.settingsFromState(state)));
+  } catch {
+    // private mode / quota — settings simply are not remembered
+  }
+}
+
+function poiLabelFor(id, fallback) {
+  const key = `poi_${id}`;
+  const text = S.t(state.lang, key);
+  return text === key ? fallback : text;
+}
+
 function updateOverlay() {
   if (!map || !map.getLayer("overlay")) return;
   const source = map.getSource("overlay");
@@ -115,6 +142,7 @@ function updateBasemap() {
 function pushUrl() {
   const query = S.serializeState(state);
   history.replaceState(null, "", `${location.pathname}?${query}`);
+  saveSettings(); // every committed state change leaves the settings behind
 }
 
 function cloudClass(cloud) {
@@ -210,8 +238,25 @@ function renderAll() {
   updateOverlay();
   updatePoiVisibility();
   updateAoiVisibility();
-  document.getElementById("show-properties").checked = state.showProperties;
+  syncControlsFromState();
   pushUrl();
+}
+
+/**
+ * The inputs are DOM state that can drift from the model (URL restore,
+ * stored settings). Re-derive them on every render so a checkbox always
+ * SHOWS what the map is doing — a stale box inverts the next click.
+ */
+function syncControlsFromState() {
+  document.getElementById("poi-facilities").checked = state.poiGroups.facilities;
+  document.getElementById("poi-inspection").checked = state.poiGroups.inspection;
+  document.getElementById("hide-cloudy").checked = state.hideCloudy;
+  document.getElementById("max-cloud").value = String(state.maxCloud);
+  document.getElementById("show-properties").checked = state.showProperties;
+  document.getElementById("basemap-select").value = state.basemap;
+  for (const radio of document.querySelectorAll('input[name="mode"]')) {
+    radio.checked = radio.value === state.mode;
+  }
 }
 
 // Sequence tokens: a layer switch must never be undone by a slower response
@@ -341,7 +386,7 @@ function buildMap() {
   // spinners over every in-flight overlay tile (cold scenes take seconds)
   installTileLoaders(map);
   // dots + decluttered labels (symbol layers would hide colliding text)
-  poiMarkers = installPoiMarkers(map, poisData);
+  poiMarkers = installPoiMarkers(map, poisData, poiLabelFor);
   // the style was built with this template (or none when disabled at boot)
   lastOverlayTemplate = state.date && state.layer ? overlayTemplate() : null;
   // debug/QA hook: inspect the live map from the console or automated checks
@@ -440,6 +485,8 @@ function applyI18n() {
     locale,
     "disclaimer"
   );
+  // POI pins carry localized names too — re-translate on every switch
+  poiMarkers?.updateLabels(poiLabelFor);
   document.title = config
     ? `${S.t(locale, "app")} — ${config.name}`
     : S.t(locale, "app");
@@ -466,6 +513,9 @@ async function boot() {
   );
 
   const restored = S.parseState(location.search.slice(1));
+  // remembered display settings first (basemap, checkboxes, ...) — an
+  // explicit URL below overwrites them, so shared links stay faithful
+  state = S.restoreSettings(state, loadSettings());
   if (restored) {
     if (restored.layer && config.layers.includes(restored.layer)) {
       state.layer = restored.layer;

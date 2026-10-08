@@ -3,6 +3,7 @@
  * baseline, URL sharing, i18n catalog).
  * Everything MapLibre/DOM touches goes through these functions.
  */
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   MESSAGES,
@@ -11,11 +12,14 @@ import {
   makeState,
   missionForLayer,
   parseState,
+  restoreSettings,
   serializeState,
+  settingsFromState,
   setBasemap,
   setHideCloudy,
   setLayer,
   setLang,
+  setMode,
   setShowProperties,
   t,
   tileUrl,
@@ -266,5 +270,88 @@ describe("layer help tooltips and resolution purpose text", () => {
     expect(t("en", "purpose_p2")).toContain("11-hectare");
     expect(t("es", "purpose_p3")).toContain("semestrales");
     expect(t("en", "purpose_p3")).toContain("every six months");
+  });
+});
+
+describe("POI pin labels are localized (RES-1333-2017 names)", () => {
+  it("every project POI id resolves in both languages", () => {
+    const pois = JSON.parse(
+      readFileSync(
+        new URL("../../data/projects/cdp-rio-general/pois.geojson", import.meta.url),
+        "utf8",
+      ),
+    );
+    expect(pois.features.length).toBeGreaterThan(0);
+    for (const feature of pois.features) {
+      const key = `poi_${feature.properties.id}`;
+      for (const locale of ["es", "en"]) {
+        const text = MESSAGES[locale][key];
+        expect(text, `${locale}/${key} missing`).toBeTruthy();
+        expect(text, `${locale}/${key} is a raw key`).not.toBe(key);
+      }
+    }
+    // official Spanish names from the resolution's coordinate table
+    expect(t("es", "poi_breaker")).toBe("Quebrador");
+    expect(t("es", "poi_channel")).toBe("Cauce");
+    expect(t("es", "poi_storage")).toBe("Acopio");
+    expect(t("es", "poi_road-start")).toBe("Camino interno existente inicio");
+    expect(t("en", "poi_breaker")).toBe("Breaker");
+  });
+});
+
+describe("remembered settings (bare-URL loads)", () => {
+  it("restores only valid values and ignores garbage", () => {
+    let state = makeState({ slug: "cdp-rio-general", layers: ["ndvi"] });
+    state = restoreSettings(state, {
+      basemap: "esri",
+      hideCloudy: true,
+      maxCloud: 55,
+      showProperties: false,
+      mode: "raw",
+      poiGroups: { facilities: false, inspection: true },
+    });
+    expect(state.basemap).toBe("esri");
+    expect(state.hideCloudy).toBe(true);
+    expect(state.maxCloud).toBe(55);
+    expect(state.showProperties).toBe(false);
+    expect(state.mode).toBe("raw");
+    expect(state.poiGroups).toEqual({ facilities: false, inspection: true });
+
+    // garbage from an old/broken localStorage payload must never corrupt state
+    const dirty = restoreSettings(makeState({ slug: "p", layers: ["ndvi"] }), {
+      basemap: "satellite",
+      hideCloudy: "yes",
+      maxCloud: "banana",
+      showProperties: 0,
+      mode: "weird",
+      poiGroups: { bogus: false, facilities: 1 },
+    });
+    expect(dirty.basemap).toBe("osm");
+    expect(dirty.hideCloudy).toBe(false);
+    expect(dirty.maxCloud).toBe(20);
+    expect(dirty.showProperties).toBe(true); // 0 is not a boolean -> default kept
+    expect(dirty.mode).toBe("change");
+    expect(dirty.poiGroups).toEqual({ facilities: true, inspection: true });
+  });
+
+  it("settings round-trip through the stored payload shape", () => {
+    let state = makeState({ slug: "cdp-rio-general", layers: ["ndvi", "sigma0"] });
+    state = setBasemap(state, "esri");
+    state = setMode(state, "raw");
+    state = setHideCloudy(state, true, 30);
+    state = setShowProperties(state, false);
+    state = togglePoiGroup(state, "inspection");
+    const saved = settingsFromState(state);
+    const restored = restoreSettings(makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }), saved);
+    expect(restored.basemap).toBe("esri");
+    expect(restored.mode).toBe("raw");
+    expect(restored.hideCloudy).toBe(true);
+    expect(restored.maxCloud).toBe(30);
+    expect(restored.showProperties).toBe(false);
+    expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
+    // settings payload never carries transient view state
+    expect(Object.keys(saved).sort()).toEqual(
+      ["basemap", "hideCloudy", "maxCloud", "mode", "poiGroups", "showProperties"],
+    );
   });
 });
