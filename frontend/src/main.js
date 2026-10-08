@@ -122,7 +122,9 @@ function renderLayerButtons() {
     button.setAttribute("aria-pressed", String(layer === state.layer));
     button.addEventListener("click", () => {
       if (state.layer === layer) {
-        // clicking the pressed pill disables the layer entirely
+        // clicking the pressed pill disables the layer entirely; the bump
+        // also cancels an in-flight dates fetch for this layer
+        datesSeq += 1;
         state = S.disableLayer(state);
         renderAll();
       } else {
@@ -191,16 +193,32 @@ function renderAll() {
   pushUrl();
 }
 
+// Sequence tokens: a layer switch must never be undone by a slower response
+// from a previous one (last click wins, not last response).
+let datesSeq = 0;
+
 async function fetchDates(layer) {
-  const payload = await getJSON(
-    `/p/${state.slug}/api/dates?layer=${encodeURIComponent(layer)}`
-  );
-  state = S.applyDates({ ...state, layer }, payload.dates);
+  const token = ++datesSeq;
+  try {
+    const payload = await getJSON(
+      `/p/${state.slug}/api/dates?layer=${encodeURIComponent(layer)}`
+    );
+    if (token !== datesSeq) return; // a newer switch owns the state
+    state = S.applyDates({ ...state, layer }, payload.dates);
+    renderAll();
+  } catch (error) {
+    if (token !== datesSeq) return;
+    console.error("dates request failed", error);
+    renderAll(); // stay usable on the optimistic state
+  }
 }
 
-async function selectLayer(layer) {
-  await fetchDates(layer);
+function selectLayer(layer) {
+  // React first: the pill and its controls move without waiting for the
+  // catalog; the fetch below fills the dates in afterwards.
+  state = S.setLayer(state, layer, state.dates);
   renderAll();
+  fetchDates(layer);
 }
 
 async function applyDate(date) {

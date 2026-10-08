@@ -20,9 +20,14 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   expect(s2Count).toBeGreaterThan(10);
 
   // switch to a radar layer: controls appear, dates become the S1 set
+  // (count comes from the API — the live catalog grows over time)
+  const s1Count = await page.evaluate(async (slug) => {
+    const response = await fetch(`/p/${slug}/api/dates?layer=sigma0`);
+    return (await response.json()).dates.length;
+  }, SLUG);
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
   await expect(page.locator("#radar-controls")).toBeVisible();
-  await expect(page.locator("#cloud-strip span")).toHaveCount(8, {
+  await expect(page.locator("#cloud-strip span")).toHaveCount(s1Count, {
     timeout: 30_000,
   });
 
@@ -46,7 +51,7 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await page.locator("#hide-cloudy").uncheck();
 
   // baseline select lists the S1 dates (radar controls)
-  await expect(page.locator("#baseline-select option")).toHaveCount(9); // 8 + default
+  await expect(page.locator("#baseline-select option")).toHaveCount(s1Count + 1); // dates + default
 
   // POI group toggle + basemap swap keep the app alive
   await page.locator("#poi-facilities").uncheck();
@@ -259,4 +264,73 @@ test("property perimeter layer renders and toggles", async ({ page }) => {
       { timeout: 10000 },
     )
     .toBe("visible");
+});
+
+test("layer switch reacts immediately while the dates API is stalled", async ({ page }) => {
+  // Simulate a busy/slow backend: hold every dates request for 8s once boot
+  // has finished. The UI must still switch layers without waiting for it.
+  let stall = false;
+  await page.route("**/api/dates*", async (route) => {
+    if (stall) await new Promise((r) => setTimeout(r, 8000));
+    await route.continue();
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+
+  stall = true;
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+
+  // the pill and the radar controls must react now, not after the fetch
+  await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveText(
+    "sigma0",
+    { timeout: 2_000 },
+  );
+  await expect(page.locator("#radar-controls")).toBeVisible({ timeout: 2_000 });
+
+  // a second switch while the first is still in flight must win
+  await page.locator('#layer-buttons button:has-text("ndvi")').click();
+  await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveText(
+    "ndvi",
+    { timeout: 2_000 },
+  );
+  await expect(page.locator("#radar-controls")).toBeHidden({ timeout: 2_000 });
+
+  // once the stalled responses land, the surviving selection gets its dates
+  stall = false;
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+});
+
+test("a failing dates request leaves the UI usable", async ({ page }) => {
+  let fail = false;
+  await page.route("**/api/dates*", async (route) => {
+    if (fail) await route.abort("failed");
+    else await route.continue();
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+
+  fail = true;
+  await page.locator('#layer-buttons button:has-text("coherence")').click();
+  // still reacts: pill switches, no crash, no stuck spinner
+  await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveText(
+    "coherence",
+    { timeout: 2_000 },
+  );
+  await expect(page.locator("body")).not.toContainText("Failed to start");
+
+  // and it recovers when the backend comes back
+  fail = false;
+  await page.locator('#layer-buttons button:has-text("ndvi")').click();
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 20_000,
+  });
 });
