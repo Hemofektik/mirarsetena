@@ -3,7 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 import * as S from "./state.js";
-import { installTileLoaders } from "./tile-loaders.js";
+import { installTileLoaders, retireTileRequests } from "./tile-loaders.js";
 
 const LOCALE = "es";
 const slug = location.pathname.split("/").filter(Boolean)[1];
@@ -58,8 +58,17 @@ function updateOverlay() {
   // invalidates the style (isStyleLoaded() -> false) and would starve the
   // guards of every later render step.
   if (template && template !== lastOverlayTemplate) {
+    // MapLibre never cancels the previous date's fetches — retire them so
+    // an abandoned cold scene stops loading (and stops the server work).
+    retireTileRequests(template);
     source.setTiles([template]);
     lastOverlayTemplate = template;
+  }
+  if (!enabled && lastOverlayTemplate !== null) {
+    // switched off: drop in-flight tiles and forget the template so
+    // re-enabling fetches fresh instead of waiting on aborted requests
+    retireTileRequests(null);
+    lastOverlayTemplate = null;
   }
   map.setLayoutProperty("overlay", "visibility", enabled ? "visible" : "none");
 }

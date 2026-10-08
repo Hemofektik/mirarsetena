@@ -403,3 +403,72 @@ test("each in-flight tile request shows a loading animation", async ({ page }) =
     timeout: 60_000,
   });
 });
+
+test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__tileEv = [];
+    const real = window.fetch;
+    window.fetch = function (input, init) {
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      if (!url.includes("/tiles/")) return real.call(this, input, init);
+      const m = url.match(/\/tiles\/([^/]+)\/(\d{4}-\d{2}-\d{2})\//);
+      const tag = m ? `${m[1]}@${m[2]}` : "other";
+      window.__tileEv.push({ e: "start", tag });
+      return real.call(this, input, init).then(
+        (r) => {
+          window.__tileEv.push({ e: r.ok ? "ok" : `http${r.status}`, tag });
+          return r;
+        },
+        (err) => {
+          window.__tileEv.push({ e: err.name === "AbortError" ? "abort" : "neterr", tag });
+          throw err;
+        },
+      );
+    };
+  });
+  // Only the SECOND date is slow (a cold scene the user then abandons).
+  await page.route("**/p/**/tiles/**/2026-01-09/**", async (route) => {
+    await new Promise((r) => setTimeout(r, 10_000));
+    await route.continue();
+  });
+
+  await page.goto(`/p/${SLUG}/?layer=ndvi`);
+  await expect(page.locator("#date-value")).toHaveText("2026-01-04", {
+    timeout: 30_000,
+  });
+  // first date settles normally (warm)
+  await expect(page.locator(".tile-loader")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+
+  // scrub to the slow date: its tiles go in flight
+  await page.locator("#date-range").evaluate((el) => {
+    el.value = "1";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#date-value")).toHaveText("2026-01-09");
+  await expect(page.locator(".tile-loader").first()).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // scrub back: the abandoned date must be aborted, not waited out, and
+  // the cached first date must render without it
+  await page.locator("#date-range").evaluate((el) => {
+    el.value = "0";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect(page.locator("#date-value")).toHaveText("2026-01-04");
+  await expect
+    .poll(
+      () =>
+        page.evaluate(
+          () => window.__tileEv.filter((ev) => ev.e === "abort" && ev.tag.includes("2026-01-09")).length,
+        ),
+      { timeout: 8_000 },
+    )
+    .toBeGreaterThan(0);
+  // and no spinner lingers for the abandoned date
+  await expect(page.locator(".tile-loader")).toHaveCount(0, {
+    timeout: 8_000,
+  });
+});

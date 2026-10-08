@@ -44,6 +44,15 @@ def create_app(
     async def lifespan(app_):
         import asyncio
 
+        import anyio.to_thread
+
+        # Cold tile requests occupy a worker thread for their whole
+        # production; abandoned waves (user scrubs away) keep holding
+        # theirs until done. A deep pool keeps cache hits instant instead
+        # of queueing behind them (MIRAR_THREADPOOL_TOKENS, default 128).
+        capacity = int(os.environ.get("MIRAR_THREADPOOL_TOKENS", "128"))
+        anyio.to_thread.current_default_thread_limiter().total_tokens = capacity
+
         interval = int(os.environ.get("MIRAR_POLL_SECONDS", "3600"))
         task = asyncio.create_task(poller_loop(app_, interval))
         app_.state.poller = task
@@ -73,8 +82,11 @@ def create_app(
         )
 
     @app.get("/healthz")
-    def healthz() -> dict[str, str]:
-        return {"status": "ok"}
+    async def healthz() -> dict:
+        import anyio.to_thread
+
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        return {"status": "ok", "threadpool_tokens": int(limiter.total_tokens)}
 
     @app.get("/p/{slug}/config")
     def project_config(slug: str) -> dict:

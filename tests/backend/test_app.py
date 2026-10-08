@@ -13,19 +13,35 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "config" / "projects"
 
 
+# Lifespan runs an immediate catalog poll; keep it offline and instant.
+def _offline_search(collection, bbox, start, end):
+    return []
+
+
 @pytest.fixture(scope="module")
-def client(tmp_path_factory):
-    app = create_app(
+def app(tmp_path_factory):
+    return create_app(
         config_dir=CONFIG_DIR,
         storage_root=tmp_path_factory.mktemp("cache"),
+        search_fn=_offline_search,
     )
-    return TestClient(app)
+
+
+@pytest.fixture(scope="module")
+def client(app):
+    with TestClient(app) as client_:
+        yield client_
 
 
 def test_healthz_returns_ok(client):
     response = client.get("/healthz")
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    body = response.json()
+    assert body["status"] == "ok"
+    # Cold tile requests block worker threads for their whole production;
+    # the pool must stay deep enough that cache hits are never queued
+    # behind abandoned waves (user report: scrub-back never renders).
+    assert body["threadpool_tokens"] >= 128
 
 
 def test_project_config_route_serves_the_loaded_project(client):

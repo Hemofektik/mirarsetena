@@ -1,19 +1,48 @@
 /**
- * Per-tile loading animation for the satellite overlay.
+ * Per-tile loading animation + retirement for the satellite overlay.
  *
  * The server may cold-process a scene for tens of seconds per (layer, date),
- * and until now the map just sat there. Every in-flight overlay tile request
- * gets a spinner pinned to that tile's screen position; it disappears the
- * moment the response lands (success, 404 or abort alike).
+ * so every in-flight overlay tile request gets a spinner pinned to that
+ * tile's screen position; it disappears the moment the response lands
+ * (success, 404 or abort alike).
  *
  * Requests are tracked at the fetch layer — MapLibre loads raster tiles
  * through window.fetch (verified against maplibre-gl v5: 40/40 tile
  * requests, zero XHR). Basemaps (OSM/Esri) use other URL shapes and are
  * intentionally not matched: only our own server can be slow.
+ *
+ * Retirement: MapLibre queues tile requests internally and dispatches them
+ * to fetch SECONDS after setTiles() — a scrub away and back would let the
+ * abandoned date's whole wave start late and block the map. Two guards:
+ * retireTileRequests() aborts what is already in flight, and the dispatch
+ * check below drops queued requests whose template is no longer current.
  */
 
 // /p/<slug>/tiles/<layer>/<date>/<z>/<x>/<y>.png?...
 const TILE_URL = /\/tiles\/[^/]+\/\d{4}-\d{2}-\d{2}\/(\d+)\/(\d+)\/(\d+)\.png/;
+
+/**
+ * Template the overlay is currently supposed to load.
+ * undefined = not primed yet (boot); null = overlay switched off.
+ * @type {string | null | undefined}
+ */
+let currentTemplate;
+
+/** In-flight overlay fetches: {templateKey, controller}. */
+const inFlightRequests = new Set();
+
+export function retireTileRequests(templateKey) {
+  currentTemplate = templateKey;
+  for (const record of inFlightRequests) {
+    if (templateKey === null || record.templateKey !== templateKey) {
+      record.controller.abort();
+    }
+  }
+}
+
+function templateKeyOf(url) {
+  return url.replace(/\/\d+\/\d+\/\d+\.png/, "/{z}/{x}/{y}.png");
+}
 
 function tileBounds(z, x, y) {
   const n = 2 ** z;
@@ -87,23 +116,46 @@ export function installTileLoaders(map) {
           : String(input ?? "");
     const match = TILE_URL.exec(url);
     if (!match) return realFetch(input, init);
+    const templateKey = templateKeyOf(url);
+    // Queued behind a template switch: never dispatch it at all.
+    if (currentTemplate !== undefined && templateKey !== currentTemplate) {
+      return Promise.reject(
+        new DOMException("The operation was aborted.", "AbortError"),
+      );
+    }
+    // Combined signal: MapLibre's own abort or our retire() (scrub/switch).
+    const controller = new AbortController();
+    const upstream = init?.signal;
+    if (upstream) {
+      if (upstream.aborted) controller.abort();
+      else
+        upstream.addEventListener("abort", () => controller.abort(), {
+          once: true,
+        });
+    }
+    const record = { templateKey, controller };
+    inFlightRequests.add(record);
     const [, z, x, y] = match;
     const key = `${z}/${x}/${y}`;
     show(key, Number(z), Number(x), Number(y));
+    const settle = () => {
+      hide(key);
+      inFlightRequests.delete(record);
+    };
     let request;
     try {
-      request = realFetch(input, init);
+      request = realFetch(input, { ...(init ?? {}), signal: controller.signal });
     } catch (error) {
-      hide(key);
+      settle();
       throw error;
     }
     return request.then(
       (response) => {
-        hide(key); // headers arrived: the server is done thinking
+        settle(); // headers arrived: the server is done thinking
         return response;
       },
       (error) => {
-        hide(key); // aborts and network failures clear just the same
+        settle(); // aborts and network failures clear just the same
         throw error;
       },
     );
