@@ -376,3 +376,30 @@ test("basemap switch swaps attribution without console errors", async ({ page })
 
   expect(errors).toEqual([]);
 });
+
+test("each in-flight tile request shows a loading animation", async ({ page }) => {
+  // Slow server simulation: hold every overlay tile for 3s (the real
+  // server can cold-process a scene for much longer) and watch spinners.
+  await page.route("**/p/**/tiles/**", async (route) => {
+    await new Promise((r) => setTimeout(r, 3000));
+    await route.continue();
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+
+  // while requests are in flight: one positioned loader per pending tile
+  const loader = page.locator(".tile-loader").first();
+  await expect(loader).toHaveAttribute("data-tile", /^\d+\/\d+\/\d+$/, {
+    timeout: 15_000,
+  });
+  await expect(loader).toHaveCSS("position", "absolute");
+  expect(await loader.evaluate((el) => el.style.left)).not.toBe("");
+
+  // once every tile answered, no loader may remain
+  await expect(page.locator(".tile-loader")).toHaveCount(0, {
+    timeout: 60_000,
+  });
+});

@@ -343,3 +343,44 @@ dialog form button {
     border-top: 1px solid var(--line);
   }
 }
+
+/* Per-tile loading animation (tile-loaders.js): one spinner per in-flight
+   overlay tile, pinned to the tile's screen position while the server
+   cold-processes. Container sits above the canvas but ignores pointers. */
+#tile-loaders {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.tile-loader {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.18);
+  border-radius: 2px;
+}
+
+.tile-loader-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.55);
+  border-top-color: #2563eb;
+  animation: tile-loader-spin 0.9s linear infinite;
+}
+
+@keyframes tile-loader-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tile-loader-spinner {
+    animation-duration: 2.5s;
+  }
+}

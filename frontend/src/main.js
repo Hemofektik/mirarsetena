@@ -3,6 +3,7 @@ import maplibregl from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 import * as S from "./state.js";
+import { installTileLoaders } from "./tile-loaders.js";
 
 const LOCALE = "es";
 const slug = location.pathname.split("/").filter(Boolean)[1];
@@ -324,6 +325,8 @@ function buildMap() {
     attributionControl: false,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  // spinners over every in-flight overlay tile (cold scenes take seconds)
+  installTileLoaders(map);
   // the style was built with this template (or none when disabled at boot)
   lastOverlayTemplate = state.date && state.layer ? overlayTemplate() : null;
   // debug/QA hook: inspect the live map from the console or automated checks
