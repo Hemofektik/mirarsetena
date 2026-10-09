@@ -43,6 +43,7 @@ def make_processor(storage: Storage, config: ProjectConfig, search_fn) -> Callab
     produced exclusively by the background coherence jobs (Phase H).
     """
     in_flight: dict[tuple[str, str], Future] = {}
+    produced: set[tuple[str, str]] = set()  # completed productions, incl. empty ones
     guard = threading.Lock()
     # Source-level LRU: scene windows, derived layer products and coherence
     # pairs share one budget (scene_budget_bytes in the project config).
@@ -67,6 +68,11 @@ def make_processor(storage: Storage, config: ProjectConfig, search_fn) -> Callab
             return
         key = (mission, date)
         with guard:
+            if key in produced:
+                return  # a completed production is never re-run: an empty
+                # search writes no product, and without this memo every
+                # request arriving after the in-flight future pops would
+                # start a NEW production (flaked 1-in-6 as a CI test)
             future = in_flight.get(key)
             if future is None:
                 future = Future()
@@ -83,6 +89,8 @@ def make_processor(storage: Storage, config: ProjectConfig, search_fn) -> Callab
             future.set_exception(exc)
             raise
         else:
+            with guard:
+                produced.add(key)
             future.set_result(None)
         finally:
             with guard:

@@ -25,7 +25,7 @@ def test_concurrent_requests_produce_each_mission_once(tmp_path):
 
     def slow_search(collection, bbox, start, end):
         calls[collection] = calls.get(collection, 0) + 1
-        time.sleep(0.4)
+        time.sleep(1.5)
         return []
 
     process = make_processor(storage, config, slow_search)
@@ -53,7 +53,7 @@ def test_stale_index_refreshes_once_under_concurrency(tmp_path):
 
     def slow_search(collection, bbox, start, end):
         calls[collection] = calls.get(collection, 0) + 1
-        time.sleep(0.4)
+        time.sleep(1.5)
         return []
 
     storage.put(
@@ -103,9 +103,9 @@ def test_app_shares_one_processor_across_concurrent_tile_requests(tmp_path):
     def slow_search(collection, bbox, start, end):
         if start == end:  # produce()'s narrow call
             produce_calls[collection] = produce_calls.get(collection, 0) + 1
-            time.sleep(0.5)
+            time.sleep(1.5)  # wide overlap window: both tile requests must share one flight
             return []  # no assets: production ends without writing a product
-        time.sleep(0.5)
+        time.sleep(1.5)
         # catalog query (dates index): offer the requested date
         from mirarsetena.pipeline.catalog import Scene
 
