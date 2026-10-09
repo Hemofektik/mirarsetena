@@ -7,7 +7,7 @@
  * (success, 404 or abort alike).
  *
  * Requests are tracked at the fetch layer — MapLibre loads raster tiles
- * through window.fetch (verified against maplibre-gl v5: 40/40 tile
+ * through window.fetch (verified against maplibre-gl v5 and v6: 40/40 tile
  * requests, zero XHR). Basemaps (OSM/Esri) use other URL shapes and are
  * intentionally not matched: only our own server can be slow.
  *

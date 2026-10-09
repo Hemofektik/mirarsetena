@@ -1,10 +1,15 @@
 /* Mirar Setena frontend: MapLibre shell wired to the pure state model. */
-import maplibregl from "maplibre-gl";
+// maplibre-gl v6 is ESM-only: namespace import + an explicit worker URL for
+// bundlers (import.meta.url doesn't reach the worker file inside Vite's graph).
+import * as maplibregl from "maplibre-gl";
+import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 import * as S from "./state.js";
 import { installPoiMarkers } from "./poi-markers.js";
 import { installTileLoaders, retireTileRequests } from "./tile-loaders.js";
+
+maplibregl.setWorkerUrl(workerUrl);
 
 const LANG_KEY = "mirarsetena.lang";
 const slug = location.pathname.split("/").filter(Boolean)[1];

@@ -878,3 +878,33 @@ test("a fast range drag retargets the overlay once", async ({ page }) => {
   expect(baselines.size).toBeLessThanOrEqual(1);
   expect(requested.length).toBeGreaterThan(0); // it still loads, just once
 });
+
+test("retargeting over errored tiles never crashes the renderer", async ({ page }) => {
+  // maplibre-gl-js #7775: setTiles() over a source holding `errored` tiles
+  // re-promotes them to a renderable state without a texture → the raster
+  // renderer throws `...reading 'bind'` on the next frame. Overlay tiles
+  // outside coverage (or aborted mid-scrub) really do end up errored here,
+  // so reproduce it deterministically: every tile 404s, slowly — the slow
+  // response keeps the crash window wide open during the retarget.
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(String(error)));
+  await page.route(`**/p/${SLUG}/tiles/**`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.fulfill({ status: 404, body: "" });
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+  // let the 404s settle so the source cache holds errored tiles in view
+  await page.waitForTimeout(8000);
+
+  // setTiles() with those errored tiles present — the crash window
+  await page.locator('#layer-buttons button:has-text("bsi")').click();
+  await expect(page).toHaveURL(/layer=bsi/);
+  await page.waitForTimeout(3000);
+  // one more retarget while the first refetch wave may still be in flight
+  await page.locator('#layer-buttons button:has-text("ndvi")').click();
+  await page.waitForTimeout(3000);
+
+  expect(pageErrors.filter((error) => error.includes("bind"))).toEqual([]);
+});
