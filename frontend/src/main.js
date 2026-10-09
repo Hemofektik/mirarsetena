@@ -238,16 +238,19 @@ function renderScrubber() {
   const endInput = document.getElementById("date-end");
   startInput.hidden = !radar;
 
-  // END keeps static bounds (0..last): a dynamic min became degenerate
-  // (min == max) whenever the thumbs were adjacent and Chrome parked the
-  // thumb at the left edge — "moving one knob moves the other". The
-  // start<end wall lives on the START input (max = end - 1) and in
-  // applyDate() for the end handler.
+  // Both thumbs keep STATIC bounds (0..last): Chrome paints a thumb at
+  // value/max, so the start input's former dynamic max (end - 1) —
+  // rewritten on every input event — repositioned the LEFT thumb whenever
+  // the END knob moved ("the left slider knob moves when I drag the right
+  // knob"). The start<end wall is value-clamped in the input handlers and
+  // applyDate() instead of via bounds (a dynamic min/max went degenerate
+  // min == max when the thumbs were adjacent and Chrome parked the thumb
+  // at the left edge).
   endInput.min = "0";
   endInput.max = String(lastIndex);
   endInput.value = String(Math.max(endIdx, 0));
   startInput.min = "0";
-  startInput.max = String(Math.max(endIdx - 1, 0));
+  startInput.max = String(lastIndex);
   startInput.value = String(startIdx);
 
   const span = document.getElementById("range-span");
@@ -492,9 +495,13 @@ function wireUi() {
     if (entry) applyDate(entry.date);
   });
   document.getElementById("date-start").addEventListener("input", (event) => {
-    // the input's dynamic max keeps this strictly before the end thumb
+    // static bounds let the thumb travel past the end knob: clamp it back
+    // to end - 1 here (the mirror of applyDate's end >= start + 1 clamp)
     const dates = S.visibleDates(state);
-    const entry = dates[Number(event.target.value)];
+    const { endIdx } = S.sliderIndices(state, dates);
+    let idx = Number(event.target.value);
+    if (idx >= endIdx) idx = Math.max(endIdx - 1, 0);
+    const entry = dates[idx];
     if (entry) {
       state = S.setBaseline(state, entry.date);
       renderAll();

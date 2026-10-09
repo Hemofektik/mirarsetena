@@ -758,17 +758,20 @@ test("radar range slider drives start and end of the change", async ({ page }) =
     page.evaluate(() => ({
       start: Number(document.getElementById("date-start").value),
       end: Number(document.getElementById("date-end").value),
+      startMin: document.getElementById("date-start").min,
       startMax: Number(document.getElementById("date-start").max),
       endMin: Number(document.getElementById("date-end").min),
+      endMax: Number(document.getElementById("date-end").max),
       readout: document.getElementById("date-value").textContent,
     }));
 
   let v = await read();
   expect(v.start).toBeLessThan(v.end); // range start strictly before end
-  expect(v.startMax).toBe(v.end - 1); // start can never pass the end...
-  expect(v.endMin).toBe(0); // ...but the end keeps static bounds (a
-  // dynamic min made it degenerate min==max whenever the thumbs were
-  // adjacent and Chrome parked its thumb at the left edge)
+  // both thumbs share ONE static scale (0..lastIndex): a dynamic start.max
+  // repositioned the left thumb every time the end knob moved
+  expect(v.startMin).toBe("0");
+  expect(v.endMin).toBe(0);
+  expect(v.startMax).toBe(v.endMax);
   expect(v.readout).toContain("→");
 
   // dragging the start writes the range start into the shared URL
@@ -793,6 +796,60 @@ test("radar range slider drives start and end of the change", async ({ page }) =
   expect(v.end).toBeLessThanOrEqual(endBefore);
   expect(v.end).toBeGreaterThanOrEqual(v.start + 1);
   expect(v.readout).toContain("→");
+});
+
+test("the left thumb stays put while dragging the right knob", async ({ page }) => {
+  // Chrome paints a range thumb at (value - min) / (max - min) of the
+  // track. The start input used to carry a DYNAMIC max (end - 1) that was
+  // rewritten on every input event, so dragging the right knob repositioned
+  // the left thumb even though its value never changed — "the left slider
+  // knob is still moving when I drag the right knob".
+  await page.goto(`/p/${SLUG}/`);
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+
+  const read = () =>
+    page.evaluate(() => {
+      const start = document.getElementById("date-start");
+      const end = document.getElementById("date-end");
+      const frac = (el) => {
+        const span = Number(el.max) - Number(el.min);
+        return span === 0 ? 0 : (Number(el.value) - Number(el.min)) / span;
+      };
+      return {
+        startValue: start.value,
+        startMax: start.max,
+        startMin: start.min,
+        endMax: end.max,
+        endMin: end.min,
+        startFrac: frac(start),
+      };
+    });
+
+  const rest = await read();
+  // one shared static scale for both thumbs (0..lastIndex): the left
+  // thumb's position then depends only on its own value
+  expect(rest.startMin).toBe("0");
+  expect(rest.endMin).toBe("0");
+  expect(rest.startMax).toBe(rest.endMax);
+
+  const box = await page.locator("#date-slider").boundingBox();
+  const y = box.y + 12;
+  // grab the END thumb — it sits at the far right (its value is the last index)
+  const grabX = box.x + box.width - 8;
+  await page.mouse.move(grabX, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 15; i += 1) {
+    await page.mouse.move(grabX - i * 9, y);
+    await page.waitForTimeout(20);
+    const mid = await read();
+    expect(mid.startValue).toBe(rest.startValue); // value frozen...
+    expect(mid.startFrac).toBeCloseTo(rest.startFrac, 5); // ...and thumb still
+  }
+  await page.mouse.up();
 });
 
 test("adjacent knobs stay put: moving one never moves the other", async ({ page }) => {
@@ -859,7 +916,14 @@ test("a fast range drag retargets the overlay once", async ({ page }) => {
 
   const box = await page.locator("#date-slider").boundingBox();
   const y = box.y + 12;
-  const startX = box.x + 8 + (0.75 * (box.width - 16));
+  // grab the START thumb where it actually sits: value/max of the shared
+  // static scale (the old hardcoded 75% assumed a dynamic start.max)
+  const startThumb = await page.evaluate(() => {
+    const el = document.getElementById("date-start");
+    const span = Number(el.max) - Number(el.min);
+    return span === 0 ? 0 : (Number(el.value) - Number(el.min)) / span;
+  });
+  const startX = box.x + 8 + startThumb * (box.width - 16);
   await page.mouse.move(startX, y);
   await page.mouse.down();
   for (let i = 1; i <= 12; i += 1) {
