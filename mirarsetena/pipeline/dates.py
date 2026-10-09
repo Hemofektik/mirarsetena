@@ -18,6 +18,7 @@ from mirarsetena.projects.registry import ProjectConfig, cache_key
 from mirarsetena.storage import Storage
 
 INDEX_TTL = timedelta(hours=6)
+INDEX_VERSION = 2  # v2 = per-date orbit geometry (viewing-direction matching)
 
 S2_LAYERS = {"rgb", "ndvi", "mndwi", "bsi"}
 S1_LAYERS = {"sigma0", "coherence"}
@@ -55,6 +56,10 @@ def _catalog_cloud(daily: DailyScene) -> float | None:
 
 def _fresh(index: dict | None, now: datetime) -> bool:
     if not index:
+        return False
+    # schema bump: indexes written before orbit geometry existed must
+    # re-refresh instead of serving geometry-less entries for 6h
+    if index.get("v") != INDEX_VERSION:
         return False
     try:
         updated = datetime.fromisoformat(index["updated_at"])
@@ -118,10 +123,28 @@ def refresh_index(
                 "date": daily.date,
                 "cloud": _catalog_cloud(daily),
                 "scenes": [scene.id for scene in daily.scenes],
+                # viewing geometry per date: unique (state, relative orbit)
+                # pairs of the scenes merged into this daily product
+                "orbits": [
+                    list(pair)
+                    for pair in sorted(
+                        {
+                            (scene.orbit_state, scene.relative_orbit)
+                            for scene in daily.scenes
+                            if scene.orbit_state
+                            or scene.relative_orbit is not None
+                        },
+                        key=lambda pair: (pair[0] or "", pair[1] or 0),
+                    )
+                ],
             }
             for daily in group_by_date(scenes)
         ]
-    index = {"updated_at": now.isoformat(), "missions": missions}
+    index = {
+        "v": INDEX_VERSION,
+        "updated_at": now.isoformat(),
+        "missions": missions,
+    }
     storage.put(index_key(config.slug), json.dumps(index).encode("utf-8"))
     return index
 
@@ -161,7 +184,14 @@ def list_dates(
                 cloud = round(float(meta["cloud"]), 2)
                 processed = True
         enriched.append(
-            {"date": entry["date"], "cloud": cloud, "processed": processed}
+            {
+                "date": entry["date"],
+                "cloud": cloud,
+                "processed": processed,
+                "orbits": [
+                    list(pair) for pair in entry.get("orbits", [])
+                ],
+            }
         )
 
     if max_cloud is not None:

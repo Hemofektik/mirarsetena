@@ -972,3 +972,56 @@ test("retargeting over errored tiles never crashes the renderer", async ({ page 
 
   expect(pageErrors.filter((error) => error.includes("bind"))).toEqual([]);
 });
+
+test("orbit geometry labels dates and warns on mismatched pairs", async ({ page }) => {
+  // Ascending vs descending backscatter differs by slope aspect in this
+  // mountainous AOI — comparing them reads as noise. The UI must show each
+  // date's viewing geometry and flag a start/end pair that doesn't match.
+  await page.goto(`/p/${SLUG}/`);
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+
+  // cloud-strip tooltips carry the acquisition geometry
+  const titles = await page
+    .locator("#cloud-strip span")
+    .evaluateAll((els) => els.map((el) => el.title));
+  expect(titles.some((t) => /ASC|DESC/.test(t))).toBe(true);
+
+  // the warning element exists but stays hidden while the pair matches
+  const warn = page.locator("#date-geom-warn");
+  await expect(warn).toHaveCount(1);
+  await expect(warn).toBeHidden();
+
+  // pick a start date whose geometry differs from the (default) end date
+  const idx = await page.evaluate(async (slug) => {
+    const payload = await (await fetch(`/p/${slug}/api/dates?layer=sigma0`)).json();
+    const entries = payload.dates;
+    const sig = (e) => JSON.stringify([...(e.orbits ?? [])].sort());
+    const endSig = sig(entries[entries.length - 1]);
+    let mismatch = -1;
+    let match = -1;
+    for (let i = 0; i < entries.length - 1; i += 1) {
+      if (!entries[i].orbits?.length) continue;
+      if (sig(entries[i]) !== endSig && mismatch < 0) mismatch = i;
+      if (sig(entries[i]) === endSig && match < 0) match = i;
+    }
+    return { mismatch, match };
+  }, SLUG);
+  expect(idx.mismatch).toBeGreaterThanOrEqual(0);
+  expect(idx.match).toBeGreaterThanOrEqual(0);
+
+  await page.locator("#date-start").evaluate((el, value) => {
+    el.value = String(value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }, idx.mismatch);
+  await expect(warn).toBeVisible();
+
+  await page.locator("#date-start").evaluate((el, value) => {
+    el.value = String(value);
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  }, idx.match);
+  await expect(warn).toBeHidden();
+});

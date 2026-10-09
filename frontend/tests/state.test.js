@@ -496,3 +496,67 @@ describe("sliderIndices (shared by render and handlers)", () => {
     expect(idx.endIdx).toBe(-1);
   });
 });
+
+describe("geometry-aware default baseline (same-geometry pairing)", () => {
+  const G_DATES = [
+    { date: "2026-01-05", orbits: [["ascending", 92], ["descending", 84]] },
+    { date: "2026-04-11", orbits: [["descending", 84]] },
+    { date: "2026-05-05", orbits: [["ascending", 92], ["descending", 84]] },
+    { date: "2026-07-23", orbits: [["ascending", 92]] },
+    { date: "2026-09-09", orbits: [["ascending", 92]] },
+    { date: "2026-10-03", orbits: [["descending", 84]] },
+  ];
+  const WORKS = "2026-08-01";
+
+  it("prefers a pure same-geometry pre-works date over a newer mismatched one", () => {
+    expect(defaultBaselineIndex(G_DATES, WORKS, "2026-10-03")).toBe(1); // 04-11 desc
+    expect(defaultBaselineIndex(G_DATES, WORKS, "2026-09-09")).toBe(3); // 07-23 asc
+  });
+
+  it("tier 2 accepts a dual-track date containing the end geometry", () => {
+    const noPureDesc = G_DATES.filter((d) => d.date !== "2026-04-11");
+    // indices shift after the filter: 01-05=0, 05-05=1, 07-23=2, ...
+    expect(defaultBaselineIndex(noPureDesc, WORKS, "2026-10-03")).toBe(1); // 05-05
+  });
+
+  it("missing orbit info or end date falls back to legacy latest-pre-works", () => {
+    const plain = G_DATES.map(({ date }) => ({ date, cloud: null }));
+    expect(defaultBaselineIndex(plain, WORKS, "2026-10-03")).toBe(3); // 07-23
+    expect(defaultBaselineIndex(G_DATES, WORKS)).toBe(3); // no end date
+    // end itself is pre-works: candidates exclude it, so the OTHER
+    // dual-track date wins tier 1 instead of comparing a date to itself
+    expect(defaultBaselineIndex(G_DATES, WORKS, "2026-05-05")).toBe(0); // 01-05
+  });
+});
+
+describe("materialized default baseline never follows the end date", () => {
+  const G_DATES = [
+    { date: "2026-01-05", orbits: [["ascending", 92], ["descending", 84]] },
+    { date: "2026-04-11", orbits: [["descending", 84]] },
+    { date: "2026-07-23", orbits: [["ascending", 92]] },
+    { date: "2026-09-09", orbits: [["ascending", 92]] },
+    { date: "2026-10-03", orbits: [["descending", 84]] },
+  ];
+
+  it("materializes once at boot, then stays put while the end moves", () => {
+    let state = {
+      ...makeState({
+        slug: "cdp-rio-general",
+        layers: ["sigma0"],
+        timeline: { start: "2026-01-01", works_start: "2026-08-01" },
+      }),
+      layer: "sigma0",
+      date: "2026-10-03",
+      baseline: null,
+      worksStart: "2026-08-01",
+    };
+    state = ensureRadarRange(state, G_DATES);
+    // geometry-matched default (desc end -> pure desc pre-works date) is
+    // written into state instead of staying a derived null
+    expect(state.baseline).toBe("2026-04-11");
+    // dragging the END into ascending dates must NOT re-derive the default
+    // (that moved the left knob under the right one)
+    state = ensureRadarRange({ ...state, date: "2026-09-09" }, G_DATES);
+    expect(state.baseline).toBe("2026-04-11");
+  });
+});

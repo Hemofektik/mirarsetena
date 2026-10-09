@@ -55,15 +55,57 @@ def classify_delta(delta_db: float) -> int:
     return 6
 
 
-def default_baseline_date(dates: list[str], works_start: date) -> str:
-    """Latest acquisition before works started; earliest overall as fallback."""
+def default_baseline_date(
+    dates: list[str],
+    works_start: date,
+    *,
+    end_date: str | None = None,
+    orbit_index: dict | None = None,
+) -> str:
+    """Baseline for a change pair: geometry-matched pre-works date.
+
+    Tiers (SCOPE pairing rule: same relative orbit + orbit state — over
+    mountainous terrain ascending vs descending backscatter differs by
+    slope aspect, which looks like change but is pure geometry):
+      1. latest pre-works date with the SAME orbit set as the end date,
+      2. latest pre-works date CONTAINING the end's geometry (dual-track
+         dates cover both directions),
+      3. legacy fallback: latest pre-works acquisition (earliest overall).
+
+    Without orbit information (or for callers that don't pass an end
+    date / orbit index) behavior is exactly the legacy fallback.
+    """
     if not dates:
         raise PipelineError("no dates available for baseline selection")
     ordered = sorted(dates)
     pre_works = [
         day for day in ordered if date.fromisoformat(day) < works_start
     ]
-    return pre_works[-1] if pre_works else ordered[0]
+    legacy = pre_works[-1] if pre_works else ordered[0]
+    if not end_date or not orbit_index:
+        return legacy
+    end_pairs = {tuple(pair) for pair in orbit_index.get(end_date) or []}
+    if not end_pairs:
+        return legacy
+
+    def pairs_of(day: str) -> set:
+        return {tuple(pair) for pair in orbit_index.get(day) or []}
+
+    pool = pre_works if pre_works else ordered
+    candidates = [day for day in pool if day != end_date]
+    same_geometry = [
+        day for day in candidates if pairs_of(day) and pairs_of(day) == end_pairs
+    ]
+    if same_geometry:
+        return same_geometry[-1]
+    covering = [
+        day for day in candidates if pairs_of(day) and end_pairs <= pairs_of(day)
+    ]
+    if covering:
+        return covering[-1]
+    if candidates:
+        return candidates[-1]
+    return legacy
 
 
 # Class edges for a *clean* pair (dB for sigma0); the render widens them to

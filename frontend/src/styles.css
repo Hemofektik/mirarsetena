@@ -322,6 +322,19 @@ section h2 {
   font-size: 1.02rem;
 }
 
+#date-geom-warn {
+  background: #fff3cd;
+  border: 1px solid #ffe08a;
+  color: #7a5b00;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 7px;
+  margin: 0 6px;
+  white-space: nowrap;
+  cursor: help;
+}
+
 #cloud-strip {
   display: flex;
   gap: 2px;

@@ -190,6 +190,18 @@ function cloudClass(cloud) {
   return "cloudy";
 }
 
+/** "ASC·92/DESC·84" for a date entry; "" when geometry is unknown. */
+function orbitLabel(entry) {
+  if (!entry?.orbits?.length) return "";
+  return entry.orbits
+    .map(
+      ([state, rel]) =>
+        `${String(state ?? "?").slice(0, 3).toUpperCase()}` +
+        (rel != null ? `·${rel}` : ""),
+    )
+    .join("/");
+}
+
 function renderLayerButtons() {
   const container = document.getElementById("layer-buttons");
   container.innerHTML = "";
@@ -265,6 +277,16 @@ function renderScrubber() {
   document.getElementById("date-value").textContent = radar
     ? `${dates[startIdx].date} → ${dates[endIdx].date}`
     : dates[endIdx].date;
+  // viewing-geometry mismatch between the range ends: over slopes the
+  // difference can be look direction, not real change (SCOPE pairing rule)
+  const warn = document.getElementById("date-geom-warn");
+  const startSig = S.orbitSignature(dates[startIdx]);
+  const endSig = S.orbitSignature(dates[endIdx]);
+  const geometryMismatch =
+    radar && Boolean(startSig) && Boolean(endSig) && startSig !== endSig;
+  warn.hidden = !geometryMismatch;
+  warn.textContent = S.t(state.lang, "geom_mismatch");
+  warn.title = S.t(state.lang, "geom_mismatch_help");
   const cloud = state.cloudByDate?.[state.date];
   document.getElementById("cloud-badge").textContent =
     cloud == null ? "" : `${S.t(state.lang, "cloud")}: ${cloud}%`;
@@ -274,7 +296,9 @@ function renderScrubber() {
   for (const entry of dates) {
     const dot = document.createElement("span");
     dot.dataset.cloud = cloudClass(entry.cloud);
-    dot.title = `${entry.date} (${entry.cloud == null ? "—" : entry.cloud + "%"})`;
+    const geom = orbitLabel(entry);
+    dot.title = `${entry.date} (${entry.cloud == null ? "—" : entry.cloud + "%"})` +
+      (geom ? ` · ${geom}` : "");
     dot.addEventListener("click", () => applyDate(entry.date));
     strip.appendChild(dot);
   }

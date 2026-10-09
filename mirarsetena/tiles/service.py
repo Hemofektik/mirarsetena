@@ -111,7 +111,7 @@ class TileService:
             budget_bytes=config.cache.tile_budget_bytes,
         )
 
-    def dates(self, layer: str) -> list[str]:
+    def _date_entries(self, layer: str) -> list[dict]:
         result = list_dates(
             self._storage,
             self._config.slug,
@@ -119,7 +119,10 @@ class TileService:
             layer,
             search_fn=self._search_fn,
         )
-        return [entry["date"] for entry in result["dates"]]
+        return result["dates"]
+
+    def dates(self, layer: str) -> list[str]:
+        return [entry["date"] for entry in self._date_entries(layer)]
 
     def capabilities_layer_names(self) -> list[str]:
         names = []
@@ -169,7 +172,8 @@ class TileService:
             raise TileError(f"unknown mode {mode!r}")
         if layer not in self._config.layers:
             return None
-        dates = self.dates(layer)
+        entries = self._date_entries(layer)
+        dates = [entry["date"] for entry in entries]
         if date not in dates:
             return None
 
@@ -185,8 +189,14 @@ class TileService:
                 baseline = None
                 style = style_for(layer, mode="raw")
             else:
+                orbit_index = {
+                    entry["date"]: entry.get("orbits") for entry in entries
+                }
                 baseline = baseline or default_baseline_date(
-                    dates, self._config.timeline.works_start
+                    [entry["date"] for entry in entries],
+                    self._config.timeline.works_start,
+                    end_date=date,
+                    orbit_index=orbit_index,
                 )
                 if baseline not in dates:
                     return None

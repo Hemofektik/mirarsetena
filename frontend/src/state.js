@@ -100,13 +100,59 @@ export function setBaseline(state, baseline) {
  * pipeline.change.default_baseline_date: latest acquisition before works
  * started, earliest overall as fallback (index within `dates`, ascending).
  */
-export function defaultBaselineIndex(dates, worksStart) {
+/**
+ * Normalized viewing-geometry signature of one acquisition date: the sorted
+ * [orbit_state, relative_orbit] pairs merged into that daily product, or
+ * null when the catalog didn't record geometry (legacy tolerance).
+ */
+export function orbitSignature(entry) {
+  if (!entry || !Array.isArray(entry.orbits) || !entry.orbits.length) return null;
+  return JSON.stringify(
+    entry.orbits.map((pair) => [pair[0] ?? null, pair[1] ?? null]).sort(),
+  );
+}
+
+/**
+ * Default range start (mirrors the server's default_baseline_date):
+ * latest acquisition before works started, earliest overall as fallback —
+ * unless the end date's viewing geometry is known, then the pre-works
+ * date with the SAME orbit set wins (tier 1), then one CONTAINING it
+ * (tier 2, dual-track dates). Ascending vs descending backscatter
+ * differs by slope aspect: that difference is geometry, not change.
+ */
+export function defaultBaselineIndex(dates, worksStart, endDate) {
   if (!dates.length) return 0;
   if (!worksStart) return 0;
   let found = 0;
   for (let i = 0; i < dates.length; i += 1) {
     if (dates[i].date < worksStart) found = i;
   }
+  if (!endDate) return found;
+  const endEntry = dates.find((entry) => entry.date === endDate);
+  const endSig = orbitSignature(endEntry);
+  if (!endSig) return found; // no geometry recorded -> legacy behavior
+
+  const ordered = [...dates].sort((a, b) =>
+    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
+  );
+  const pre = ordered.filter((entry) => entry.date < worksStart);
+  const pool = pre.length ? pre : ordered;
+  const candidates = pool.filter((entry) => entry.date !== endDate);
+  const same = candidates.filter(
+    (entry) => orbitSignature(entry) === endSig,
+  );
+  if (same.length) return dates.indexOf(same[same.length - 1]);
+  const covering = candidates.filter((entry) => {
+    const sig = orbitSignature(entry);
+    if (!sig) return false;
+    const pairs = JSON.parse(sig);
+    const endPairs = JSON.parse(endSig);
+    return endPairs.every((pair) =>
+      pairs.some((candidate) => JSON.stringify(candidate) === JSON.stringify(pair)),
+    );
+  });
+  if (covering.length) return dates.indexOf(covering[covering.length - 1]);
+  if (candidates.length) return dates.indexOf(candidates[candidates.length - 1]);
   return found;
 }
 
@@ -117,31 +163,39 @@ export function baselineIndex(state, dates) {
     const idx = dates.findIndex((entry) => entry.date === state.baseline);
     if (idx >= 0) return idx;
   }
-  return defaultBaselineIndex(dates, state.worksStart);
+  return defaultBaselineIndex(dates, state.worksStart, state.date);
 }
 
 /**
- * Keep the radar range strictly start < end: when the resolved baseline is
- * not before the end date (default baseline == latest scene, or the end sits
- * earlier in the list), materialize the start one step before the end.
+ * Keep the radar range coherent: materialize the default baseline once
+ * (so later end-date moves never re-derive it — that moved the left knob
+ * under the right one), then keep the range strictly start < end:
+ * when the resolved baseline is not before the end date (default
+ * baseline == latest scene, or the end sits earlier in the list),
+ * materialize the start one step before the end.
  */
 export function ensureRadarRange(state, dates) {
   if (!state.layer || !isRadarLayer(state.layer) || !dates.length) return state;
   let endIdx = dates.findIndex((entry) => entry.date === state.date);
   if (endIdx < 0) return state; // setLayer() owns date validity
-  let startIdx = baselineIndex(state, dates);
-  if (startIdx < endIdx) return state;
+  let next = state;
+  if (!next.baseline) {
+    const idx = defaultBaselineIndex(dates, next.worksStart, next.date);
+    if (dates[idx]) next = { ...next, baseline: dates[idx].date };
+  }
+  let startIdx = baselineIndex(next, dates);
+  if (startIdx < endIdx) return next;
   if (endIdx === 0) {
     // nothing before the end: move the end to the latest scene first
     const latest = dates[dates.length - 1].date;
     endIdx = dates.length - 1;
-    startIdx = baselineIndex({ ...state, date: latest }, dates);
+    startIdx = baselineIndex({ ...next, date: latest }, dates);
     if (startIdx >= endIdx) {
-      return { ...state, date: latest, baseline: dates[endIdx - 1]?.date ?? null };
+      return { ...next, date: latest, baseline: dates[endIdx - 1]?.date ?? null };
     }
-    return { ...state, date: latest };
+    return { ...next, date: latest };
   }
-  return { ...state, baseline: dates[endIdx - 1].date };
+  return { ...next, baseline: dates[endIdx - 1].date };
 }
 
 /**
@@ -360,6 +414,11 @@ export const MESSAGES = {
     loading_dates: "Cargando fechas…",
     range_start: "Inicio del rango",
     range_end: "Fin del rango",
+    geom_mismatch: "Geometría distinta",
+    geom_mismatch_help:
+      "Las fechas del rango miran desde direcciones distintas " +
+      "(ascendente/descendente): sobre laderas parte de la diferencia " +
+      "es geometría, no cambio real.",
     // POI pin names — official labels from the RES-1333-2017 coordinate
     // table and the 2016 GPS record (ids from pois.geojson)
     "poi_project-start": "Inicio",
@@ -447,6 +506,11 @@ export const MESSAGES = {
     loading_dates: "Loading dates…",
     range_start: "Range start",
     range_end: "Range end",
+    geom_mismatch: "Different geometry",
+    geom_mismatch_help:
+      "The range dates look from different directions " +
+      "(ascending/descending): on slopes part of the difference is " +
+      "geometry, not real change.",
     // POI pin names (ids from pois.geojson; English names as published)
     "poi_project-start": "Project start",
     "poi_project-end": "Project end",
