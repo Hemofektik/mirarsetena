@@ -5,6 +5,7 @@ Seam: mirarsetena.pipeline.change (classify / render / baseline selection).
 from datetime import date
 
 import numpy as np
+import pytest
 from rasterio.io import MemoryFile
 from rasterio.transform import from_origin
 
@@ -54,16 +55,24 @@ def _geo_bytes(values: np.ndarray, grid=GRID) -> bytes:
 
 
 def test_render_change_classifies_delta_and_masks_nodata():
-    baseline = _geo_bytes(np.array([[-10.0, -10.0], [-10.0, -10.0]]))
-    scene = _geo_bytes(np.array([[-10.0, -13.0], [NODATA, -8.5]]))
+    # 32x32 so the 7x7 speckle window is meaningful: uniform background,
+    # interior patches away from the window edges (their centers keep the
+    # exact injected delta), one NODATA pixel.
+    baseline_grid = np.full((32, 32), -10.0, dtype=np.float32)
+    scene_grid = baseline_grid.copy()
+    scene_grid[0, 0] = NODATA          # masked out entirely
+    scene_grid[12:20, 12:20] = -6.0    # +4 dB -> strong increase
+    scene_grid[12:20, 24:32] = -13.5   # -3.5 dB -> strong decrease
+    baseline = _geo_bytes(baseline_grid)
+    scene = _geo_bytes(scene_grid)
     out = render_change(scene, baseline)
     with MemoryFile(out) as memfile, memfile.open() as src:
         classes = src.read(1)
         assert src.dtypes[0] == "uint8"
-        assert classes[0, 0] == 3  # delta 0 -> neutral
-        assert classes[0, 1] == 0  # delta -3 -> strong decrease
-        assert classes[1, 0] == 255  # nodata -> unclassified
-        assert classes[1, 1] == 5  # delta +1.5 lands on the class-5 boundary
+        assert classes[0, 0] == 255     # nodata -> unclassified
+        assert classes[5, 5] == 3       # untouched background -> neutral
+        assert classes[16, 16] == 6     # patch centre: +4 dB -> class 6
+        assert classes[16, 27] == 0     # patch centre: -3.5 dB -> class 0
 
 
 def test_render_raw_mode_returns_stretched_grayscale():
@@ -96,3 +105,107 @@ def test_render_change_aligns_baseline_from_another_grid():
         assert classes[0, 1] == 255  # outside baseline footprint
         assert classes[1, 0] == 255
         assert classes[1, 1] == 255
+
+
+def test_adaptive_thresholds_never_tighter_than_the_base_scheme():
+    """Clean pairs keep the exact 0.5/1.5/3.0 dB class edges — the
+    user-approved color scheme must never get tighter than documented."""
+    from mirarsetena.pipeline.change import adaptive_thresholds
+
+    clean = np.array([-0.1, 0.0, 0.1], dtype=np.float32)
+    assert adaptive_thresholds(clean) == (0.5, 1.5, 3.0)
+
+
+def test_adaptive_thresholds_widen_to_the_measured_noise():
+    """When the pair's residual noise is large, neutral/weak bands widen so
+    within-noise pixels classify as neutral instead of random classes."""
+    from mirarsetena.pipeline.change import adaptive_thresholds
+
+    # median 0, median absolute deviation 1 -> sigma = 1.4826;
+    # 50 samples (the minimum for noise estimation), same distribution
+    noisy = np.tile(np.array([-2.0, -1.0, 0.0, 1.0, 2.0], dtype=np.float32), 10)
+    b1, b2, b3 = adaptive_thresholds(noisy)
+    assert b1 == pytest.approx(1.4826)
+    assert b2 == pytest.approx(2 * 1.4826)
+    assert b3 == pytest.approx(3 * 1.4826)
+
+
+def test_adaptive_thresholds_degenerate_input_falls_back_to_base():
+    from mirarsetena.pipeline.change import adaptive_thresholds
+
+    assert adaptive_thresholds(np.array([], dtype=np.float32)) == (0.5, 1.5, 3.0)
+    assert adaptive_thresholds(np.array([5.0], dtype=np.float32)) == (0.5, 1.5, 3.0)
+
+
+def test_uniform_pair_offset_is_removed_as_bias():
+    """A season-wide / orbit-wide dB shift is not per-pixel change: scene
+    = baseline + 4 dB everywhere must render neutral, not strong increase
+    (regression: everything painted as change regardless of period)."""
+    grid = np.full((32, 32), -10.0, dtype=np.float32)
+    baseline = _geo_bytes(grid)
+    scene = _geo_bytes(grid + 4.0)
+    out = render_change(scene, baseline)
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        classes = src.read(1)
+    neutral = int((classes == 3).sum())
+    assert neutral == classes.size  # every pixel: neutral
+
+
+def test_speckle_only_pairs_classify_mostly_neutral():
+    """Two GRD acquisitions of an unchanged scene differ by speckle alone
+    (sigma ~1.5 dB per date). After power-domain multilooking the delta
+    collapses into the neutral class instead of scattering over classes."""
+    rng = np.random.default_rng(7)
+    baseline_grid = np.full((128, 128), -10.0, dtype=np.float32)
+    scene_grid = baseline_grid + rng.normal(0.0, 1.5, (128, 128)).astype(np.float32)
+    baseline = _geo_bytes(baseline_grid)
+    scene = _geo_bytes(scene_grid)
+    out = render_change(scene, baseline)
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        classes = src.read(1)
+    neutral = int((classes == 3).sum())
+    assert neutral / classes.size >= 0.75
+
+
+def test_spatially_correlated_noise_still_classifies_mostly_neutral():
+    """Smooth noise fields survive the 7x7 multilook (unlike iid speckle).
+    The adaptive edges must widen the neutral band to the measured sigma
+    instead of scattering the field over the signed classes."""
+    rng = np.random.default_rng(11)
+    noise = rng.normal(0.0, 1.0, (64, 64)).astype(np.float32)
+    # 5x5 box smoothing keeps sigma well above the 0.5 dB neutral edge
+    kernel = np.ones((5, 5), dtype=np.float32) / 25.0
+    smooth = np.apply_along_axis(
+        lambda r: np.convolve(r, kernel[0], mode="same"), 1, noise
+    )
+    smooth = np.apply_along_axis(
+        lambda c: np.convolve(c, kernel[0], mode="same"), 1, smooth.T
+    ).T
+    smooth *= 1.0 / max(float(smooth.std()), 1e-6)
+    smooth *= 1.2  # residual sigma ~1.2 dB after the render's multilook
+
+    baseline_grid = np.full((64, 64), -10.0, dtype=np.float32)
+    baseline = _geo_bytes(baseline_grid)
+    scene = _geo_bytes(baseline_grid + smooth)
+    out = render_change(scene, baseline)
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        classes = src.read(1)
+    neutral = int((classes == 3).sum())
+    # fixed 0.5 dB edge would leave ~34% neutral for sigma=1.2 noise
+    assert neutral / classes.size >= 0.60
+
+
+def test_cochange_uses_coherence_value_thresholds():
+    """Coherence deltas live in [0, 1]; the dB edges (0.5/1.5/3) classified
+    every coherence pair as neutral. Layer-aware base edges (0.05/0.15/0.3)
+    make a -0.25 coherence drop visible."""
+    baseline_grid = np.full((32, 32), 0.6, dtype=np.float32)
+    scene_grid = baseline_grid.copy()
+    scene_grid[12:20, 12:20] = 0.35  # -0.25 -> class 1 (<= -0.15)
+    baseline = _geo_bytes(baseline_grid)
+    scene = _geo_bytes(scene_grid)
+    out = render_change(scene, baseline, layer="coherence")
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        classes = src.read(1)
+    assert classes[5, 5] == 3   # no change -> neutral
+    assert classes[16, 16] == 1  # patch centre: -0.25 -> class 1

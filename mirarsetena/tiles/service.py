@@ -10,7 +10,11 @@ from collections.abc import Callable
 from concurrent.futures import Future
 
 from mirarsetena.pipeline.catalog import group_by_date, search
-from mirarsetena.pipeline.change import default_baseline_date, render_change
+from mirarsetena.pipeline.change import (
+    PREPROCESS_VERSION,
+    default_baseline_date,
+    render_change,
+)
 from mirarsetena.pipeline.dates import list_dates, mission_for_layer
 from mirarsetena.pipeline.grd import process_s1_daily
 from mirarsetena.pipeline.indices import layer_key, process_s2_daily
@@ -137,11 +141,11 @@ class TileService:
         scene: bytes, baseline_product: bytes | None,
     ) -> bytes:
         suffix = f"{layer}_{date}_raw.tif" if mode == "raw" else \
-            f"{layer}_{date}_vs_{baseline}.tif"
+            f"{layer}_{date}_vs_{baseline}_pp{PREPROCESS_VERSION}.tif"
         key = cache_key(self._config.slug, "layers", suffix)
         derived = self._storage.get(key)
         if derived is None:
-            derived = render_change(scene, baseline_product, mode=mode)
+            derived = render_change(scene, baseline_product, mode=mode, layer=layer)
             self._storage.put(key, derived)
         return derived
 
@@ -197,9 +201,12 @@ class TileService:
             product = scene
             style = style_for(layer)
 
+        # change tiles carry the preprocessing version so old renders are
+        # never served after the classification changes
+        pp_tag = f"-pp{PREPROCESS_VERSION}" if mode == "change" else ""
         cache_parts = (
             layer, date, str(z), str(x), str(y),
-            f"{mode}-{baseline or ''}.png",
+            f"{mode}-{baseline or ''}{pp_tag}.png",
         )
         return self._cache.get_or_render(
             cache_parts,
