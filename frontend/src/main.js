@@ -78,6 +78,40 @@ function poiLabelFor(id, fallback) {
   return text === key ? fallback : text;
 }
 
+// A gesture (drag/scrub) may change the template many times per second:
+// every setTiles() invalidates the style — rapid churn made MapLibre's
+// render throw (texture.bind of undefined), spammed AbortErrors and asked
+// the server for a derived product per tick. Collapse the gesture into ONE
+// retarget: while the pointer is down on the slider nothing commits; the
+// final template wins 150 ms after the last change (or right after release).
+const OVERLAY_COMMIT_DELAY = 150;
+let overlayCommit = null;
+let overlayDragging = false;
+
+function scheduleOverlayCommit(template) {
+  if (overlayCommit?.timer) clearTimeout(overlayCommit.timer);
+  overlayCommit = {
+    template,
+    timer: setTimeout(() => {
+      const pending = overlayCommit?.template;
+      overlayCommit = pending ? { template: pending } : null;
+      if (overlayDragging) return; // parked: pointerup re-schedules
+      if (pending) commitOverlayTemplate(pending);
+    }, OVERLAY_COMMIT_DELAY),
+  };
+}
+
+function commitOverlayTemplate(template) {
+  if (!template || template === lastOverlayTemplate) return;
+  const source = map?.getSource("overlay");
+  if (!source) return;
+  // MapLibre never cancels the previous date's fetches — retire them so
+  // an abandoned cold scene stops loading (and stops the server work).
+  retireTileRequests(template);
+  source.setTiles([template]);
+  lastOverlayTemplate = template;
+}
+
 function updateOverlay() {
   if (!map || !map.getLayer("overlay")) return;
   const source = map.getSource("overlay");
@@ -88,15 +122,13 @@ function updateOverlay() {
   // invalidates the style (isStyleLoaded() -> false) and would starve the
   // guards of every later render step.
   if (template && template !== lastOverlayTemplate) {
-    // MapLibre never cancels the previous date's fetches — retire them so
-    // an abandoned cold scene stops loading (and stops the server work).
-    retireTileRequests(template);
-    source.setTiles([template]);
-    lastOverlayTemplate = template;
+    scheduleOverlayCommit(template);
   }
   if (!enabled && lastOverlayTemplate !== null) {
     // switched off: drop in-flight tiles and forget the template so
     // re-enabling fetches fresh instead of waiting on aborted requests
+    if (overlayCommit?.timer) clearTimeout(overlayCommit.timer);
+    overlayCommit = null;
     retireTileRequests(null);
     lastOverlayTemplate = null;
   }
@@ -196,22 +228,19 @@ function renderScrubber() {
 
   // Radar layers get a start->end range (change between the two thumbs);
   // optical layers keep a single thumb on the acquisition date.
-  const radar = isRadar(state.layer);
+  const { radar, lastIndex, startIdx, endIdx } = S.sliderIndices(state, dates);
   const startInput = document.getElementById("date-start");
   const endInput = document.getElementById("date-end");
   startInput.hidden = !radar;
 
-  const lastIndex = dates.length - 1;
-  let endIdx = dates.findIndex((entry) => entry.date === state.date);
-  if (endIdx < 0) endIdx = lastIndex;
-  let startIdx = radar
-    ? Math.min(S.baselineIndex(state, dates), Math.max(endIdx - 1, 0))
-    : 0;
-  if (startIdx > endIdx) startIdx = Math.max(endIdx - 1, 0);
-
-  endInput.min = radar ? String(Math.min(startIdx + 1, lastIndex)) : "0";
+  // END keeps static bounds (0..last): a dynamic min became degenerate
+  // (min == max) whenever the thumbs were adjacent and Chrome parked the
+  // thumb at the left edge — "moving one knob moves the other". The
+  // start<end wall lives on the START input (max = end - 1) and in
+  // applyDate() for the end handler.
+  endInput.min = "0";
   endInput.max = String(lastIndex);
-  endInput.value = String(endIdx);
+  endInput.value = String(Math.max(endIdx, 0));
   startInput.min = "0";
   startInput.max = String(Math.max(endIdx - 1, 0));
   startInput.value = String(startIdx);
@@ -318,6 +347,17 @@ function selectLayer(layer) {
 }
 
 async function applyDate(date) {
+  const dates = S.visibleDates(state);
+  if (dates.length) {
+    // one choke point for both handlers: the end can never land on or
+    // before the range start (drags, cloud-strip clicks) — clamp it up
+    // instead of letting ensureRadarRange MOVE THE OTHER KNOB.
+    const { radar, startIdx } = S.sliderIndices(state, dates);
+    let idx = dates.findIndex((entry) => entry.date === date);
+    if (idx < 0) idx = dates.length - 1;
+    if (radar && idx <= startIdx) idx = Math.min(startIdx + 1, dates.length - 1);
+    date = dates[idx].date;
+  }
   state = S.setDate(state, date);
   renderAll();
 }
@@ -398,6 +438,14 @@ function buildMap() {
     attributionControl: false,
   });
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  // Intentional retirements (drag retargets, layer switches) surface as
+  // AbortErrors; with a listener MapLibre stops console.error-ing them.
+  // Real errors keep logging.
+  map.on("error", (event) => {
+    const err = event?.error;
+    if (err?.name === "AbortError" || /abort/i.test(String(err?.message))) return;
+    console.error(err ?? event);
+  });
   // spinners over every in-flight overlay tile (cold scenes take seconds)
   installTileLoaders(map);
   // dots + decluttered labels (symbol layers would hide colliding text)
@@ -420,6 +468,19 @@ function buildMap() {
 }
 
 function wireUi() {
+  // While a thumb is being dragged the overlay retarget stays parked
+  // (see scheduleOverlayCommit): one setTiles() per gesture.
+  document.getElementById("date-slider").addEventListener("pointerdown", () => {
+    overlayDragging = true;
+  });
+  window.addEventListener("pointerup", () => {
+    if (!overlayDragging) return;
+    overlayDragging = false;
+    if (overlayCommit?.template) scheduleOverlayCommit(overlayCommit.template);
+  });
+  window.addEventListener("pointercancel", () => {
+    overlayDragging = false;
+  });
   document.getElementById("date-end").addEventListener("input", (event) => {
     const dates = S.visibleDates(state);
     const entry = dates[Number(event.target.value)];

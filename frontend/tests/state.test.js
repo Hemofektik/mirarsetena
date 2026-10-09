@@ -25,6 +25,7 @@ import {
   setLayer,
   setLang,
   setShowProperties,
+  sliderIndices,
   t,
   tileUrl,
   togglePoiGroup,
@@ -452,5 +453,46 @@ describe("radar range model (start -> end change)", () => {
     ];
     state = setLayer(state, "coherence", other);
     expect(state.baseline).toBeNull();
+  });
+});
+
+describe("sliderIndices (shared by render and handlers)", () => {
+  const S1 = [
+    { date: "2026-01-05", cloud: null },
+    { date: "2026-07-11", cloud: null },
+    { date: "2026-07-23", cloud: null },
+  ];
+
+  it("radar: start never reaches end, both inside the list", () => {
+    const config = {
+      slug: "p",
+      layers: ["sigma0"],
+      timeline: { start: "2026-01-01", works_start: "2026-08-01" },
+    };
+    let state = setLayer(makeState(config), "sigma0", S1); // end = latest
+    let idx = sliderIndices(state, S1);
+    expect(idx.radar).toBe(true);
+    expect(idx.endIdx).toBe(2);
+    expect(idx.startIdx).toBeLessThan(idx.endIdx);
+
+    // adjacent state stays adjacent and computable
+    state = { ...state, baseline: "2026-07-11" };
+    idx = sliderIndices(state, S1);
+    expect(idx.startIdx).toBe(1);
+    expect(idx.endIdx).toBe(2);
+    expect(idx.startIdx).toBe(idx.endIdx - 1);
+  });
+
+  it("optical: single thumb pinned at the chosen date, start irrelevant", () => {
+    const state = setLayer(makeState({ slug: "p", layers: ["ndvi"] }), "ndvi", DATES_S2);
+    const idx = sliderIndices(state, DATES_S2);
+    expect(idx.radar).toBe(false);
+    expect(idx.startIdx).toBe(0);
+    expect(idx.endIdx).toBe(0); // earliest date = state.date
+  });
+
+  it("empty list -> nothing to slide", () => {
+    const idx = sliderIndices(makeState({ slug: "p", layers: ["ndvi"] }), []);
+    expect(idx.endIdx).toBe(-1);
   });
 });

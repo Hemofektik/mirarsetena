@@ -144,6 +144,26 @@ export function ensureRadarRange(state, dates) {
   return { ...state, baseline: dates[endIdx - 1].date };
 }
 
+/**
+ * Slider geometry shared by renderScrubber and the input handlers: which
+ * indices the two thumbs sit at. End bounds are always static (min 0) — a
+ * dynamic end.min became degenerate (min == max) whenever the thumbs were
+ * adjacent and Chrome parked the end thumb at the left edge, so moving one
+ * knob appeared to move the other.
+ */
+export function sliderIndices(state, dates) {
+  const radar = isRadarLayer(state.layer);
+  const lastIndex = dates.length - 1;
+  if (dates.length === 0) return { radar, lastIndex, startIdx: 0, endIdx: -1 };
+  let endIdx = dates.findIndex((entry) => entry.date === state.date);
+  if (endIdx < 0) endIdx = lastIndex;
+  let startIdx = radar
+    ? Math.min(baselineIndex(state, dates), Math.max(endIdx - 1, 0))
+    : 0;
+  if (startIdx > endIdx) startIdx = Math.max(endIdx - 1, 0);
+  return { radar, lastIndex, startIdx, endIdx };
+}
+
 export function setHideCloudy(state, hideCloudy, maxCloud) {
   return {
     ...state,

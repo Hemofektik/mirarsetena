@@ -765,8 +765,10 @@ test("radar range slider drives start and end of the change", async ({ page }) =
 
   let v = await read();
   expect(v.start).toBeLessThan(v.end); // range start strictly before end
-  expect(v.startMax).toBe(v.end - 1); // inputs keep the invariant themselves
-  expect(v.endMin).toBe(v.start + 1);
+  expect(v.startMax).toBe(v.end - 1); // start can never pass the end...
+  expect(v.endMin).toBe(0); // ...but the end keeps static bounds (a
+  // dynamic min made it degenerate min==max whenever the thumbs were
+  // adjacent and Chrome parked its thumb at the left edge)
   expect(v.readout).toContain("→");
 
   // dragging the start writes the range start into the shared URL
@@ -791,4 +793,88 @@ test("radar range slider drives start and end of the change", async ({ page }) =
   expect(v.end).toBeLessThanOrEqual(endBefore);
   expect(v.end).toBeGreaterThanOrEqual(v.start + 1);
   expect(v.readout).toContain("→");
+});
+
+test("adjacent knobs stay put: moving one never moves the other", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+
+  const read = () =>
+    page.evaluate(() => ({
+      start: Number(document.getElementById("date-start").value),
+      end: Number(document.getElementById("date-end").value),
+      endMin: document.getElementById("date-end").min,
+      endMax: document.getElementById("date-end").max,
+      readout: document.getElementById("date-value").textContent,
+    }));
+
+  const initial = await read();
+
+  // push start to its wall (adjacent to end) — the END must not budge and
+  // must keep renderable bounds (this used to flip end.min == end.max and
+  // Chrome parked the end thumb at the left edge: "the other moves too")
+  await page.locator("#date-start").evaluate((el) => {
+    el.value = el.max;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const atWall = await read();
+  expect(atWall.end).toBe(initial.end); // end value untouched
+  expect(atWall.endMin).toBe("0"); // never degenerate
+  expect(Number(atWall.endMax)).toBeGreaterThan(0);
+  expect(atWall.start).toBe(atWall.end - 1);
+  expect(atWall.readout).toContain("→");
+
+  // dragging the END below the start clamps it back to start + 1; the
+  // START must not move in response
+  await page.locator("#date-end").evaluate((el) => {
+    el.value = "0";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const clamped = await read();
+  expect(clamped.start).toBe(atWall.start);
+  expect(clamped.end).toBe(atWall.start + 1);
+  expect(clamped.readout).toContain("→");
+});
+
+test("a fast range drag retargets the overlay once", async ({ page }) => {
+  // Every per-tick retarget invalidated the style (render crashes) and
+  // asked the server for a derived product per intermediate value.
+  const requested = [];
+  await page.route("**/tiles/sigma0/**", async (route) => {
+    requested.push(route.request().url());
+    await route.continue();
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.waitForTimeout(600);
+  requested.length = 0;
+
+  const box = await page.locator("#date-slider").boundingBox();
+  const y = box.y + 12;
+  const startX = box.x + 8 + (0.75 * (box.width - 16));
+  await page.mouse.move(startX, y);
+  await page.mouse.down();
+  for (let i = 1; i <= 12; i += 1) {
+    await page.mouse.move(startX + i * 5, y);
+    await page.waitForTimeout(15);
+  }
+  await page.mouse.up();
+  await page.waitForTimeout(700);
+
+  const baselines = new Set();
+  for (const url of requested) {
+    const m = /[?&]baseline=([^&]+)/.exec(url);
+    if (m) baselines.add(m[1]);
+  }
+  // the gesture collapses to ONE retarget: at most the final baseline
+  expect(baselines.size).toBeLessThanOrEqual(1);
+  expect(requested.length).toBeGreaterThan(0); // it still loads, just once
 });
