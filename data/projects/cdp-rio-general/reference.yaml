@@ -99,3 +99,11 @@ quebrada:
     - {east: 536725.1, north: 1036725.9}
 
 extent_wgs84: [-83.6734, 9.3797, -83.6621, 9.3953]
+
+# Orchard/forest north edge on the southern border (OSM way 1028813602,
+# natural=wood / landuse=orchard — renders as the forest in the user's
+# reference image), CRTM05 like the polylines above.
+forest:
+  -
+    - {east: 535995.3, north: 1037612.7}
+    - {east: 536627.4, north: 1037550.1}

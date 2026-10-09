@@ -64,6 +64,7 @@ class Reference:
     extent_wgs84: tuple[float, float, float, float]
     river: list[list[tuple[float, float]]]  # Río General polylines (CRTM05)
     quebrada: list[list[tuple[float, float]]]  # Quebrada Grande polyline
+    forest: list[list[tuple[float, float]]] = ()  # orchard/forest north edge
 
 
 @dataclass(frozen=True)
@@ -99,16 +100,22 @@ def load_reference(path: str | Path) -> Reference:
 
     river = [polyline(run) for run in raw.get("river", [])]
     quebrada = [polyline(run) for run in raw.get("quebrada", [])]
+    forest = [polyline(run) for run in raw.get("forest", [])]
     if not river:
         raise ValueError("reference.yaml must carry the Río General polyline")
     if not quebrada:
         raise ValueError("reference.yaml must carry the Quebrada Grande polyline")
+    if not forest:
+        raise ValueError(
+            "reference.yaml must carry the forest (orchard) north edge"
+        )
     return Reference(
         registry=registry,
         pois=pois,
         extent_wgs84=extent,
         river=river,
         quebrada=quebrada,
+        forest=forest,
     )
 
 

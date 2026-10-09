@@ -171,13 +171,20 @@ def create_app(
     def project_pois(slug: str) -> Response:
         return _geo_response(slug, "pois_path")
 
+    @app.get("/p/{slug}/rio.geojson")
+    def project_rio(slug: str) -> Response:
+        return _geo_response(slug, "rio_path")
+
     def _geo_response(slug: str, attr: str) -> Response:
         try:
             config = registry.get(slug)
         except ProjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         repo_root = config_dir.resolve().parent.parent
-        path = repo_root / getattr(config, attr)
+        rel = getattr(config, attr)
+        if not rel:
+            raise HTTPException(status_code=404, detail=f"{attr} not configured")
+        path = repo_root / rel
         if not path.is_file():
             raise HTTPException(
                 status_code=404, detail=f"{attr} not found: {path.name}"

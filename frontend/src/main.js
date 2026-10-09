@@ -18,6 +18,7 @@ let state;
 let map;
 let poisData = null;
 let aoiData = null;
+let rioData = null;
 
 const BASEMAPS = {
   osm: {
@@ -28,7 +29,7 @@ const BASEMAPS = {
     tiles: [
       "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     ],
-    attribution: "Esri, Maxar, Earthstar Geographics",
+    attribution: "Esri, Maxar, Earthstar Geographics · Río General © OpenStreetMap contributors",
   },
 };
 
@@ -156,6 +157,10 @@ function updateAoiVisibility() {
       state.showProperties ? "visible" : "none"
     );
   }
+  for (const id of ["rio-casing", "rio-outline"]) {
+    if (!map.getLayer(id)) continue;
+    map.setLayoutProperty(id, "visibility", state.rioLine ? "visible" : "none");
+  }
 }
 
 function updateBasemap() {
@@ -235,6 +240,15 @@ function renderLayerButtons() {
 }
 
 function renderScrubber() {
+  // Cloud metrics are an optical-only concept: on radar layers the strip,
+  // badge and the hide-cloudy / max-cloud rows disappear entirely — and
+  // they must vanish immediately, even while dates are still loading.
+  const cloudless = S.isRadarLayer(state.layer);
+  document.getElementById("cloud-strip").hidden = cloudless;
+  document.getElementById("cloud-badge").hidden = cloudless;
+  document.getElementById("hide-cloudy-row").hidden = cloudless;
+  document.getElementById("max-cloud-row").hidden = cloudless;
+
   const loading = state.datesLoading;
   const dates = S.visibleDates(state);
   const empty = !loading && dates.length === 0;
@@ -329,6 +343,7 @@ function syncControlsFromState() {
   document.getElementById("hide-cloudy").checked = state.hideCloudy;
   document.getElementById("max-cloud").value = String(state.maxCloud);
   document.getElementById("show-properties").checked = state.showProperties;
+  document.getElementById("show-rio-line").checked = state.rioLine;
   document.getElementById("basemap-select").value = state.basemap;
 }
 
@@ -419,6 +434,12 @@ function buildMap() {
           maxzoom: config.cache.max_zoom,
         },
         aoi: { type: "geojson", data: aoiData },
+        // Río General between the project start/end POIs: the plan's
+        // work-area line (empty collection when the project has none)
+        rio: {
+          type: "geojson",
+          data: rioData ?? { type: "FeatureCollection", features: [] },
+        },
       },
       layers: [
         { id: "base", type: "raster", source: "base" },
@@ -460,6 +481,31 @@ function buildMap() {
             "line-join": "round",
           },
           paint: { "line-color": "#1d4ed8", "line-width": 2.5 },
+        },
+        // the Río General work-area line: white casing + indigo, drawn on
+        // top of the parcels so the boundary stays readable on both the
+        // OSM and the imagery basemap
+        {
+          id: "rio-casing",
+          type: "line",
+          source: "rio",
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
+            visibility: state.rioLine ? "visible" : "none",
+          },
+          paint: { "line-color": "#ffffff", "line-width": 7, "line-opacity": 0.5 },
+        },
+        {
+          id: "rio-outline",
+          type: "line",
+          source: "rio",
+          layout: {
+            "line-join": "round",
+            "line-cap": "round",
+            visibility: state.rioLine ? "visible" : "none",
+          },
+          paint: { "line-color": "#4f46e5", "line-width": 3.5, "line-opacity": 0.5 },
         },
       ],
     },
@@ -553,6 +599,10 @@ function wireUi() {
     state = S.setShowProperties(state, event.target.checked);
     renderAll();
   });
+  document.getElementById("show-rio-line").addEventListener("change", (event) => {
+    state = S.setShowRioLine(state, event.target.checked);
+    renderAll();
+  });
   document.getElementById("basemap-select").addEventListener("change", (event) => {
     state = S.setBasemap(state, event.target.value);
     updateBasemap();
@@ -641,6 +691,7 @@ async function boot() {
     state.maxCloud = restored.maxCloud;
     state.baseline = restored.baseline;
     state.showProperties = restored.properties;
+    state.rioLine = restored.rioLine;
     state = S.setBasemap(state, restored.basemap);
     const groups = restored.pois.split(",");
     state.poiGroups = {
@@ -659,6 +710,14 @@ async function boot() {
   }
   poisData = await getJSON(`/p/${state.slug}/pois.geojson`);
   aoiData = await getJSON(`/p/${state.slug}/aoi.geojson`);
+  if (config.rio_path) {
+    // optional: the Río General work-area line (OSM); boot must survive its absence
+    try {
+      rioData = await getJSON(`/p/${state.slug}/rio.geojson`);
+    } catch {
+      rioData = null;
+    }
+  }
 
   try {
     buildMap();

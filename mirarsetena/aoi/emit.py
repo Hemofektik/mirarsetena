@@ -28,18 +28,26 @@ def to_wgs84(vertices_crtm: Sequence[tuple[float, float]]) -> list[list[float]]:
     return ring
 
 
-def parcel_feature(plan: Plan, ring_wgs84: Sequence[list[float]]) -> dict:
+def parcel_feature(
+    plan: Plan,
+    ring_wgs84: Sequence[list[float]],
+    *,
+    aligned: str | None = None,
+) -> dict:
     ring = [list(point) for point in ring_wgs84]
     if ring[0] != ring[-1]:
         ring.append(list(ring[0]))
+    properties = {
+        "id": plan.id,
+        "finca": plan.finca,
+        "stated_area_m2": plan.stated_area_m2,
+        "source": "plan-survey-1991",
+    }
+    if aligned:
+        properties["aligned"] = aligned
     return {
         "type": "Feature",
-        "properties": {
-            "id": plan.id,
-            "finca": plan.finca,
-            "stated_area_m2": plan.stated_area_m2,
-            "source": "plan-survey-1991",
-        },
+        "properties": properties,
         "geometry": {"type": "Polygon", "coordinates": [ring]},
     }
 

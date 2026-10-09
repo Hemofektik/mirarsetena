@@ -1,5 +1,9 @@
 # Mirar Setena
 
+[English](README.md) · [Español](README.es.md)
+
+[![CI](https://github.com/Hemofektik/mirarsetena/actions/workflows/ci.yml/badge.svg)](https://github.com/Hemofektik/mirarsetena/actions/workflows/ci.yml)
+
 **Monitoreo ambiental satelital para proyectos SETENA — empezando por *CDP Río General*.**
 
 Mirar Setena es una aplicación web SIG que muestra en un mapa el alcance geográfico de un proyecto autorizado por la Secretaría Técnica Nacional Ambiental (SETENA) de Costa Rica, y da seguimiento a los cambios del sitio en el tiempo usando datos libres de los satélites Sentinel de la ESA.
@@ -8,7 +12,7 @@ Mirar Setena es una aplicación web SIG que muestra en un mapa el alcance geogr�
 
 ## ¿Por qué?
 
-La Resolución **RES-1333-2017-SETENA** autorizó el proyecto *CDP Río General* — extracción de material del cauce del Río General más una planta de trituración en Pérez Zeledón, San José — y define exactamente dónde puede operar el desarrollador. Los trabajos iniciaron en agosto de 2026.
+La Resolución **RES-1333-2017-SETENA** autorizó el proyecto *CDP Río General* — extracción de material del cauce del Río General más una planta de trituración en Pérez Zeledón, San José — y define exactamente dónde puede operar el desarrollador. Los trabajos iniciaron el 1 de junio de 2026.
 
 Verificar que el terreno corresponde a la huella autorizada hoy exige trabajo manual en SIG con años de escenas satelitales. Mirar Setena convierte eso en un mapa accesible:
 

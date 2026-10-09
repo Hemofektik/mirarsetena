@@ -39,6 +39,7 @@ export function makeState(config) {
     hideCloudy: false,
     maxCloud: 20,
     showProperties: true, // two 1991 plan parcels drawn as outlines
+    rioLine: true, // Río General start→end work-area line overlay
     poiGroups: { facilities: true, inspection: true },
     basemap: "osm",
     bbox: null,
@@ -238,6 +239,10 @@ export function setShowProperties(state, on) {
   return { ...state, showProperties: Boolean(on) };
 }
 
+export function setShowRioLine(state, on) {
+  return { ...state, rioLine: Boolean(on) };
+}
+
 export function setBasemap(state, name) {
   if (!BASEMAPS.includes(name)) return state;
   return { ...state, basemap: name };
@@ -259,6 +264,7 @@ export function settingsFromState(state) {
     maxCloud: state.maxCloud,
     poiGroups: { ...state.poiGroups },
     showProperties: Boolean(state.showProperties),
+    rioLine: Boolean(state.rioLine),
   };
 }
 
@@ -273,6 +279,7 @@ export function restoreSettings(state, saved) {
   if (typeof saved.basemap === "string") next = setBasemap(next, saved.basemap);
   if (typeof saved.hideCloudy === "boolean") next = { ...next, hideCloudy: saved.hideCloudy };
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
+  if (typeof saved.rioLine === "boolean") next = { ...next, rioLine: saved.rioLine };
   if (
     typeof saved.maxCloud === "number" &&
     Number.isFinite(saved.maxCloud) &&
@@ -325,6 +332,7 @@ export function serializeState(state) {
   params.set("hideCloudy", state.hideCloudy ? "1" : "0");
   params.set("maxCloud", String(state.maxCloud));
   params.set("properties", state.showProperties ? "1" : "0");
+  params.set("rio", state.rioLine ? "1" : "0");
   const groups = Object.entries(state.poiGroups)
     .filter(([, on]) => on)
     .map(([name]) => name)
@@ -377,6 +385,7 @@ export function parseState(search) {
     hideCloudy: params.get("hideCloudy") === "1",
     maxCloud,
     properties: params.get("properties") !== "0",
+    rioLine: params.get("rio") !== "0",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
     lang: lang ?? "es",
@@ -400,6 +409,7 @@ export const MESSAGES = {
     pois_inspection: "Puntos de inspección",
     properties: "Propiedades",
     properties_label: "Perímetro de propiedades",
+    rio_line: "Línea Río General (inicio–fin)",
     works_start: "Inicio de obras",
     about: "Acerca de",
     disclaimer:
@@ -492,6 +502,7 @@ export const MESSAGES = {
     pois_inspection: "Inspection points",
     properties: "Properties",
     properties_label: "Property perimeter",
+    rio_line: "Río General line (start–end)",
     works_start: "Works start",
     about: "About",
     disclaimer:

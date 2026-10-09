@@ -164,3 +164,46 @@ def test_bdd_generator_produces_validated_geometry(tmp_path):
     assert len(pois["features"]) == 10
     assert groups.count("facilities") == 8
     assert groups.count("inspection") == 2
+
+
+def test_alignment_snaps_parcels_to_quebrada_and_forest(tmp_path):
+    """User (2026-10-09): rotate/translate the perimeter so the east edge
+    is directly adjacent to the Quebrada Grande ravine and the south edge
+    to the forest/orchard on the southern border. The generator owns this
+    (hand-edits to aoi.geojson would be reverted on regeneration): a rigid
+    transform fitted to both targets, applied before emission."""
+    import math as _math
+
+    paths = _run_generator(tmp_path)
+    aoi = json.loads(paths["aoi"].read_text(encoding="utf-8"))
+    by_id = _by_id(aoi)
+
+    # the emitted parcels must carry the alignment note
+    for f in aoi["features"]:
+        assert "aligned" in f["properties"], "alignment provenance missing"
+
+    # adjacency measured in CRTM05 metres against the reference polylines
+    from mirarsetena.aoi.anchor import load_reference
+    reference = load_reference(tmp_path / "reference.yaml")
+    forest = [tuple(p) for poly in reference.forest for p in poly]  # north edge
+
+    def dist_to_polyline(p, chain):
+        best = float("inf")
+        for a, b in itertools.pairwise(chain):
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            L2 = dx * dx + dy * dy
+            t = 0 if L2 == 0 else max(0.0, min(1.0, ((p[0]-a[0])*dx + (p[1]-a[1])*dy) / L2))
+            best = min(best, _math.hypot(p[0]-(a[0]+t*dx), p[1]-(a[1]+t*dy)))
+        return best
+
+    # east chain: plan 980861 vertices 1..4 + plan 980860 vertex 3 (ring idx 0..3, 2)
+    east_ring = by_id["SJ-980861-1991"]["geometry"]["coordinates"][0]
+    south_ring = by_id["SJ-980860-1991"]["geometry"]["coordinates"][0]
+    east = [INV_CRTM.transform(*p) for p in east_ring[0:4] + [south_ring[2]]]
+    south = [INV_CRTM.transform(*p) for p in south_ring[2:9]]
+    quebrada = [tuple(p) for poly in reference.quebrada for p in poly]
+
+    east_gaps = [dist_to_polyline(p, quebrada) for p in east]
+    south_gaps = [dist_to_polyline(p, forest) for p in south]
+    assert max(east_gaps) <= 15, f"east edge not adjacent to ravine: {east_gaps}"
+    assert max(south_gaps) <= 25, f"south edge not adjacent to forest: {south_gaps}"

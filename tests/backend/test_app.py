@@ -49,7 +49,7 @@ def test_project_config_route_serves_the_loaded_project(client):
     assert response.status_code == 200
     body = response.json()
     assert body["slug"] == "cdp-rio-general"
-    assert body["timeline"]["works_start"] == "2026-08-01"
+    assert body["timeline"]["works_start"] == "2026-06-01"
     assert body["cache"]["max_zoom"] == 18
 
 
@@ -62,3 +62,18 @@ def test_state_wiring_exposes_registry_and_storage(client):
     app = client.app
     assert "cdp-rio-general" in app.state.registry.all()
     assert app.state.storage is not None
+
+
+def test_rio_route_serves_the_work_area_line(client):
+    """The Río General between the project start/end POIs is the plan's
+    work-area boundary: served as a LineString overlay."""
+    response = client.get("/p/cdp-rio-general/rio.geojson")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["type"] == "FeatureCollection"
+    feature = payload["features"][0]
+    assert feature["geometry"]["type"] == "LineString"
+    coords = feature["geometry"]["coordinates"]
+    assert len(coords) >= 2
+    # ends near the project-start / project-end POIs (the POIs sit on the river)
+    assert feature["properties"]["name"] == "Río General"

@@ -1,5 +1,9 @@
 # Mirar Setena
 
+[English](README.md) · [Español](README.es.md)
+
+[![CI](https://github.com/Hemofektik/mirarsetena/actions/workflows/ci.yml/badge.svg)](https://github.com/Hemofektik/mirarsetena/actions/workflows/ci.yml)
+
 **Satellite-based environmental monitoring for SETENA projects — starting with *CDP Río General*.**
 
 Mirar Setena is a web GIS tool that shows the geographic scope of a project authorized by Costa Rica's *Secretaría Técnica Nacional Ambiental* (SETENA) on a map, and tracks how the site changes over time using freely available ESA Sentinel satellite data.
@@ -8,7 +12,7 @@ Mirar Setena is a web GIS tool that shows the geographic scope of a project auth
 
 ## Why
 
-Resolution **RES-1333-2017-SETENA** authorized the *CDP Río General* project — material extraction from the Río General channel plus a crushing plant in Pérez Zeledón, San José — and it defines exactly where the developer may operate. Earthworks began in August 2026.
+Resolution **RES-1333-2017-SETENA** authorized the *CDP Río General* project — material extraction from the Río General channel plus a crushing plant in Pérez Zeledón, San José — and it defines exactly where the developer may operate. Earthworks began on 1 June 2026.
 
 Verifying that the ground matches the authorized footprint currently means manual work in desktop GIS over a decade of satellite scenes. Mirar Setena turns that into a map anyone can open:
 

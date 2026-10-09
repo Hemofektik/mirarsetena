@@ -1,3 +1,9 @@
+/* The hidden ATTRIBUTE must win over any author display (the cloud strip
+   is display:flex, #date-loading is display:flex — `hidden` alone lost). */
+[hidden] {
+  display: none !important;
+}
+
 :root {
   /* Light-only chrome: the old `light dark` scheme let dark-preference
      browsers paint UA white text onto the hard-coded light backgrounds. */

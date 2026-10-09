@@ -43,6 +43,14 @@ def client(tmp_path, fake_search, world_geotiff):
         layer_key(SLUG, "sentinel-1-grd", "2026-07-23", "sigma0"),
         world_geotiff([-10.0], nodata=-9999.0),
     )
+    # works start 2026-06-01 leaves no pre-works fixture date, so the
+    # geometry-matched default baseline for the asc end 2026-07-11 is the
+    # latest asc date: 2026-09-09 (seeded so the default-baseline tests
+    # never trigger the processor)
+    storage.put(
+        layer_key(SLUG, "sentinel-1-grd", "2026-09-09", "sigma0"),
+        world_geotiff([-10.0], nodata=-9999.0),
+    )
     return TestClient(app)
 
 

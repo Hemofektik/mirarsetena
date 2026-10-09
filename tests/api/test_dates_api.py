@@ -65,7 +65,7 @@ def test_s2_layer_returns_sorted_dates_with_cloud(storage, registry):
     assert all(isinstance(d["cloud"], float) for d in dates)
     assert result["mission"] == "sentinel-2-l2a"
     assert result["timeline"]["start"] == "2026-01-01"
-    assert result["timeline"]["works_start"] == "2026-08-01"
+    assert result["timeline"]["works_start"] == "2026-06-01"
 
 
 def test_s1_layer_returns_eight_dates(storage, registry):

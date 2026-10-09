@@ -74,6 +74,7 @@ class ProjectConfig(BaseModel):
     name: str = Field(min_length=1)
     aoi_path: str
     pois_path: str
+    rio_path: str | None = None  # optional work-area line overlay (OSM)
     bbox: tuple[float, float, float, float]
     layers: list[str] = Field(min_length=1)
     timeline: Timeline

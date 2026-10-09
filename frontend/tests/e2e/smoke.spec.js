@@ -4,6 +4,16 @@ import { expect, test } from "@playwright/test";
 
 const SLUG = "cdp-rio-general";
 
+// Radar readiness: the cloud strip is HIDDEN on radar layers (cloudiness
+// does not affect Sentinel-1), so wait for the slider plus a populated
+// DOM instead of visual visibility.
+async function waitForRadarDates(page) {
+  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(() => page.locator("#cloud-strip span").count(), { timeout: 30_000 })
+    .toBeGreaterThan(0);
+}
+
 test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
   await expect(page.locator("#app-title")).toHaveText("Mirar Setena");
@@ -54,14 +64,10 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await page.keyboard.press("Escape");
 
   // works-start marker renders from config
-  await expect(page.locator("#works-marker")).toContainText("2026-08-01");
+  await expect(page.locator("#works-marker")).toContainText("2026-06-01");
 
-  // hide-cloudy never hides the (cloudless) radar dates
-  const before = await page.locator("#cloud-strip span").count();
-  await page.locator("#hide-cloudy").check();
-  const after = await page.locator("#cloud-strip span").count();
-  expect(after).toBe(before);
-  await page.locator("#hide-cloudy").uncheck();
+  // the cloud controls are gone on radar (covered by the dedicated test)
+  await expect(page.locator("#hide-cloudy-row")).toBeHidden();
 
   // baseline select lists the S1 dates (radar controls)
   await expect(page.locator("#date-start")).toBeVisible(); // range mode on radar
@@ -749,10 +755,7 @@ test("radar range slider drives start and end of the change", async ({ page }) =
   await expect(page.locator("#date-start")).toBeHidden(); // optical default
 
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await waitForRadarDates(page);
 
   const read = () =>
     page.evaluate(() => ({
@@ -806,10 +809,7 @@ test("the left thumb stays put while dragging the right knob", async ({ page }) 
   // knob is still moving when I drag the right knob".
   await page.goto(`/p/${SLUG}/`);
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await waitForRadarDates(page);
 
   const read = () =>
     page.evaluate(() => {
@@ -855,10 +855,7 @@ test("the left thumb stays put while dragging the right knob", async ({ page }) 
 test("adjacent knobs stay put: moving one never moves the other", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await waitForRadarDates(page);
 
   const read = () =>
     page.evaluate(() => ({
@@ -908,9 +905,7 @@ test("a fast range drag retargets the overlay once", async ({ page }) => {
 
   await page.goto(`/p/${SLUG}/`);
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await waitForRadarDates(page);
   await page.waitForTimeout(600);
   requested.length = 0;
 
@@ -979,10 +974,7 @@ test("orbit geometry labels dates and warns on mismatched pairs", async ({ page 
   // date's viewing geometry and flag a start/end pair that doesn't match.
   await page.goto(`/p/${SLUG}/`);
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await waitForRadarDates(page);
 
   // cloud-strip tooltips carry the acquisition geometry
   const titles = await page
@@ -1024,4 +1016,102 @@ test("orbit geometry labels dates and warns on mismatched pairs", async ({ page 
     el.dispatchEvent(new Event("input", { bubbles: true }));
   }, idx.match);
   await expect(warn).toBeHidden();
+});
+
+test("cloud controls disappear on radar layers and return on optical", async ({ page }) => {
+  // Cloudiness does not affect Sentinel-1: the strip, badge and the
+  // hide-cloudy / max-cloud rows must vanish on sigma0 and come back on
+  // an optical layer — without losing the strip's date population.
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  const opticalRows = {
+    strip: page.locator("#cloud-strip"),
+    badge: page.locator("#cloud-badge"),
+    hideRow: page.locator("#hide-cloudy-row"),
+    maxRow: page.locator("#max-cloud-row"),
+  };
+  for (const el of Object.values(opticalRows)) await expect(el).toBeVisible();
+
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(() => page.locator("#cloud-strip span").count(), { timeout: 30_000 })
+    .toBeGreaterThan(0);
+  for (const el of Object.values(opticalRows)) await expect(el).toBeHidden();
+
+  await page.locator('#layer-buttons button:has-text("ndvi")').click();
+  for (const el of Object.values(opticalRows)) await expect(el).toBeVisible();
+});
+
+test("Rio General work-area line renders as an overlay", async ({ page }) => {
+  // The plan's work area follows the Río General between the project
+  // start/end POIs (the POIs sit on the river within metres): the clipped
+  // OSM way must be served and drawn as its own line source.
+  const rio = await page.request.get(`/p/${SLUG}/rio.geojson`);
+  expect(rio.status()).toBe(200);
+  const payload = await rio.json();
+  const line = payload.features[0];
+  expect(line.geometry.type).toBe("LineString");
+  expect(line.geometry.coordinates.length).toBeGreaterThanOrEqual(2);
+
+  await page.goto(`/p/${SLUG}/`);
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30_000,
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const map = window.__mirarsetenaMap;
+        const src = map.getSource("rio");
+        if (!src) return 0;
+        const data = src.serialize ? src.serialize().data : src._data;
+        return data?.features?.[0]?.geometry?.coordinates?.length ?? 0;
+      }),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThanOrEqual(2);
+  const layers = await page.evaluate(() =>
+    ["rio-casing", "rio-outline"].filter((id) => window.__mirarsetenaMap.getLayer(id)),
+  );
+  expect(layers).toEqual(["rio-casing", "rio-outline"]);
+});
+
+test("Rio start-end line has a toggle checkbox, is 50% transparent, and remembers itself", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30_000,
+  });
+  const rioVisible = () =>
+    page.evaluate(() =>
+      ["rio-casing", "rio-outline"].every((id) => {
+        const map = window.__mirarsetenaMap;
+        if (!map.getLayer(id)) return false;
+        return map.getLayoutProperty(id, "visibility") !== "none";
+      }),
+    );
+
+  // default: on, and the line is 50% transparent (user 2026-10-09)
+  await expect.poll(rioVisible).toBe(true);
+  const opacity = await page.evaluate(() => [
+    window.__mirarsetenaMap.getPaintProperty("rio-casing", "line-opacity"),
+    window.__mirarsetenaMap.getPaintProperty("rio-outline", "line-opacity"),
+  ]);
+  expect(opacity).toEqual([0.5, 0.5]);
+
+  // the checkbox turns it off and the URL carries the choice
+  await page.locator("#show-rio-line").uncheck();
+  await expect.poll(rioVisible).toBe(false);
+  await expect(page).toHaveURL(/rio=0/);
+
+  // ...and back on, surviving a reload (memorized)
+  await page.locator("#show-rio-line").check();
+  await expect.poll(rioVisible).toBe(true);
+  await page.reload();
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30_000,
+  });
+  await expect.poll(rioVisible).toBe(true);
+  await expect(page.locator("#show-rio-line")).toBeChecked();
 });

@@ -137,6 +137,7 @@ describe("tile URLs and URL state (I.5)", () => {
       hideCloudy: true,
       maxCloud: 15,
       properties: true,
+      rioLine: true,
       pois: "facilities",
       basemap: "esri",
       lang: "es",
@@ -376,7 +377,7 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
     // settings payload never carries transient view state
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "hideCloudy", "maxCloud", "poiGroups", "showProperties"],
+      ["basemap", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "showProperties"],
     );
   });
 });

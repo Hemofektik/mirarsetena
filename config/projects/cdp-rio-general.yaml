@@ -13,6 +13,7 @@ location:
 # Canonical project geometry (produced by the AOI reconstruction generator).
 aoi_path: data/projects/cdp-rio-general/aoi.geojson
 pois_path: data/projects/cdp-rio-general/pois.geojson
+rio_path: data/projects/cdp-rio-general/rio-general.geojson  # Río General between start/end POIs (OSM, ODbL)
 
 # WGS84 [west, south, east, north], padded AOI used for satellite queries.
 bbox: [-83.675, 9.378, -83.660, 9.397]
@@ -22,7 +23,7 @@ layers: [rgb, ndvi, mndwi, bsi, sigma0, coherence]
 
 timeline:
   start: 2026-01-01          # scrubber window start (SCOPE R2-Q2, updated 2026-10-07)
-  works_start: 2026-08-01    # works began ~Aug 2026 — adjustable marker (SCOPE §7)
+  works_start: 2026-06-01    # works began June 2026 — user correction 2026-10-09
 
 cache:
   max_zoom: 18               # hard zoom cap (SCOPE R3-Q6)

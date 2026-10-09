@@ -64,11 +64,11 @@
               <span id="cloud-badge" class="muted"></span>
             </div>
             <div id="cloud-strip" title=""></div>
-            <label class="row">
+            <label class="row" id="hide-cloudy-row">
               <input id="hide-cloudy" type="checkbox" />
               <span data-i18n="hide_cloudy">Ocultar fechas nubladas</span>
             </label>
-            <label class="row">
+            <label class="row" id="max-cloud-row">
               <span data-i18n="max_cloud">Máx. nube %</span>
               <input id="max-cloud" type="number" min="0" max="100" value="20" />
             </label>
@@ -93,6 +93,10 @@
           <label class="row">
             <input id="show-properties" type="checkbox" checked />
             <span data-i18n="properties_label">Perímetro de propiedades</span>
+          </label>
+          <label class="row">
+            <input id="show-rio-line" type="checkbox" checked />
+            <span data-i18n="rio_line">Línea Río General (inicio–fin)</span>
           </label>
         </section>
 
