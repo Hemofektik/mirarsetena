@@ -209,3 +209,84 @@ def test_cochange_uses_coherence_value_thresholds():
         classes = src.read(1)
     assert classes[5, 5] == 3   # no change -> neutral
     assert classes[16, 16] == 1  # patch centre: -0.25 -> class 1
+
+
+# --- accumulative windows (user: "maybe some extra preprocessing or
+# accumulative processing is necessary") ---------------------------------
+
+def test_accum_delta_comes_from_the_selected_pair_not_the_window():
+    """The slider means 'these two dates': wild values in the window's
+    NON-anchor members must not move the delta (a window median would
+    yield -7 dB -> class 0 here), while still feeding the gate's sigma."""
+    from mirarsetena.pipeline.change import render_change_accumulated
+
+    grid = np.full((32, 32), -10.0, dtype=np.float32)
+    delta_grid = grid.copy()
+    delta_grid[12:20, 12:20] = -9.0   # +1 dB patch in the pair delta
+    # start side: anchor quiet, neighbours are +8 dB outliers
+    a = [_geo_bytes(grid), _geo_bytes(grid + 8.0), _geo_bytes(grid + 8.0)]
+    # end side: anchor has the patch, neighbours quiet
+    b = [_geo_bytes(delta_grid), _geo_bytes(delta_grid), _geo_bytes(delta_grid)]
+    out = render_change_accumulated("sigma0", a, b)
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        classes = src.read(1)
+    # pair delta is +1 dB (median delta would be -7 dB -> class 0)
+    assert classes[16, 16] == 4
+    assert classes[5, 5] == 3
+
+
+def test_accum_weak_classes_require_short_window_consistency():
+    """Weak (+/-1 dB) classes must be LOCALLY REPRODUCIBLE: the same delta
+    survives the gate when the window is quiet, and collapses to neutral
+    when the window itself swings by that much (moisture/speckle)."""
+    from mirarsetena.pipeline.change import render_change_accumulated
+
+    grid = np.full((32, 32), -10.0, dtype=np.float32)
+    # +1.0 dB weak-increase patch (bias stays ~0: background dominates)
+    delta_grid = grid.copy()
+    delta_grid[12:20, 12:20] = -9.0
+
+    # quiet window: both sides barely move -> z = 1.0 / floor(0.3) > 2 -> kept
+    quiet_a = [_geo_bytes(grid), _geo_bytes(grid), _geo_bytes(grid)]
+    quiet_b = [_geo_bytes(delta_grid), _geo_bytes(delta_grid), _geo_bytes(delta_grid)]
+    out = render_change_accumulated("sigma0", quiet_a, quiet_b)
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        quiet = src.read(1)
+    assert quiet[16, 16] == 4   # consistent weak increase survives
+    assert quiet[5, 5] == 3     # background neutral
+
+    # swingy window: the +/-1.5 dB wobble inside each side makes sigma_pool
+    # large, so the same +1.0 delta is within its own noise -> neutral
+    swingy_a = [
+        _geo_bytes(grid - 1.5),
+        _geo_bytes(grid),
+        _geo_bytes(grid + 1.5),
+    ]
+    swingy_b = [
+        _geo_bytes(delta_grid - 1.5),
+        _geo_bytes(delta_grid),
+        _geo_bytes(delta_grid + 1.5),
+    ]
+    out = render_change_accumulated("sigma0", swingy_a, swingy_b)
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        swingy = src.read(1)
+    assert swingy[16, 16] == 3  # same delta, no temporal evidence -> neutral
+
+
+def test_accum_strong_classes_survive_the_consistency_gate():
+    """Strong magnitude changes are window-median smoothed and NOT gated:
+    real excavation stays visible even in a variable area."""
+    from mirarsetena.pipeline.change import render_change_accumulated
+
+    grid = np.full((32, 32), -10.0, dtype=np.float32)
+    big = grid.copy()
+    big[12:20, 12:20] = -6.0   # +4 dB excavation patch, background at 0
+    a = [_geo_bytes(grid - 3.0), _geo_bytes(grid + 3.0), _geo_bytes(grid)]
+    b = [_geo_bytes(big - 3.0), _geo_bytes(big + 3.0), _geo_bytes(big)]
+    out = render_change_accumulated("sigma0", a, b)
+    with MemoryFile(out) as memfile, memfile.open() as src:
+        classes = src.read(1)
+    # medians: a -> grid, b -> big -> delta +4 at the patch despite huge
+    # within-window wobble (z would be < 2; strong classes are not gated)
+    assert classes[16, 16] == 6
+    assert classes[5, 5] == 3

@@ -5,6 +5,7 @@ the XYZ route (SCOPE R2-Q4), so parity is structural, not incidental.
 """
 from __future__ import annotations
 
+import hashlib
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future
@@ -14,6 +15,8 @@ from mirarsetena.pipeline.change import (
     PREPROCESS_VERSION,
     default_baseline_date,
     render_change,
+    render_change_accumulated,
+    window_indices,
 )
 from mirarsetena.pipeline.dates import list_dates, mission_for_layer
 from mirarsetena.pipeline.grd import process_s1_daily
@@ -139,18 +142,71 @@ class TileService:
             product = self._storage.get(key)
         return product
 
+    def _stored(self, layer: str, day: str) -> bytes | None:
+        """Product lookup WITHOUT triggering processing: accumulation is
+        best-effort over dates that are already materialised, so a tile
+        request never blocks on cold downloads of neighbouring scenes."""
+        mission = mission_for_layer(layer)
+        return self._storage.get(layer_key(self._config.slug, mission, day, layer))
+
     def _derived(
         self, layer: str, date: str, baseline: str | None, mode: str,
         scene: bytes, baseline_product: bytes | None,
-    ) -> bytes:
-        suffix = f"{layer}_{date}_raw.tif" if mode == "raw" else \
-            f"{layer}_{date}_vs_{baseline}_pp{PREPROCESS_VERSION}.tif"
-        key = cache_key(self._config.slug, "layers", suffix)
+        dates: list[str] | None = None,
+    ) -> tuple[bytes, str]:
+        """Derived render for one tile template; returns (bytes, key_fp).
+
+        Change mode renders the accumulative pipeline over the
+        WINDOW_DATES windows around start/end — restricted to products
+        that exist. The fingerprint covers the window actually used, so
+        the derived result is recomputed (and enriched) whenever a
+        neighbouring date gets processed later.
+        """
+        dates = dates or []
+        if mode == "raw":
+            key = cache_key(self._config.slug, "layers", f"{layer}_{date}_raw.tif")
+            derived = self._storage.get(key)
+            if derived is None:
+                derived = render_change(scene, None, mode=mode, layer=layer)
+                self._storage.put(key, derived)
+            return derived, ""
+
+        def side(anchor: str | None) -> list[str]:
+            if not anchor:
+                return []
+            if anchor not in dates:
+                return [anchor]
+            days = [dates[i] for i in window_indices(dates.index(anchor), len(dates))]
+            return [anchor] + [d for d in days if d != anchor]
+
+        known = {date: scene}
+        if baseline:
+            known[baseline] = baseline_product
+        start_products: list[bytes] = []
+        end_products: list[bytes] = []
+        used: list[str] = []
+        for day in side(baseline):
+            product = known.get(day) or self._stored(layer, day)
+            if product is not None:
+                start_products.append(product)
+                used.append(f"s{day}")
+        for day in side(date):
+            product = known.get(day) or self._stored(layer, day)
+            if product is not None:
+                end_products.append(product)
+                used.append(f"e{day}")
+        fp = (
+            f"-acc-{hashlib.sha1(','.join(used).encode()).hexdigest()[:10]}"
+            f"-pp{PREPROCESS_VERSION}"
+        )
+        key = cache_key(
+            self._config.slug, "layers", f"{layer}_{date}_vs_{baseline}{fp}.tif"
+        )
         derived = self._storage.get(key)
         if derived is None:
-            derived = render_change(scene, baseline_product, mode=mode, layer=layer)
+            derived = render_change_accumulated(layer, start_products, end_products)
             self._storage.put(key, derived)
-        return derived
+        return derived, fp
 
     def get_tile(
         self,
@@ -181,6 +237,7 @@ class TileService:
         if scene is None:
             return None
 
+        fingerprint = ""
         if layer in RADAR_LAYERS:
             if mode == "raw":
                 # Raw renders ABSOLUTE values via the layer's value ramp
@@ -203,8 +260,9 @@ class TileService:
                 baseline_product = self._product(layer, baseline)
                 if baseline_product is None:
                     return None
-                product = self._derived(
-                    layer, date, baseline, mode, scene, baseline_product
+                product, fingerprint = self._derived(
+                    layer, date, baseline, mode, scene, baseline_product,
+                    dates=dates,
                 )
                 style = style_for(layer, mode="change")
         else:
@@ -213,7 +271,7 @@ class TileService:
 
         # change tiles carry the preprocessing version so old renders are
         # never served after the classification changes
-        pp_tag = f"-pp{PREPROCESS_VERSION}" if mode == "change" else ""
+        pp_tag = fingerprint
         cache_parts = (
             layer, date, str(z), str(x), str(y),
             f"{mode}-{baseline or ''}{pp_tag}.png",

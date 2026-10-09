@@ -140,7 +140,7 @@ flowchart LR
 - **Frontend:** MapLibre GL, layer switcher → layer-driven date scrubber (works-start marker, cloud badges, hide-cloudy), POI toggle (facilities / inspection groups) rendered as dots with decluttered, always-visible labels (no overlap at any zoom), OSM default + Esri imagery toggle, URL state sharing, PNG export, About panel (incl. the RES-1333-2017 purpose/reason in ES+EN), ES/EN language switch, localized help tooltips on the layer pills and radar modes.
 - **Tile service:** WMTS 1.0.0 (GetCapabilities/GetTile) + XYZ raster over shared handlers; per-project slug namespacing; zoom cap 18; tile LRU at 2 GB, sources retained.
 - **S2 pipeline:** STAC fetch → dual-tile mosaicking → RGB/NDVI/MNDWI/BSI + SCL cloud % → two-level cache.
-- **S1 pipeline:** GRD COG fetch → σ⁰ change-vs-baseline (frontend range slider picks start/end; raw mode removed by user decision 2026-10-08).
+- **S1 pipeline:** GRD COG fetch → σ⁰ change-vs-baseline (frontend range slider picks start/end; raw mode removed by user decision 2026-10-08). *Accumulative since 2026-10-09:* the pair delta keeps its magnitude classes, but weak ± classes require local consistency (|Δ| ≥ 2× the pooled temporal variability of the 3-date windows around start/end, else neutral) — validated on the live products: AOI neutral 68%→80%, weak mottle 29%→18%, strong change and quarry/control separation unchanged.
 - **Coherence pipeline:** CDSE token → SLC pairs (same orbit, 12-day, eager from the timeline start) → compute-and-purge → cached result only. Triggered after first plain-data view; thereafter append-only.
 - **Freshness:** scheduled catalog poll + orbit-repeat prediction surfaced on `/status` (per your Q5: the server knows from orbit/past data whether new data may be available).
 
