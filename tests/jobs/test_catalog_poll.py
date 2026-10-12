@@ -72,3 +72,21 @@ def test_lifespan_starts_the_poller(tmp_path, fake_search):
         assert client.app.state.poller is not None
         assert not client.app.state.poller.done() or client.app.state.poller.cancelled()
         assert client.get("/healthz").status_code == 200
+
+
+def test_poller_registers_insar_pair_handler(tmp_path):
+    """Gap #3 (INSAR-PLAN): coherence/insar pair jobs were enqueued by the
+    trigger but never registered in the poller, so they parked forever. The
+    cycle must expose an insar_pair handler so the queue can drain them."""
+    from mirarsetena.jobs.poller import insar_handlers
+
+    registry = ProjectRegistry(CONFIG_DIR)
+    storage = LocalStore(tmp_path / "cache")
+    handlers = insar_handlers(registry, storage, search_fn=fake_search_stub)
+    assert "insar_pair" in handlers
+    assert "insar_eager" in handlers
+    assert callable(handlers["insar_pair"])
+
+
+def fake_search_stub(collection, bbox, start, end):
+    return []

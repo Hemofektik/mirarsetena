@@ -13,6 +13,7 @@ from datetime import datetime, timedelta, timezone
 
 from mirarsetena.pipeline import catalog
 from mirarsetena.pipeline.catalog import DailyScene, Scene, group_by_date, search
+from mirarsetena.pipeline.indices import layer_key
 from mirarsetena.pipeline.window import scene_meta_key
 from mirarsetena.projects.registry import ProjectConfig, cache_key
 from mirarsetena.storage import Storage
@@ -22,11 +23,15 @@ INDEX_VERSION = 2  # v2 = per-date orbit geometry (viewing-direction matching)
 
 S2_LAYERS = {"rgb", "ndvi", "mndwi", "bsi"}
 S1_LAYERS = {"sigma0", "coherence"}
+INSAR_LAYERS = {"insar"}
 
 _MISSION_BY_LAYER = {
     **{layer: "sentinel-2-l2a" for layer in S2_LAYERS},
     "sigma0": "sentinel-1-grd",
     "coherence": "sentinel-1-slc",
+    # InSAR LOS displacement is produced from SLC phase by the background
+    # interferometry jobs (INSAR-PLAN L.3); no lazy path, jobs only.
+    "insar": "sentinel-1-slc",
 }
 
 SearchFn = Callable[..., list[Scene]]
@@ -111,6 +116,12 @@ def refresh_index(
         mission = mission_for_layer(layer)
         if mission in missions:
             continue
+        # sentinel-1-slc (the InSAR layer) is not catalog-searchable: its
+        # dates are pair-derived in _list_insar_dates, so skip the wasted
+        # search here (INSAR-PLAN L.5).
+        if mission == "sentinel-1-slc":
+            missions[mission] = []
+            continue
         try:
             scenes = search_fn(
                 mission, config.bbox,
@@ -149,6 +160,68 @@ def refresh_index(
     return index
 
 
+def _list_insar_dates(
+    storage: Storage,
+    slug: str,
+    config: ProjectConfig,
+    *,
+    search_fn: SearchFn,
+    now: datetime,
+) -> dict:
+    """InSAR dates = END dates of planned interferometric pairs.
+
+    SLC is not catalog-searchable (Earth Search serves GRD only), but SLC
+    acquisitions share the passes with GRD — so we plan pairs from the GRD
+    metadata (INSAR-PLAN L.3). Each date's product is the unwrapped LOS
+    displacement for that pair, produced by the background jobs.
+    """
+    from mirarsetena.coherence.pairs import plan_pairs
+
+    try:
+        scenes = search_fn(
+            "sentinel-1-grd",
+            config.bbox,
+            config.timeline.start.isoformat(),
+            now.date().isoformat(),
+        )
+    except catalog.CatalogError:
+        scenes = []
+    pairs = plan_pairs(scenes)
+
+    # The end date of each pair is the product date; track the geometry so
+    # the frontend can label ASC/DESC like the old radar scrubber did.
+    by_end: dict[str, dict] = {}
+    for pair in pairs:
+        entry = by_end.setdefault(
+            pair.second.date,
+            {
+                "date": pair.second.date,
+                "cloud": None,       # radar: no SCL, always cloudless
+                "processed": False,  # becomes True when a job stores the product
+                "orbits": [],
+            },
+        )
+        geometry = (pair.second.orbit_state, pair.second.relative_orbit)
+        if list(geometry) not in entry["orbits"]:
+            entry["orbits"].append(list(geometry))
+
+    # processed=True when the job already cached a product for this pair
+    for entry in by_end.values():
+        product_key = layer_key(slug, "sentinel-1-slc", entry["date"], "insar")
+        entry["processed"] = storage.get(product_key) is not None
+
+    dates = [by_end[key] for key in sorted(by_end)]
+    return {
+        "layer": "insar",
+        "mission": "sentinel-1-slc",
+        "dates": dates,
+        "timeline": {
+            "start": config.timeline.start.isoformat(),
+            "works_start": config.timeline.works_start.isoformat(),
+        },
+    }
+
+
 def list_dates(
     storage: Storage,
     slug: str,
@@ -162,6 +235,9 @@ def list_dates(
     """Date list for one layer: mission-implied, cloud-filtered, timeline."""
     now = now or datetime.now(timezone.utc)
     mission = mission_for_layer(layer)
+
+    if layer in INSAR_LAYERS:
+        return _list_insar_dates(storage, slug, config, search_fn=search_fn, now=now)
 
     raw = storage.get(index_key(slug))
     index = json.loads(raw) if raw else None

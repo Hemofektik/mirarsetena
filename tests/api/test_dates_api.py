@@ -99,6 +99,28 @@ def test_coherence_layer_is_empty_before_slc_catalog_exists(storage, registry):
     assert result["mission"] == "sentinel-1-slc"
 
 
+def test_insar_layer_dates_come_from_interferometric_pairs(storage, registry):
+    # SLC is not catalog-searchable; InSAR dates are the END dates of the
+    # planned 12-day interferometric pairs (GRD metadata shares the passes).
+    config = _with_radar(
+        registry.get("cdp-rio-general"), ["ndvi", "insar"]
+    )
+    result = list_dates(
+        storage, "cdp-rio-general", config,
+        "insar", search_fn=fake_search, now=NOW,
+    )
+    dates = [d["date"] for d in result["dates"]]
+    assert result["mission"] == "sentinel-1-slc"
+    # 6 pairs from the 8-scene GRD fixture (5 asc rel-92 + 1 desc rel-84)
+    assert dates == [
+        "2026-07-23", "2026-08-04", "2026-08-16",
+        "2026-08-28", "2026-09-09", "2026-10-03",
+    ]
+    # cloud is always None for radar-derived (no SCL); each carries orbits
+    assert all(d["cloud"] is None for d in result["dates"])
+    assert all(d["processed"] is False for d in result["dates"])
+
+
 def test_max_cloud_filters_dates(storage, registry):
     config = registry.get("cdp-rio-general")
     result = list_dates(
@@ -172,7 +194,8 @@ def test_route_serves_dates_and_maps_errors(tmp_path):
 
 
 def test_first_dates_fetch_triggers_the_eager_coherence_job(tmp_path, fake_search):
-    """SCOPE R2-Q1: first plain-data view starts exactly one eager job."""
+    """SCOPE R2-Q1 + INSAR-PLAN L.5: first plain-data view starts exactly one
+    eager coherence job AND one eager InSAR job (independent stacks)."""
     app = create_app(
         config_dir=CONFIG_DIR,
         storage_root=tmp_path / "cache",
@@ -181,8 +204,9 @@ def test_first_dates_fetch_triggers_the_eager_coherence_job(tmp_path, fake_searc
     client = TestClient(app)
 
     client.get("/p/cdp-rio-general/api/dates", params={"layer": "ndvi"})
-    assert app.state.queue.counts() == {"pending": 1}
+    assert app.state.queue.counts() == {"pending": 2}
     assert app.state.queue.last_job("coherence_eager") is not None
+    assert app.state.queue.last_job("insar_eager") is not None
 
     client.get("/p/cdp-rio-general/api/dates", params={"layer": "ndvi"})
-    assert app.state.queue.counts() == {"pending": 1}  # still exactly one
+    assert app.state.queue.counts() == {"pending": 2}  # still exactly one each

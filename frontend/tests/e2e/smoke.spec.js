@@ -16,8 +16,8 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await expect(page.locator("#app-title")).toHaveText("Mirar Setena");
   await expect(page.locator("#project-name")).toContainText("CDP Río General");
 
-  // four configured layers (radar removed 2026-10-12)
-  await expect(page.locator("#layer-buttons button")).toHaveCount(4);
+  // five configured layers (insar returns as the InSAR LOS layer, INSAR-PLAN)
+  await expect(page.locator("#layer-buttons button")).toHaveCount(5);
 
   // S2 dates populate the cloud strip (live catalog)
   await expect(page.locator("#cloud-strip span").first()).toBeVisible({
@@ -598,7 +598,7 @@ test("About dialog explains the RES-1333-2017 purpose in both languages", async 
 
 test("layer and mode buttons carry help tooltips", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#layer-buttons button")).toHaveCount(4);
+  await expect(page.locator("#layer-buttons button")).toHaveCount(5);
 
   // every layer pill explains what it shows, in the active language
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
@@ -609,7 +609,11 @@ test("layer and mode buttons carry help tooltips", async ({ page }) => {
     "title",
     /superficie expuesta/,
   );
-  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(4);
+  await expect(page.locator('#layer-buttons [data-layer="insar"]')).toHaveAttribute(
+    "title",
+    /InSAR/,
+  );
+  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(5);
 
   await page.locator("#lang-select").selectOption("en");
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
@@ -620,6 +624,30 @@ test("layer and mode buttons carry help tooltips", async ({ page }) => {
     "title",
     /Bare Soil/,
   );
+});
+
+test("insar layer shows the LOS colour legend and its pair dates", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  // the legend is hidden while an optical layer is active
+  await expect(page.locator("#insar-legend")).toBeHidden();
+
+  await page.locator('#layer-buttons [data-layer="insar"]').click();
+  // colour legend appears with the LOS displacement scale
+  await expect(page.locator("#insar-legend")).toBeVisible();
+  await expect(page.locator("#insar-legend-title")).toHaveText(/cm/);
+  // the legend bar is the blue→white→red diverging ramp
+  await expect(page.locator("#insar-legend-bar")).toBeVisible();
+
+  // scrubber lists pair end-dates (radar: cloudless), not S2 dates
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+
+  // switching back to an optical layer hides the legend again
+  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
+  await expect(page.locator("#insar-legend")).toBeHidden();
 });
 
 test("overlay overzooms past the service cap instead of 400ing", async ({ page }) => {

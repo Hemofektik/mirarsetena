@@ -50,9 +50,11 @@ def test_status_payload_contains_all_sections(tmp_path, fake_search):
         "next_acquisition": "2026-10-11",
         "repeat_days": 5,
     }
-    # radar layers left the config (2026-10-12): the status payload carries
-    # only the missions the project's layers imply
-    assert set(missions) == {"sentinel-2-l2a"}
+    # radar magnitude layers left the config (2026-10-12); the `insar`
+    # layer (INSAR-PLAN) brings sentinel-1-slc back — pair-derived, so its
+    # index entries are empty (last_scene None) but the mission is real.
+    assert set(missions) == {"sentinel-2-l2a", "sentinel-1-slc"}
+    assert missions["sentinel-1-slc"]["last_scene"] is None
 
 
 def test_status_routes(tmp_path, fake_search):

@@ -103,3 +103,36 @@ def test_pair_handler_skips_already_computed_results(tmp_path):
     handler(payload)  # cached result -> skipped entirely
     assert processed == [2]
     assert created[0].exists() is False
+
+
+def test_insar_trigger_fires_independent_eager_job(tmp_path):
+    """INSAR-PLAN L.5: the InSAR stack fires its own eager job once, under
+    its own viewed flag — independent of the coherence stack."""
+    from mirarsetena.coherence.trigger import (
+        insar_viewed_flag_key,
+        trigger_insar_on_first_view,
+    )
+
+    storage = LocalStore(tmp_path / "cache")
+    queue = JobQueue(tmp_path / "jobs.db")
+
+    class _Cfg:
+        slug = "proj-a"
+        bbox = BBOX
+
+        class timeline:
+            from datetime import datetime, timezone
+
+            start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+
+    def _search(collection, bbox, start, end):
+        payload = json.loads((FIXTURES / "stac_s1_grd.json").read_text())
+        return parse_scenes("sentinel-1-grd", payload)
+
+    assert trigger_insar_on_first_view(storage, _Cfg(), queue, _search) is True
+    assert queue.last_job("insar_eager")["status"] == "pending"
+    assert storage.get(insar_viewed_flag_key("proj-a")) is not None
+
+    # second view: no duplicate eager job
+    assert trigger_insar_on_first_view(storage, _Cfg(), queue, _search) is False
+    assert queue.counts() == {"pending": 1}

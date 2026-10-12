@@ -52,11 +52,13 @@ def test_getcapabilities_lists_one_layer_per_date(client):
         layer.find(f"{OWS_NS}Identifier").text
         for layer in root.findall(f".//{WMTS_NS}Layer")
     ]
-    # 4 optical layers x 25 S2 dates (radar layers left the config 2026-10-12)
-    assert len(names) == 4 * 25
+    # 4 optical layers x 25 S2 dates + the InSAR layer's 6 pair end-dates
+    # (INSAR-PLAN L.5: radar layers left the config 2026-10-12; insar returns)
+    assert len(names) == 4 * 25 + 6
     assert "ndvi_2026-07-03" in names
     assert "rgb_2026-10-06" in names
-    assert all(name.rsplit("_", 1)[0] in {"rgb", "ndvi", "mndwi", "bsi"}
+    assert "insar_2026-10-03" in names  # a InSAR pair end-date
+    assert all(name.rsplit("_", 1)[0] in {"rgb", "ndvi", "mndwi", "bsi", "insar"}
                for name in names)
 
 
@@ -137,10 +139,10 @@ def test_xyz_and_wmts_return_byte_identical_tiles(client):
 def _radar_config_dir(tmp_path):
     """Config dir with sigma0 re-added: the display config dropped the
     radar layers (2026-10-12) but this dormant machinery is kept covered
-    for the InSAR return."""
+    for the InSAR return. The config now also carries the `insar` layer."""
     src = (CONFIG_DIR / f"{SLUG}.yaml").read_text(encoding="utf-8")
     patched = src.replace(
-        "layers: [rgb, ndvi, mndwi, bsi]",
+        "layers: [rgb, ndvi, mndwi, bsi, insar]",
         "layers: [rgb, ndvi, mndwi, bsi, sigma0]",
     )
     assert patched != src, "layers line not found"

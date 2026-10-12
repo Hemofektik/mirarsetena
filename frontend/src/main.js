@@ -256,6 +256,8 @@ function renderScrubber() {
   // section (title, empty message, controls), not just its innards.
   const section = document.getElementById("date-section");
   section.hidden = !state.layer;
+  // The InSAR colour legend shows only while the insar layer is active.
+  document.getElementById("insar-legend").hidden = state.layer !== "insar";
   if (!state.layer) return;
 
 

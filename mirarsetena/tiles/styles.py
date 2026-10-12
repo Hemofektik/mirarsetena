@@ -45,6 +45,17 @@ STYLES = {
         "stops": [(0.0, (15, 15, 15)), (0.5, (128, 128, 128)), (1.0, (250, 250, 250))],
         "change_lut": CHANGE_LUT,
     },
+    # InSAR LOS displacement (cm): diverging ramp centred at 0 — negative
+    # (toward satellite) is blue, positive (away / sinking) is red. Fixed
+    # ±5 cm for MVP (predictable legend); adaptive range later (INSAR-PLAN L.4).
+    "insar": {
+        "kind": "ramp",
+        "stops": [
+            (-5.0, (33, 102, 172)),
+            (0.0, (247, 247, 247)),
+            (5.0, (178, 24, 43)),
+        ],
+    },
 }
 
 RADAR_LAYERS = {"sigma0", "coherence"}

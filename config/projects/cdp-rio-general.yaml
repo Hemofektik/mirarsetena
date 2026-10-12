@@ -23,7 +23,9 @@ bbox: [-83.675, 9.378, -83.660, 9.397]
 # Radar layers removed 2026-10-12 (user): sigma0/coherence 'do not make
 # sense currently' with GRD magnitude data — the long-term path is full
 # InSAR (SLC phase), planned separately; server code stays dormant.
-layers: [rgb, ndvi, mndwi, bsi]
+# The `insar` layer (INSAR-PLAN) renders unwrapped LOS displacement in cm
+# from SLC phase, produced by the background interferometry jobs (L.3).
+layers: [rgb, ndvi, mndwi, bsi, insar]
 
 timeline:
   start: 2026-01-01          # scrubber window start (SCOPE R2-Q2, updated 2026-10-07)

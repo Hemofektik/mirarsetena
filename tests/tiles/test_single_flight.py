@@ -75,7 +75,9 @@ def test_stale_index_refreshes_once_under_concurrency(tmp_path):
         )
 
     # the display config dropped the radar layers (2026-10-12): the index
-    # refresh issues exactly one search per remaining mission
+    # refresh issues exactly one search per remaining catalog mission. The
+    # InSAR layer's sentinel-1-slc mission is pair-derived, not catalog-
+    # searched, so it never appears here (INSAR-PLAN L.5).
     assert calls == {"sentinel-2-l2a": 1}
 
 

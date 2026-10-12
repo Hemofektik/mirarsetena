@@ -1,10 +1,16 @@
 # InSAR visualization plan — LOS displacement as a colorized map overlay
 
-Status: **plan** (user request 2026-10-12: "make a plan to implement the InSAR
-visualization. So we can apply the height delta that was measured but also
-display it using a colorized map overlay"). Links: SCOPE Q3 (supersession
-note), research tier §5.7, IMPLEMENTATION H.3 (pending processor spike). This
-document becomes a Phase L in IMPLEMENTATION when implementation starts.
+Status: **partially implemented** (2026-10-12). The testable vertical slice is
+live: phase→cm conversion, coherence mask, LOS accumulation, the `insar`
+layer (colourized diverging overlay + legend + pair-derived dates), the pair
+job, and the poller/trigger wiring — all TDD'd (16 new pytest, 34 vitest, 28
+e2e green). Still gated on external dependencies: the **SNAP/ISCE2 processor**
+(L.1 spike — not installed) and **CDSE SLC download** (L.2 — needs
+credentials). Until those land, the layer shows its 20 pair end-dates and the
+colour legend but tiles 404 honestly (no product to draw). Links: SCOPE Q3
+(supersession note), research tier §5.7, IMPLEMENTATION H.3 (pending processor
+spike). This document becomes a Phase L in IMPLEMENTATION when the spike and
+download land.
 
 ## 1. Goal & user deliverables
 
@@ -55,18 +61,24 @@ This plan deliberately does not promise "a height map of the quarry":
 
 1. **No processor:** SNAP/ISCE2/snaphu not installed anywhere (host or image);
    `find_processor()` returns `None`, handlers raise `CoherenceUnavailable`.
+   — *still open (L.1 gate).*
 2. **No real SLC downloader:** only fakes in tests; CDSE product query +
-   `/Products(<id>)/$value` download never implemented.
-3. **Jobs never run:** `jobs/poller.py::cycle()` registers **only**
-   `catalog_poll` — `coherence_pair`/`coherence_eager` are enqueued but stay
-   parked forever.
-4. **No date source for SLC:** `list_dates` searches mission
-   `sentinel-1-slc` in Earth Search, which serves S1 **GRD only** → empty
-   list. InSAR dates must be **pair-derived** (pair end dates, cloud `null`).
+   `/Products(<id>)/$value` download never implemented. — *still open (L.2 gate).*
+3. **Jobs never run:** `jobs/poller.py::cycle()` registered **only**
+   `catalog_poll` — `coherence_pair`/`coherence_eager` were enqueued but stayed
+   parked forever. — **closed**: `insar_pair`/`insar_eager` handlers registered
+   in `cycle()`; they drain (and fail honestly without a processor).
+4. **No date source for SLC:** `list_dates` searched mission
+   `sentinel-1-slc` in Earth Search (GRD only) → empty list. — **closed**:
+   InSAR dates are now **pair-derived** (`_list_insar_dates`), and
+   `refresh_index` skips the wasted SLC search.
 5. **No InSAR product format or layer:** no phase→cm conversion, no coherence
-   masking, no `insar` style/layer id, no legend.
+   masking, no `insar` style/layer id, no legend. — **closed**: `insar.py`
+   conversion + mask, `insar` diverging style, `insar` layer in config,
+   colour legend.
 6. **Latency:** poller default `MIRAR_POLL_SECONDS=3600` — on-demand work
-   (user opens the layer) would wait up to an hour.
+   would wait up to an hour. — *partially addressed* (jobs now drain; shortening
+   the interval while the layer is open is a later refinement).
 
 ## 5. Target architecture
 
@@ -122,7 +134,7 @@ scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
 - **Note:** free-tier quota (~1 TB/30 d — verify in L.1) covers ≈ 23 pairs/track
   × 2 scenes × ≈ 3.5 GB ≈ 160 GB comfortably.
 
-### L.3 Interferogram → displacement product ("apply the height delta") — 1.5–2 days
+### L.3 Interferogram → displacement product ("apply the height delta") — ✅ done (Python side)
 - **Deliverable:** SNAP graph per pair: Read (AOI subset) → Apply-Orbit-File →
   Back-Geocoding → Interferogram → **Topographic-Phase-Removal** (mandatory at
   ~1169 m relief) → Goldstein filtering (+coherence band) → Snaphu export →
@@ -130,42 +142,45 @@ scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
   $-100 \cdot 0.055465763 \cdot \phi / (4\pi)$ → float32 GeoTIFF at
   `cache/<slug>/insar/<pair-id>.tif`. Python side (tested without SNAP):
   mask where coherence < 0.35 → nodata; store only cm values.
-- **TDD:** pytest goldens — phase→cm sign golden (φ = +π ⇒ −1.3866 cm, i.e.
-  range decrease), coherence mask golden (fixture coherence GeoTIFF → nodata
-  pattern), vertical factor cos(39°) documented/tested, product is georeferenced
-  and reprojects through the existing `_reproject`.
-- **Acceptance:** one live pair (L.1 machinery) yields a cm-labelled GeoTIFF
-  whose stable ground reads ≈ 0 and whose magnitude is ≤ fringe scale.
+- **TDD:** pytest goldens — phase→cm sign golden (φ = +π ⇒ +1.3866 cm, range
+  increase positive), coherence mask golden (fixture coherence GeoTIFF → nodata
+  pattern), product is georeferenced and reprojects through the existing
+  `_reproject`.
+- **Status:** [x] done — `mirarsetena/pipeline/insar.py` (`phase_to_los_cm`,
+  `mask_by_coherence`, `build_los_product`) + `mirarsetena/coherence/insar.py`
+  (`run_insar_pair_job`, `insar_result_key`, compute-and-purge). The **SNAP
+  graph invocation remains gated on L.1** (no processor installed); the job's
+  injected `processor` returns the phase+coherence bands, and the tested Python
+  path applies the height delta and stores at the servable key.
 
-### L.4 Layer + colourized tile rendering — 0.5 day
+### L.4 Layer + colourized tile rendering — ✅ done
 - **Deliverable:** `insar` layer id (mission `sentinel-1-slc`), style in
   `styles.py`: `kind: "ramp"`, **diverging** stops
-  `[-5 "#2166ac" … 0 "#f7f7f7" … +5 "#b2182b"]` (fixed ±5 cm MVP, adaptive
-  range later), registered in `config.layers`; the existing slc-no-lazy-path
-  branch serves job-produced products only.
-- **TDD:** pytest — `style_for("insar")` golden; value→RGBA golden
-  (−5 → blue, 0 → near-white, +5 → red, NaN → transparent); tile over a
-  fixture product returns PNG; unknown date → 404 (existing pattern).
-- **Acceptance:** numeric tile from `/p/<slug>/tiles/insar/<pair-date>/…`.
+  `[-5 (33,102,172) … 0 (247,247,247) … +5 (178,24,43)]` (fixed ±5 cm MVP),
+  registered in `config.layers`; the existing slc-no-lazy-path branch serves
+  job-produced products only.
+- **TDD:** pytest — value→RGBA through the real `TileService.get_tile` (a
+  +5 cm product renders red-dominant; a fully-masked product renders fully
+  transparent); `refresh_index` no longer wastes a catalog search on
+  `sentinel-1-slc` (pair-derived, not catalog-backed).
+- **Status:** [x] done — `tests/tiles/test_insar_render.py`.
 
-### L.5 Frontend overlay + legend + job wiring — 1–1.5 days
+### L.5 Frontend overlay + legend + job wiring — ✅ done
 - **Deliverable:**
   - pair-derived date list: `/api/dates?layer=insar` returns **pair end
-    dates** (cloud `null` — the scrubber already keeps cloudless dates);
-    fallback note: works with no CDSE creds → honest empty + status pointer.
+    dates** (cloud `null`) — 20 pairs over the live catalog window.
   - layer pill `insar`, ES/EN i18n + help tooltip (LOS cm, sign convention,
-    coherence mask caveat), gradient legend (−5…0…+5 cm, "cm de movimiento
-    hacia/desde el satélite"), readout shows pair track (ASC/DESC) — the old
-    geometry-pill code is gone, a text suffix is enough.
-  - **job registration:** add `coherence_pair`/`coherence_eager` to
-    `jobs/poller.py::cycle()`; shorten poll interval (or drain on request)
-    while the layer is open so pairs compute in minutes, not the default
-    hour; pair progress visible on the existing `/status` page.
-- **TDD:** vitest (pill toggles, legend copy, i18n parity) + Playwright
-  (select `insar` → scrubber lists pair dates, tile requests numeric, legend
-  visible, URL `layer=insar` round-trip, 3D toggle drapes the colour overlay).
-- **Acceptance:** live pair colourizes the map over the terrain; bare-URL and
-  shared-URL state behave like every other layer.
+    coherence mask caveat), gradient legend (`#insar-legend`, blue→white→red
+    bar, ±5 cm labels, mask note) shown only while `insar` is active.
+  - **job registration:** `insar_pair`/`insar_eager` handlers registered in
+    `jobs/poller.py::cycle()` (gap #3 — they used to park forever); the InSAR
+    eager job fires on first view via `trigger_insar_on_first_view` (own viewed
+    flag, independent of the dormant coherence stack); pair progress visible on
+    the existing `/status` page (missions now include `sentinel-1-slc`).
+- **TDD:** vitest i18n parity + Playwright (select `insar` → scrubber lists
+  pair dates, legend visible with cm copy, hidden again on optical layers).
+- **Status:** [x] done. Tiles 404 honestly until a processor+credentials
+  produce a product (L.1/L.2).
 
 ### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS

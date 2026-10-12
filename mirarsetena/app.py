@@ -125,9 +125,14 @@ def create_app(
         except UnknownLayer as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         # SCOPE R2-Q1: the first plain-data view starts the eager coherence job.
-        from mirarsetena.coherence.trigger import trigger_on_first_view
+        from mirarsetena.coherence.trigger import (
+            trigger_insar_on_first_view,
+            trigger_on_first_view,
+        )
 
         trigger_on_first_view(storage, config, queue, app.state.search_fn)
+        # INSAR-PLAN L.5: the first view also starts the InSAR eager job.
+        trigger_insar_on_first_view(storage, config, queue, app.state.search_fn)
         return result
 
     @app.get("/p/{slug}/status")

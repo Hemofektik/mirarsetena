@@ -9,6 +9,7 @@ const MISSION_BY_LAYER = {
   ndvi: "sentinel-2-l2a",
   mndwi: "sentinel-2-l2a",
   bsi: "sentinel-2-l2a",
+  insar: "sentinel-1-slc",
 };
 
 export function missionForLayer(layer) {
@@ -337,6 +338,15 @@ export const MESSAGES = {
       "Índice de superficie expuesta (BSI): resalta suelo desnudo, roca " +
       "y terreno removido. Útil para ver dónde se expanden el patio de " +
       "acopio y las terrazas de extracción.",
+    layer_insar_help:
+      "InSAR (Sentinel-1): desplazamiento del terreno a lo largo de la " +
+      "línea de visión del satélite, en centímetros. Rojo = movimiento " +
+      "alejándose (hundimiento); azul = acercándose. Gris/máscara = baja " +
+      "coherencia (zonas muy cambiadas o con vegetación, sin medición fiable).",
+    legend_los_title: "Desplazamiento LOS (cm)",
+    legend_los_negative: "−5 (hacia el satélite)",
+    legend_los_positive: "+5 (alejándose / hundimiento)",
+    legend_los_mask: "máscara: baja coherencia",
   },
   en: {
     app: "Mirar Setena",
@@ -416,6 +426,15 @@ export const MESSAGES = {
       "Bare Soil Index (BSI): highlights bare soil, rock and disturbed " +
       "ground. Useful for seeing where the storage yard and extraction " +
       "terraces expand.",
+    layer_insar_help:
+      "InSAR (Sentinel-1): ground displacement along the satellite's " +
+      "line of sight, in centimetres. Red = moving away (sinking); blue " +
+      "= moving toward the satellite. Grey/masked = low coherence (very " +
+      "changed or vegetated areas, no reliable measurement).",
+    legend_los_title: "LOS displacement (cm)",
+    legend_los_negative: "−5 (toward satellite)",
+    legend_los_positive: "+5 (away / sinking)",
+    legend_los_mask: "mask: low coherence",
   },
 };
 
