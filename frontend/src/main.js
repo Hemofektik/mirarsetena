@@ -173,6 +173,13 @@ function applyTerrain() {
   }
 }
 
+/** 3D view = terrain relief + camera tilt (the map's 3D/2D button). */
+function apply3dView() {
+  applyTerrain();
+  if (!map) return;
+  map.easeTo({ pitch: state.show3d ? 60 : 0, duration: 400 });
+}
+
 function updateBasemap() {
   if (!map || !map.getLayer("base")) return;
   const source = map.getSource("base");
@@ -310,8 +317,6 @@ function syncControlsFromState() {
   document.getElementById("max-cloud").value = String(state.maxCloud);
   document.getElementById("show-properties").checked = state.showProperties;
   document.getElementById("show-rio-line").checked = state.rioLine;
-  document.getElementById("show-3d").checked = state.show3d;
-  document.getElementById("basemap-select").value = state.basemap;
 }
 
 // Sequence tokens: a layer switch must never be undone by a slower response
@@ -367,6 +372,119 @@ async function applyDate(date) {
   }
   state = S.setDate(state, date);
   renderAll();
+}
+
+/** A small preview tile of a basemap, centred on the project bbox. */
+function basemapThumb(key) {
+  const [w, s, e, n] = config.bbox;
+  const lon = (w + e) / 2;
+  const lat = (s + n) / 2;
+  const z = 13;
+  const scale = 2 ** z;
+  const x = Math.floor(((lon + 180) / 360) * scale);
+  const y = Math.floor(
+    ((1 - Math.asinh(Math.tan((lat * Math.PI) / 180)) / Math.PI) / 2) * scale,
+  );
+  return key === "esri"
+    ? `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`
+    : `https://tile.openstreetmap.org/${z}/${x}/${y}.png`;
+}
+
+/**
+ * Google-Maps-style 3D/2D toggle (bottom-right): 3D engages the terrain
+ * relief and tilts the camera; 2D returns to a flat north-up view.
+ */
+class Toggle3dControl {
+  onAdd(mapRef) {
+    this.map = mapRef;
+    const wrap = document.createElement("div");
+    wrap.className = "mapctrl";
+    this.btn = document.createElement("button");
+    this.btn.id = "btn-3d";
+    this.btn.type = "button";
+    this.btn.className = "map-btn toggle-3d";
+    this.btn.addEventListener("click", () => {
+      state = S.setShow3d(state, !state.show3d);
+      apply3dView();
+      renderAll();
+      this.refresh();
+    });
+    wrap.appendChild(this.btn);
+    this.refresh();
+    return wrap;
+  }
+
+  refresh() {
+    this.btn.textContent = state.show3d ? "2D" : "3D";
+    this.btn.setAttribute("aria-pressed", String(state.show3d));
+    this.btn.title = S.t(state.lang, state.show3d ? "btn_2d" : "btn_3d");
+  }
+}
+
+/**
+ * Google-Maps-style basemap picker (bottom-left): a thumbnail of the
+ * active basemap; clicking it expands Map / Satellite options with their
+ * own preview tiles.
+ */
+class BasemapPickerControl {
+  onAdd(mapRef) {
+    this.map = mapRef;
+    const wrap = document.createElement("div");
+    wrap.className = "mapctrl basemap-picker";
+    this.btn = document.createElement("button");
+    this.btn.id = "btn-basemap";
+    this.btn.type = "button";
+    this.btn.className = "map-btn picker-toggle";
+    this.btn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      this.panel.hidden = !this.panel.hidden;
+    });
+    this.panel = document.createElement("div");
+    this.panel.className = "picker-panel";
+    this.panel.hidden = true;
+    wrap.appendChild(this.btn);
+    wrap.appendChild(this.panel);
+    this._outside = (event) => {
+      if (!wrap.contains(event.target)) this.panel.hidden = true;
+    };
+    document.addEventListener("click", this._outside);
+    this.render();
+    return wrap;
+  }
+
+  render() {
+    this.btn.dataset.basemap = state.basemap;
+    this.btn.title = S.t(state.lang, "picker_basemap");
+    this.btn.innerHTML =
+      `<span class="thumb-wrap">` +
+      `<img alt="" src="${basemapThumb(state.basemap)}">` +
+      `<span class="thumb-credit">${state.basemap === "esri" ? "Esri" : "OSM"}</span>` +
+      `</span>` +
+      `<span class="picker-label">${S.t(state.lang, `basemap_${state.basemap}`)}</span>`;
+    this.panel.innerHTML = "";
+    for (const key of ["osm", "esri"]) {
+      const row = document.createElement("button");
+      row.type = "button";
+      row.className = "picker-row" + (key === state.basemap ? " selected" : "");
+      row.dataset.basemap = key;
+      row.innerHTML =
+        `<span class="thumb-wrap">` +
+        `<img alt="" src="${basemapThumb(key)}">` +
+        `<span class="thumb-credit">${key === "esri" ? "Esri" : "OSM"}</span>` +
+        `</span>` +
+        `<span>${S.t(state.lang, `basemap_${key}`)}</span>`;
+      row.addEventListener("click", () => {
+        if (key !== state.basemap) {
+          state = S.setBasemap(state, key);
+          updateBasemap();
+          pushUrl();
+        }
+        this.panel.hidden = true;
+        this.render();
+      });
+      this.panel.appendChild(row);
+    }
+  }
 }
 
 function buildMap() {
@@ -493,8 +611,12 @@ function buildMap() {
   });
   // terrain can only engage once the style (and its DEM source) exists;
   // calling setTerrain synchronously here throws and aborts buildMap
-  map.on("load", applyTerrain);
+  map.on("load", apply3dView);
   map.addControl(new maplibregl.NavigationControl(), "top-right");
+  // Google-Maps-style controls ON THE MAP: 3D/2D toggle (bottom-right,
+  // above the attribution) and the basemap picker (bottom-left)
+  map.addControl(new Toggle3dControl(), "bottom-right");
+  map.addControl(new BasemapPickerControl(), "bottom-left");
   // Intentional retirements (drag retargets, layer switches) surface as
   // AbortErrors; with a listener MapLibre stops console.error-ing them.
   // Real errors keep logging.
@@ -568,16 +690,6 @@ function wireUi() {
   document.getElementById("show-rio-line").addEventListener("change", (event) => {
     state = S.setShowRioLine(state, event.target.checked);
     renderAll();
-  });
-  document.getElementById("show-3d").addEventListener("change", (event) => {
-    state = S.setShow3d(state, event.target.checked);
-    applyTerrain();
-    renderAll();
-  });
-  document.getElementById("basemap-select").addEventListener("change", (event) => {
-    state = S.setBasemap(state, event.target.value);
-    updateBasemap();
-    pushUrl();
   });
   document.getElementById("share-btn").addEventListener("click", async () => {
     pushUrl();

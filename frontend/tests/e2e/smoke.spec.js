@@ -4,6 +4,12 @@ import { expect, test } from "@playwright/test";
 
 const SLUG = "cdp-rio-general";
 
+// Google-Maps-style basemap picker on the map (bottom-left)
+async function pickBasemap(page, key) {
+  await page.locator("#btn-basemap").click();
+  await page.locator(`.picker-panel [data-basemap="${key}"]`).click();
+}
+
 test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
   await expect(page.locator("#app-title")).toHaveText("Mirar Setena");
@@ -41,12 +47,12 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   // works-start marker renders from config
   await expect(page.locator("#works-marker")).toContainText("2026-06-01");
 
-  // POI group toggle + basemap swap keep the app alive
+  // POI group toggle + basemap swap (map picker) keep the app alive
   await page.locator("#poi-facilities").uncheck();
   await page.locator("#poi-facilities").check();
-  await page.locator("#basemap-select").selectOption("esri");
-  await expect(page.locator("#basemap-select")).toHaveValue("esri");
-  await page.locator("#basemap-select").selectOption("osm");
+  await pickBasemap(page, "esri");
+  await expect(page.locator("#btn-basemap")).toHaveAttribute("data-basemap", "esri");
+  await pickBasemap(page, "osm");
 
   // share encodes state into the URL
   await page.locator("#share-btn").click();
@@ -100,7 +106,7 @@ test("overlay and basemap switches request real numeric tiles", async ({ page })
   await page.waitForTimeout(2500);
 
   // basemap swap must fetch imagery tiles, not the template as TileJSON
-  await page.locator("#basemap-select").selectOption("esri");
+  await pickBasemap(page, "esri");
   await page.waitForTimeout(2500);
 
   expect(
@@ -428,11 +434,11 @@ test("basemap switch swaps attribution without console errors", async ({ page })
     "OpenStreetMap",
     { timeout: 15_000 },
   );
-  await page.locator("#basemap-select").selectOption("esri");
+  await pickBasemap(page, "esri");
   await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText("Esri", {
     timeout: 10_000,
   });
-  await page.locator("#basemap-select").selectOption("osm");
+  await pickBasemap(page, "osm");
   await expect(page.locator(".maplibregl-ctrl-attrib")).toContainText(
     "OpenStreetMap",
     { timeout: 10_000 },
@@ -656,7 +662,7 @@ test("restored URL state drives every control (no inverted checkboxes)", async (
   await expect(page.locator("#hide-cloudy")).toBeChecked();
   await expect(page.locator("#max-cloud")).toHaveValue("50");
   await expect(page.locator("#show-properties")).toBeChecked();
-  await expect(page.locator("#basemap-select")).toHaveValue("esri");
+  await expect(page.locator("#btn-basemap")).toHaveAttribute("data-basemap", "esri");
   // raw/change mode selection no longer exists anywhere
   await expect(page.locator('input[name="mode"]')).toHaveCount(0);
   await expect(page.locator("#baseline-select")).toHaveCount(0);
@@ -692,7 +698,7 @@ test("settings are memorized for bare-URL visits", async ({ page }) => {
     timeout: 30000,
   });
 
-  await page.locator("#basemap-select").selectOption("esri");
+  await pickBasemap(page, "esri");
   await page.locator("#poi-inspection").uncheck();
   await page.locator("#hide-cloudy").check();
   await page.waitForTimeout(300);
@@ -702,7 +708,7 @@ test("settings are memorized for bare-URL visits", async ({ page }) => {
   await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
     timeout: 30000,
   });
-  await expect(page.locator("#basemap-select")).toHaveValue("esri");
+  await expect(page.locator("#btn-basemap")).toHaveAttribute("data-basemap", "esri");
   await expect(page.locator("#poi-inspection")).not.toBeChecked();
   await expect(page.locator("#hide-cloudy")).toBeChecked();
   await page.waitForFunction(() => window.__mirarsetenaMap, null, { timeout: 15000 });
@@ -841,26 +847,32 @@ test("3D terrain toggle drapes the map over the elevation DEM", async ({ page })
 
   const terrain = () =>
     page.evaluate(() => window.__mirarsetenaMap.getTerrain());
+  const pitch = () =>
+    page.evaluate(() => window.__mirarsetenaMap.getPitch());
 
-  // default: flat map, no DEM traffic
+  // default: flat map, no DEM traffic, the map button reads 3D
   expect(await terrain()).toBeNull();
-  await expect(page.locator("#show-3d")).not.toBeChecked();
+  await expect(page.locator("#btn-3d")).toHaveText("3D");
+  await expect(page.locator("#btn-3d")).toHaveAttribute("aria-pressed", "false");
 
-  // enable -> terrain engages and DEM tiles are fetched
-  await page.locator("#show-3d").check();
+  // click 3D -> terrain engages, camera tilts, DEM tiles are fetched
+  await page.locator("#btn-3d").click();
   await expect.poll(terrain, { timeout: 15_000 }).toEqual({
     source: "terrain-dem",
     exaggeration: 1.3,
   });
   await expect.poll(() => demRequests.length, { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect.poll(pitch, { timeout: 15_000 }).toBeGreaterThan(50);
   await expect(page).toHaveURL(/d3=1/);
+  await expect(page.locator("#btn-3d")).toHaveText("2D");
 
-  // disable -> flat again
-  await page.locator("#show-3d").uncheck();
+  // click 2D -> flat again
+  await page.locator("#btn-3d").click();
   expect(await terrain()).toBeNull();
+  await expect.poll(pitch, { timeout: 15_000 }).toBe(0);
 
   // the choice survives a reload
-  await page.locator("#show-3d").check();
+  await page.locator("#btn-3d").click();
   await page.reload();
   await page.waitForFunction(() => window.__mirarsetenaMap, null, {
     timeout: 30_000,
@@ -869,6 +881,7 @@ test("3D terrain toggle drapes the map over the elevation DEM", async ({ page })
     source: "terrain-dem",
     exaggeration: 1.3,
   });
+  await expect(page.locator("#btn-3d")).toHaveText("2D");
 });
 
 test("basemap zooms cap at the provider's deepest real tile (no gray tiles)", async ({ page }) => {
@@ -902,7 +915,7 @@ test("basemap zooms cap at the provider's deepest real tile (no gray tiles)", as
     .toBe(19);
 
   // Esri: source declares maxzoom 18 and a deep zoom requests no z19+ tiles
-  await page.locator("#basemap-select").selectOption("esri");
+  await pickBasemap(page, "esri");
   await expect
     .poll(() =>
       page.evaluate(() => window.__mirarsetenaMap.getSource("base").maxzoom),
