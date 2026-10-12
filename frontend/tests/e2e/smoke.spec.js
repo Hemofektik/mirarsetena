@@ -906,6 +906,9 @@ test("a fast range drag retargets the overlay once", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
   await waitForRadarDates(page);
+  // pair mode: the test drags the START knob, which is parked while the
+  // pre-works composite baseline (the default) is active
+  await page.locator("#radar-composite").uncheck();
   await page.waitForTimeout(600);
   requested.length = 0;
 
@@ -1128,4 +1131,42 @@ test("date picker hides entirely when no layer is selected", async ({ page }) =>
 
   await page.locator('#layer-buttons button:has-text("sigma0")').click();
   await expect(page.locator("#date-section")).toBeVisible();
+});
+
+test("pre-works composite baseline is the radar default and can be switched off", async ({ page }) => {
+  // User (2026-10-12): aggregate all Sentinel data before works start
+  // (2026-01-01..2026-06-01) as THE baseline — validated at 5x the works
+  // signal of a single-date baseline (quarry strong 15.5% vs 0% control).
+  const tileBaselines = new Set();
+  page.on("request", (request) => {
+    const m = /\/tiles\/sigma0\/[^?]+\?baseline=([^&]+)/.exec(request.url());
+    if (m) tileBaselines.add(m[1]);
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await waitForRadarDates(page);
+
+  // default: composite ON, start knob parked, readout says so
+  await expect(page.locator("#composite-row")).toBeVisible();
+  await expect(page.locator("#radar-composite")).toBeChecked();
+  await expect(page.locator("#date-start")).toBeDisabled();
+  await expect(page.locator("#date-value")).toContainText("Composición");
+  await expect.poll(() => [...tileBaselines].includes("composite")).toBe(true);
+
+  // opting out re-enables the pair mode: the start knob drives the tiles
+  await page.locator("#radar-composite").uncheck();
+  await expect(page.locator("#date-start")).toBeEnabled();
+  await expect(page.locator("#date-value")).not.toContainText("Composición");
+  tileBaselines.clear();
+  await page.locator("#date-start").evaluate((el) => {
+    el.value = "0";
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  await expect.poll(() => [...tileBaselines].some((b) => /^\d{4}-/.test(b))).toBe(true);
+
+  // the choice is remembered across reloads
+  await page.reload();
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, { timeout: 30000 });
+  await expect(page.locator("#radar-composite")).not.toBeChecked();
 });

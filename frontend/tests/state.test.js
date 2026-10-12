@@ -20,6 +20,7 @@ import {
   serializeState,
   settingsFromState,
   setBasemap,
+  setComposite,
   setDatesLoading,
   setHideCloudy,
   setLayer,
@@ -138,6 +139,7 @@ describe("tile URLs and URL state (I.5)", () => {
       maxCloud: 15,
       properties: true,
       rioLine: true,
+      composite: true,
       pois: "facilities",
       basemap: "esri",
       lang: "es",
@@ -377,7 +379,7 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
     // settings payload never carries transient view state
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "showProperties"],
+      ["basemap", "composite", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "showProperties"],
     );
   });
 });
@@ -559,5 +561,22 @@ describe("materialized default baseline never follows the end date", () => {
     // (that moved the left knob under the right one)
     state = ensureRadarRange({ ...state, date: "2026-09-09" }, G_DATES);
     expect(state.baseline).toBe("2026-04-11");
+  });
+});
+
+describe("pre-works composite baseline flag", () => {
+  it("defaults on, round-trips through URL and settings, garbage falls back", () => {
+    const base = makeState({ slug: "cdp-rio-general", layers: ["ndvi", "sigma0"] });
+    expect(base.composite).toBe(true); // user default: aggregate pre-works
+
+    const off = setComposite(base, false);
+    expect(parseState(serializeState(off)).composite).toBe(false);
+    expect(parseState(serializeState(base)).composite).toBe(true);
+
+    // settings persistence (type-strict)
+    const saved = settingsFromState(off);
+    expect(saved.composite).toBe(false);
+    expect(restoreSettings(makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }), saved).composite).toBe(false);
+    expect(restoreSettings(base, { composite: "yes" }).composite).toBe(true); // garbage ignored
   });
 });

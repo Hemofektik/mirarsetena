@@ -40,6 +40,10 @@ export function makeState(config) {
     maxCloud: 20,
     showProperties: true, // two 1991 plan parcels drawn as outlines
     rioLine: true, // Río General start→end work-area line overlay
+    // Pre-works COMPOSITE baseline (all Sentinel dates before works_start
+    // aggregated as the median) — the default for radar change (user
+    // 2026-10-12); the range start knob becomes an opt-out pair mode.
+    composite: true,
     poiGroups: { facilities: true, inspection: true },
     basemap: "osm",
     bbox: null,
@@ -243,6 +247,10 @@ export function setShowRioLine(state, on) {
   return { ...state, rioLine: Boolean(on) };
 }
 
+export function setComposite(state, on) {
+  return { ...state, composite: Boolean(on) };
+}
+
 export function setBasemap(state, name) {
   if (!BASEMAPS.includes(name)) return state;
   return { ...state, basemap: name };
@@ -265,6 +273,7 @@ export function settingsFromState(state) {
     poiGroups: { ...state.poiGroups },
     showProperties: Boolean(state.showProperties),
     rioLine: Boolean(state.rioLine),
+    composite: Boolean(state.composite),
   };
 }
 
@@ -280,6 +289,7 @@ export function restoreSettings(state, saved) {
   if (typeof saved.hideCloudy === "boolean") next = { ...next, hideCloudy: saved.hideCloudy };
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
   if (typeof saved.rioLine === "boolean") next = { ...next, rioLine: saved.rioLine };
+  if (typeof saved.composite === "boolean") next = { ...next, composite: saved.composite };
   if (
     typeof saved.maxCloud === "number" &&
     Number.isFinite(saved.maxCloud) &&
@@ -333,6 +343,7 @@ export function serializeState(state) {
   params.set("maxCloud", String(state.maxCloud));
   params.set("properties", state.showProperties ? "1" : "0");
   params.set("rio", state.rioLine ? "1" : "0");
+  params.set("comp", state.composite ? "1" : "0");
   const groups = Object.entries(state.poiGroups)
     .filter(([, on]) => on)
     .map(([name]) => name)
@@ -386,6 +397,7 @@ export function parseState(search) {
     maxCloud,
     properties: params.get("properties") !== "0",
     rioLine: params.get("rio") !== "0",
+    composite: params.get("comp") !== "0",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
     lang: lang ?? "es",
@@ -410,6 +422,8 @@ export const MESSAGES = {
     properties: "Propiedades",
     properties_label: "Perímetro de propiedades",
     rio_line: "Línea Río General (inicio–fin)",
+    radar_composite: "Base pre-obras (composición ene–may 2026)",
+    composite_badge: "Composición",
     works_start: "Inicio de obras",
     about: "Acerca de",
     disclaimer:
@@ -503,6 +517,8 @@ export const MESSAGES = {
     properties: "Properties",
     properties_label: "Property perimeter",
     rio_line: "Río General line (start–end)",
+    radar_composite: "Pre-works baseline (Jan–May 2026 composite)",
+    composite_badge: "Composite",
     works_start: "Works start",
     about: "About",
     disclaimer:

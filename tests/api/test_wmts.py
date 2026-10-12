@@ -177,3 +177,114 @@ def test_raw_mode_renders_grayscale_ramp(client):
     assert pixel[0] == pytest.approx(173, abs=3)
     assert pixel[0] == pixel[1] == pixel[2]
     assert pixel[3] == 255
+
+
+def test_composite_baseline_uses_all_preworks_products(tmp_path, fake_search, world_geotiff):
+    """User (2026-10-12): aggregate ALL pre-works Sentinel data
+    (timeline.start .. works_start) as the baseline — validated offline
+    at 5x the works signal of a single-date baseline (quarry strong
+    15.5% vs control 0.0%). baseline=composite renders the per-pixel
+    median of every processed pre-works product; with fewer than two it
+    falls back to the date-based default."""
+    from fastapi.testclient import TestClient
+
+    from mirarsetena.app import create_app
+    from mirarsetena.pipeline.catalog import Scene
+
+    def spanning_search(collection, bbox, start, end):
+        """Catalog spanning pre-works (before 2026-06-01) and post-works
+        dates so the composite has products to aggregate over."""
+        if collection != "sentinel-1-grd":
+            return []
+        days = ["2026-02-10", "2026-03-06", "2026-04-11", "2026-05-05", "2026-07-11"]
+        return [
+            Scene(
+                id=f"fake-{d}", collection=collection,
+                datetime=f"{d}T12:00:00Z", date=d, cloud=1.0,
+            )
+            for d in days
+        ]
+
+    app = create_app(
+        config_dir=CONFIG_DIR,
+        storage_root=tmp_path / "cache",
+        search_fn=spanning_search,
+        processor=lambda layer, date: pytest.fail("no processing for pre-seeded products"),
+    )
+    storage = app.state.storage
+    # four pre-works products (before works_start 2026-06-01) + one post
+    for day in ("2026-02-10", "2026-03-06", "2026-04-11", "2026-05-05"):
+        storage.put(
+            layer_key(SLUG, "sentinel-1-grd", day, "sigma0"),
+            world_geotiff([-10.0], nodata=-9999.0),
+        )
+    storage.put(
+        layer_key(SLUG, "sentinel-1-grd", "2026-07-11", "sigma0"),
+        world_geotiff([-10.0], nodata=-9999.0),
+    )
+    with TestClient(app) as client:
+        resp = client.get(
+            f"/p/{SLUG}/tiles/sigma0/2026-07-11/0/0/0.png",
+            params={"baseline": "composite", "mode": "change"},
+        )
+        assert resp.status_code == 200
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.open(BytesIO(resp.content)).convert("RGBA")
+        # all sources -10 dB: composite -10, delta 0 -> neutral (class 3)
+        assert img.getpixel((128, 128)) == (240, 240, 240, 255)
+
+
+
+def test_composite_baseline_falls_back_below_two_products(tmp_path, world_geotiff):
+    """Fewer than two processed pre-works products -> nothing to
+    aggregate over -> the date-based default (whose product is not
+    seeded here -> 404)."""
+    from fastapi.testclient import TestClient
+
+    from mirarsetena.app import create_app
+    from mirarsetena.pipeline.catalog import Scene
+
+    def spanning_search(collection, bbox, start, end):
+        if collection != "sentinel-1-grd":
+            return []
+        days = ["2026-02-10", "2026-03-06", "2026-04-11", "2026-05-05", "2026-07-11"]
+        return [
+            Scene(id=f"fake-{d}", collection=collection,
+                  datetime=f"{d}T12:00:00Z", date=d, cloud=1.0)
+            for d in days
+        ]
+
+    processed: list[tuple[str, str]] = []
+
+    def noop_processor(layer, date):
+        # the fallback default runs the on-demand processor (it would
+        # download/process that date in production); here it writes
+        # nothing, so the request resolves to 404 once the product is
+        # still missing after processing
+        processed.append((layer, date))
+
+    app = create_app(
+        config_dir=CONFIG_DIR,
+        storage_root=tmp_path / "cache",
+        search_fn=spanning_search,
+        processor=noop_processor,
+    )
+    app.state.storage.put(
+        layer_key(SLUG, "sentinel-1-grd", "2026-02-10", "sigma0"),
+        world_geotiff([-10.0], nodata=-9999.0),
+    )
+    app.state.storage.put(
+        layer_key(SLUG, "sentinel-1-grd", "2026-07-11", "sigma0"),
+        world_geotiff([-10.0], nodata=-9999.0),
+    )
+    with TestClient(app) as client:
+        resp = client.get(
+            f"/p/{SLUG}/tiles/sigma0/2026-07-11/0/0/0.png",
+            params={"baseline": "composite", "mode": "change"},
+        )
+        assert resp.status_code == 404
+        # the date-based default was resolved and produced on demand
+        assert processed == [("sigma0", "2026-05-05")]

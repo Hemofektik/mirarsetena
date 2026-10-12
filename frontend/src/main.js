@@ -45,7 +45,14 @@ function isRadar(layer) {
 
 function overlayTemplate() {
   const params = new URLSearchParams();
-  if (state.baseline) params.set("baseline", state.baseline);
+  if (isRadar(state.layer) && state.composite) {
+    // pre-works aggregate baseline: the server medians every processed
+    // product before works_start (user 2026-10-12: everything the project
+    // changed since 2026-06-01 vs the quiet Jan-May period)
+    params.set("baseline", "composite");
+  } else if (state.baseline) {
+    params.set("baseline", state.baseline);
+  }
   const query = params.toString();
   return (
     `${location.origin}/p/${state.slug}/tiles/${state.layer}/` +
@@ -250,6 +257,12 @@ function renderScrubber() {
   // badge and the hide-cloudy / max-cloud rows disappear entirely — and
   // they must vanish immediately, even while dates are still loading.
   const cloudless = S.isRadarLayer(state.layer);
+  // composite baseline row is radar-only; when ON the range start is the
+  // aggregate, so the start knob is parked (pair mode is an opt-out)
+  const compositeOn = cloudless && state.composite;
+  document.getElementById("composite-row").hidden = !cloudless;
+  document.getElementById("radar-composite").checked = state.composite;
+  document.getElementById("date-start").disabled = compositeOn;
   document.getElementById("cloud-strip").hidden = cloudless;
   document.getElementById("cloud-badge").hidden = cloudless;
   document.getElementById("hide-cloudy-row").hidden = cloudless;
@@ -295,7 +308,9 @@ function renderScrubber() {
   }
 
   document.getElementById("date-value").textContent = radar
-    ? `${dates[startIdx].date} → ${dates[endIdx].date}`
+    ? (state.composite
+        ? `${S.t(state.lang, "composite_badge")} → ${dates[endIdx].date}`
+        : `${dates[startIdx].date} → ${dates[endIdx].date}`)
     : dates[endIdx].date;
   // viewing-geometry mismatch between the range ends: over slopes the
   // difference can be look direction, not real change (SCOPE pairing rule)
@@ -350,6 +365,7 @@ function syncControlsFromState() {
   document.getElementById("max-cloud").value = String(state.maxCloud);
   document.getElementById("show-properties").checked = state.showProperties;
   document.getElementById("show-rio-line").checked = state.rioLine;
+  document.getElementById("radar-composite").checked = state.composite;
   document.getElementById("basemap-select").value = state.basemap;
 }
 
@@ -609,6 +625,10 @@ function wireUi() {
     state = S.setShowRioLine(state, event.target.checked);
     renderAll();
   });
+  document.getElementById("radar-composite").addEventListener("change", (event) => {
+    state = S.setComposite(state, event.target.checked);
+    renderAll();
+  });
   document.getElementById("basemap-select").addEventListener("change", (event) => {
     state = S.setBasemap(state, event.target.value);
     updateBasemap();
@@ -698,6 +718,7 @@ async function boot() {
     state.baseline = restored.baseline;
     state.showProperties = restored.properties;
     state.rioLine = restored.rioLine;
+    state.composite = restored.composite;
     state = S.setBasemap(state, restored.basemap);
     const groups = restored.pois.split(",");
     state.poiGroups = {

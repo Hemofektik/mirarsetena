@@ -31,6 +31,9 @@ from mirarsetena.pipeline.indices import NODATA, _align_to_grid, _encode, _read_
 UNCLASSIFIED = 255
 CHANGE_MODE = "change"
 RAW_MODE = "raw"
+# baseline selector: aggregate ALL pre-works products (timeline.start ..
+# works_start) as the change baseline (user 2026-10-12)
+COMPOSITE_BASELINE = "composite"
 
 SPECKLE_WINDOW = 7
 # Bump when the change preprocessing/classification changes: derived
@@ -309,6 +312,8 @@ def render_change_accumulated(
     layer: str,
     start_products: list[bytes],
     end_products: list[bytes],
+    *,
+    composite: bool = False,
 ) -> bytes:
     """Change-vs-change for one range selection (sigma0, coherence).
 
@@ -323,6 +328,15 @@ def render_change_accumulated(
     signal intact (offline validation on the live products: neutral
     68% -> 88%, weak 29% -> 9%, strong unchanged at 2.6% with quarry
     3.1% vs control 0.0%). Strong classes are never gated.
+
+    ``composite=True`` switches the baseline side to the TEMPORAL MEDIAN
+    of all start_products (the pre-works aggregate, user 2026-10-12:
+    "take all Sentinel data from 2026-01-01 until before 2026-06-01 and
+    aggregate it as the baseline"): the delta is then end vs composite,
+    which is ~5x the works signal of a single-date baseline on the live
+    products (quarry strong 15.5% vs control 0.0%) because the 13-date
+    median is nearly speckle-free; the gate still uses each side's
+    within-window variability.
     """
     if layer not in ("sigma0", "coherence"):
         raise PipelineError(f"unknown radar layer {layer!r}")
@@ -330,31 +344,17 @@ def render_change_accumulated(
         raise PipelineError("accumulative change needs both range sides")
     base = BASE_THRESHOLDS_DB if layer == "sigma0" else BASE_THRESHOLDS_COHERENCE
 
+    # end side anchor defines the output grid (fresh, single selected date)
     scene, scene_profile = _read_band(end_products[0])
-    baseline, baseline_profile = _read_band(start_products[0])
-    baseline = _align_to_grid(baseline, baseline_profile, scene_profile)
-    if scene.shape != baseline.shape:
-        raise PipelineError(
-            f"scene grid {scene.shape} does not match baseline {baseline.shape}"
-        )
 
-    valid = (scene != NODATA) & (baseline != NODATA)
-    out = np.full(scene.shape, UNCLASSIFIED, dtype=np.uint8)
-    if not valid.any():
-        return _encode(out, scene_profile, UNCLASSIFIED)
+    def side_stats(products: list[bytes]) -> tuple[np.ndarray, np.ndarray]:
+        """(median, 1.4826*MAD) over speckle-reduced, grid-aligned products.
 
-    # pair delta: identical math to render_change (multilook, bias, edges)
-    smooth_scene = _smooth_layer(scene, valid, layer)
-    smooth_baseline = _smooth_layer(baseline, valid, layer)
-    delta_plane = smooth_scene - smooth_baseline
-    bias = float(np.median(delta_plane[valid]))
-    corrected = delta_plane - bias
-    thresholds = adaptive_thresholds(corrected[valid], base)
-    classes = _classify_adaptive(corrected, thresholds)
-
-    # consistency gate from the windows (each product speckle-reduced over
-    # its own mask first; n=1 sides yield sigma 0 -> gate stays lenient)
-    def side_sigma(products: list[bytes]) -> np.ndarray:
+        For ONE product the median is that product and MAD is 0, so a plain
+        pair behaves exactly like the old start_products[0] delta. For the
+        pre-works COMPOSITE the median is the temporal aggregate (nearly
+        speckle-free baseline) and MAD is the pre-works variability that
+        feeds the gate."""
         stack = []
         for product in products:
             band, profile = _read_band(product)
@@ -371,11 +371,31 @@ def render_change_accumulated(
             warnings.simplefilter("ignore", RuntimeWarning)
             median = np.nanmedian(values, axis=0)
             mad = np.nanmedian(np.abs(values - median), axis=0)
-        return 1.4826 * mad
+        return median, 1.4826 * mad
 
+    # baseline = the start side's temporal median: the selected date for a
+    # pair, the pre-works aggregate when the service passes the whole
+    # composite; delta = fresh end date vs that baseline (bias, edges and
+    # the weak-class gate as in the pair case)
+    baseline, start_sigma = side_stats(start_products)
+    _, end_sigma = side_stats(end_products)
+
+    valid = (scene != NODATA) & np.isfinite(baseline)
+    out = np.full(scene.shape, UNCLASSIFIED, dtype=np.uint8)
+    if not valid.any():
+        return _encode(out, scene_profile, UNCLASSIFIED)
+
+    smooth_scene = _smooth_layer(scene, scene != NODATA, layer)
+    delta_plane = smooth_scene - baseline
+    bias = float(np.nanmedian(delta_plane[valid]))
+    corrected = delta_plane - bias
+    thresholds = adaptive_thresholds(corrected[valid], base)
+    classes = _classify_adaptive(corrected, thresholds)
+
+    # consistency gate: each side's within-window variability; n=1 sides
+    # yield sigma 0 -> gate stays lenient (pair semantics preserved)
     sigma_pool = np.sqrt(
-        (np.nan_to_num(side_sigma(start_products)) ** 2
-         + np.nan_to_num(side_sigma(end_products)) ** 2)
+        (np.nan_to_num(start_sigma) ** 2 + np.nan_to_num(end_sigma) ** 2)
         / 2.0
     )
     z = np.abs(corrected) / np.maximum(sigma_pool, SIGMA_FLOOR)

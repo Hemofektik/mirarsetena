@@ -12,6 +12,7 @@ from concurrent.futures import Future
 
 from mirarsetena.pipeline.catalog import group_by_date, search
 from mirarsetena.pipeline.change import (
+    COMPOSITE_BASELINE,
     PREPROCESS_VERSION,
     default_baseline_date,
     render_change,
@@ -157,6 +158,22 @@ class TileService:
         mission = mission_for_layer(layer)
         return self._storage.get(layer_key(self._config.slug, mission, day, layer))
 
+    def _composite_products(
+        self, layer: str, dates: list[str]
+    ) -> list[tuple[str, bytes]]:
+        """All processed pre-works products (timeline.start .. works_start),
+        ascending — the temporal baseline the user asked for (aggregate
+        every Sentinel date before works began)."""
+        works = self._config.timeline.works_start.isoformat()
+        out = []
+        for day in dates:
+            if day >= works:
+                break
+            product = self._stored(layer, day)
+            if product is not None:
+                out.append((day, product))
+        return out
+
     def _derived(
         self, layer: str, date: str, baseline: str | None, mode: str,
         scene: bytes, baseline_product: bytes | None,
@@ -188,21 +205,36 @@ class TileService:
             return [anchor] + [d for d in days if d != anchor]
 
         known = {date: scene}
-        if baseline:
-            known[baseline] = baseline_product
-        start_products: list[bytes] = []
-        end_products: list[bytes] = []
-        used: list[str] = []
-        for day in side(baseline):
-            product = known.get(day) or self._stored(layer, day)
-            if product is not None:
-                start_products.append(product)
-                used.append(f"s{day}")
-        for day in side(date):
-            product = known.get(day) or self._stored(layer, day)
-            if product is not None:
-                end_products.append(product)
-                used.append(f"e{day}")
+        if baseline == COMPOSITE_BASELINE:
+            # Pre-works aggregate: the start side is EVERY processed
+            # product before works_start (per-pixel median in the render),
+            # not a single date — the temporal baseline the user asked for.
+            composite = self._composite_products(layer, dates)
+            start_products = [product for _, product in composite]
+            end_products: list[bytes] = []
+            used: list[str] = []
+            for day in side(date):
+                product = known.get(day) or self._stored(layer, day)
+                if product is not None:
+                    end_products.append(product)
+                    used.append(f"e{day}")
+            used = [f"s{day}" for day, _ in composite] + used
+        else:
+            if baseline:
+                known[baseline] = baseline_product
+            start_products = []
+            end_products = []
+            used = []
+            for day in side(baseline):
+                product = known.get(day) or self._stored(layer, day)
+                if product is not None:
+                    start_products.append(product)
+                    used.append(f"s{day}")
+            for day in side(date):
+                product = known.get(day) or self._stored(layer, day)
+                if product is not None:
+                    end_products.append(product)
+                    used.append(f"e{day}")
         fp = (
             f"-acc-{hashlib.sha1(','.join(used).encode()).hexdigest()[:10]}"
             f"-pp{PREPROCESS_VERSION}"
@@ -257,17 +289,28 @@ class TileService:
                 orbit_index = {
                     entry["date"]: entry.get("orbits") for entry in entries
                 }
-                baseline = baseline or default_baseline_date(
-                    [entry["date"] for entry in entries],
-                    self._config.timeline.works_start,
-                    end_date=date,
-                    orbit_index=orbit_index,
+                composite = (
+                    baseline == COMPOSITE_BASELINE
+                    and len(self._composite_products(layer, dates)) >= 2
                 )
-                if baseline not in dates:
-                    return None
-                baseline_product = self._product(layer, baseline)
-                if baseline_product is None:
-                    return None
+                if not composite:
+                    if baseline == COMPOSITE_BASELINE:
+                        # < 2 processed pre-works products: nothing to
+                        # aggregate — fall back to the date-based default
+                        baseline = None
+                    baseline = baseline or default_baseline_date(
+                        [entry["date"] for entry in entries],
+                        self._config.timeline.works_start,
+                        end_date=date,
+                        orbit_index=orbit_index,
+                    )
+                    if baseline not in dates:
+                        return None
+                    baseline_product = self._product(layer, baseline)
+                    if baseline_product is None:
+                        return None
+                else:
+                    baseline_product = None  # composite built in _derived
                 product, fingerprint = self._derived(
                     layer, date, baseline, mode, scene, baseline_product,
                     dates=dates,
