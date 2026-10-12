@@ -19,7 +19,7 @@ Verifying that the ground matches the authorized footprint currently means manua
 - **Scope layer** — cadastral parcels reconstructed from the original 1991 plan surveys (derrotero tables), anchored to registry coordinates, plus the project's POIs: office, storage yard, breaker, dumper ramp, internal road endpoints and site-inspection points.
 - **Progress over time** — a date scrubber across two missions:
   - **Sentinel-2** (optical): RGB, NDVI, MNDWI and bare-soil index, with per-date cloud scoring over the area of interest;
-  - **Sentinel-1** (radar): backscatter change versus a selectable pre-works baseline, plus a coherence change layer computed in the background — cloud-independent, day or night.
+  - **Sentinel-1** (radar): the GRD/coherence change layers were removed from the UI in v1 (magnitude-only radar change was not informative enough over this terrain); full **InSAR** analysis from SLC phase is the planned long-term path and the backend machinery stays in place for it.
 - **OGC WMTS service** — a full WMTS 1.0.0 + XYZ tile service, consumable from the built-in MapLibre map *and* desktop clients such as QGIS.
 - **Data-aware backend** — scheduled catalog checks, next-acquisition prediction from orbit repeat cycles, and a two-level tile cache (local disk now, S3-compatible later) with a bounded cache budget.
 
@@ -29,8 +29,8 @@ Verifying that the ground matches the authorized footprint currently means manua
 |---|---|
 | Backend | Python, FastAPI, rasterio/GDAL, pystac-client, Docker Compose |
 | Frontend | MapLibre GL, Spanish-first UI (i18n-ready), responsive |
-| Optical/radar (no account) | Copernicus Sentinel-2 L2A & Sentinel-1 GRD via AWS open data |
-| Coherence (free account) | Sentinel-1 SLC via Copernicus Data Space Ecosystem |
+| Optical (no account) | Copernicus Sentinel-2 L2A via AWS open data |
+| InSAR (roadmap) | Sentinel-1 SLC via Copernicus Data Space Ecosystem |
 | Projects | Config-driven registry — routes, layers and cache keys are namespaced per project, so other SETENA projects can be added as config files |
 
 ## Roadmap

@@ -23,7 +23,10 @@ def test_loads_the_real_project_configuration():
     assert cfg.bbox == (-83.675, 9.378, -83.660, 9.397)
     assert cfg.timeline.start.isoformat() == "2026-01-01"
     assert cfg.timeline.works_start.isoformat() == "2026-06-01"
-    assert {"rgb", "ndvi", "mndwi", "bsi", "sigma0", "coherence"} == set(cfg.layers)
+    # sigma0/coherence removed 2026-10-12 (radar magnitude "does not make
+    # sense currently"; full InSAR is the long-term path) — the backend S1
+    # machinery stays tested via config copies in the pipeline/api tests
+    assert {"rgb", "ndvi", "mndwi", "bsi"} == set(cfg.layers)
     assert cfg.cache.max_zoom == 18
     assert cfg.cache.tile_budget_bytes == 10 * 1024**3
     assert cfg.cache.scene_budget_bytes == 10 * 1024**3

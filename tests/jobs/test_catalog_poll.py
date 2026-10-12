@@ -34,7 +34,8 @@ def test_catalog_poll_job_writes_index(tmp_path, fake_search):
     index = json.loads(storage.get(index_key("cdp-rio-general")))
     assert index["updated_at"]
     assert len(index["missions"]["sentinel-2-l2a"]) == 25
-    assert len(index["missions"]["sentinel-1-grd"]) == 8
+    # radar layers left the config (2026-10-12): no S1 mission to index
+    assert "sentinel-1-grd" not in index["missions"]
     assert index["missions"].get("sentinel-1-slc", []) == []
 
 

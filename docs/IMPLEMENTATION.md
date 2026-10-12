@@ -290,7 +290,7 @@ Depends: F. (G/H features plug in as they land.)
 - **TDD:** `tests/frontend/test_scrubber_model.test.ts` — mission switching per SCOPE R4-Q2, marker insertion, filtering preserves selection when possible.
 - **Scenario (Playwright):** *open app → select NDVI → scrubber lists S2 dates with cloud badges → enable hide-cloudy → ≤20 % dates only.*
 - **Status:** [x] done
-- **Result:** vitest model (layer->mission date switching keeps valid selection, hide-cloudy/maxCloud filters) + Playwright: switching to sigma0 drives the scrubber to the 8 S1 dates (live catalog).
+- **Result:** vitest model (layer->mission date switching keeps valid selection, hide-cloudy/maxCloud filters) + Playwright: switching to sigma0 drives the scrubber to the 8 S1 dates (live catalog). **Layers narrowed 2026-10-12 (user):** sigma0/coherence removed from `config.layers` (GRD magnitude change "does not make sense currently"; full InSAR from SLC phase is the planned return) — the display, its radar UI (range slider, composite baseline, geometry pill) and radar-dependent tests were removed; the backend S1 machinery (serving, change render, composite baseline, coherence planning) stays, covered via config copies, dormant until the InSAR plan. All suites re-baselined on the four optical layers: 166 pytest, 33 vitest, ~24 e2e, ruff.
 
 ### I.3 POI layer + basemaps
 - **Deliverable:** POI layer with two toggle groups and labels; OSM default + Esri imagery toggle; attributions.
@@ -315,6 +315,12 @@ Depends: F. (G/H features plug in as they land.)
 - **TDD:** catalog key parity ES/EN; `setLang`/serialize/parse roundtrip (default es omitted, `lang=zz` rejected); purpose + help keys resolve in both locales (vitest); Playwright asserts the language switch + live dialog retranslation + tooltip attributes.
 - **Status:** [x] done
 - **Result:** 24 vitest + 15 Playwright green; disclaimer, purpose text and tooltips all switch language without a reload.
+
+### I.3b Basemap zoom caps (no gray tiles)
+- **Deliverable:** deep zooms over the basemap keep showing real imagery instead of empty gray tiles.
+- **TDD:** Playwright `basemap zooms cap at the provider's deepest real tile (no gray tiles)` — source `maxzoom` 19 (OSM) / 18 (Esri), deep zoom requests no beyond-cap tiles.
+- **Status:** [x] done
+- **Result:** measured per provider at the AOI (Esri serves uniform gray `#CCCCCC` placeholders from z19 up — the gray tiles the user saw; OSM 400s from z20): the base source declares `maxzoom` so MapLibre **overzooms** the last real tile, and `updateBasemap` re-applies the active provider's cap on switch — **both** `source.maxzoom` and `source._options.maxzoom` must be updated: `setTiles()` triggers a reload that re-`extend`s `maxzoom` from `_options`, so setting only the public field gets silently reverted one frame later (caught as a flake in the new cap test; 3/3 stable after syncing both).
 
 ### I.7 Responsive/mobile
 - **Deliverable:** layout pass for 390 px and 1280 px viewports.

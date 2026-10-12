@@ -19,7 +19,7 @@ Verificar que el terreno corresponde a la huella autorizada hoy exige trabajo ma
 - **Capa de alcance** — parcelas catastrales reconstruidas a partir de los planos originales de 1991 (tablas de derrotero), ancladas a las coordenadas del registro, más los puntos de interés del proyecto: oficina, patio de almacenamiento, chancadora, rampa de volteo, extremos del camino interno y puntos de inspección de campo.
 - **Progreso en el tiempo** — un control deslizante de fechas sobre dos misiones:
   - **Sentinel-2** (óptico): RGB, NDVI, MNDWI e índice de suelo desnudo, con puntaje de nube por fecha sobre el área de interés;
-  - **Sentinel-1** (radar): cambio de retrodispersión versus una línea base seleccionable pre-obras, más una capa de cambio de coherencia calculada en segundo plano — independiente de nubes, de día o de noche.
+  - **Sentinel-1** (radar): las capas de cambio GRD/coherencia se retiraron de la interfaz en v1 (el cambio de radar solo por magnitud no fue lo suficientemente informativo sobre este terreno); el análisis completo de **InSAR** a partir de la fase SLC es la ruta a largo plazo y la infraestructura del backend se mantiene para ello.
 - **Servicio OGC WMTS** — un servicio de mosaicos WMTS 1.0.0 + XYZ completo, consumible desde el mapa MapLibre integrado *y* desde clientes de escritorio como QGIS.
 - **Backend con conciencia de datos** — consultas programadas a los catálogos, predicción de la próxima adquisición a partir de los ciclos de repetición orbital, y una caché de mosaicos en dos niveles (disco local ahora, compatible S3 después) con presupuesto acotado.
 
@@ -29,8 +29,8 @@ Verificar que el terreno corresponde a la huella autorizada hoy exige trabajo ma
 |---|---|
 | Backend | Python, FastAPI, rasterio/GDAL, pystac-client, Docker Compose |
 | Frontend | MapLibre GL, interfaz en español (lista para i18n), responsiva |
-| Óptico/radar (sin cuenta) | Copernicus Sentinel-2 L2A y Sentinel-1 GRD vía datos abiertos de AWS |
-| Coherencia (cuenta gratuita) | Sentinel-1 SLC vía Copernicus Data Space Ecosystem |
+| Óptico (sin cuenta) | Copernicus Sentinel-2 L2A vía datos abiertos de AWS |
+| InSAR (hoja de ruta) | Sentinel-1 SLC vía Copernicus Data Space Ecosystem |
 | Proyectos | Registro basado en configuración — rutas, capas y claves de caché con espacio de nombres por proyecto, para cargar otros proyectos SETENA como archivos de configuración |
 
 ## Hoja de ruta

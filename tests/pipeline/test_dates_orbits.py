@@ -21,6 +21,9 @@ from mirarsetena.storage import LocalStore
 
 CONFIG_DIR = Path(__file__).resolve().parents[2] / "config" / "projects"
 CONFIG = ProjectRegistry(CONFIG_DIR).get("cdp-rio-general")
+# orbit persistence is backend machinery for the InSAR return; the display
+# config dropped the radar layers (2026-10-12), so these tests re-add them
+CONFIG = CONFIG.model_copy(update={"layers": [*CONFIG.layers, "sigma0"]})
 
 
 def _scene(day: str, state: str | None, rel: int | None) -> Scene:

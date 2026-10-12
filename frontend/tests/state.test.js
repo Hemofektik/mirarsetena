@@ -8,11 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   MESSAGES,
   applyDates,
-  baselineIndex,
-  defaultBaselineIndex,
   disableLayer,
-  ensureRadarRange,
-  isRadarLayer,
   makeState,
   missionForLayer,
   parseState,
@@ -20,15 +16,14 @@ import {
   serializeState,
   settingsFromState,
   setBasemap,
-  setComposite,
   setDatesLoading,
+  t,
   setHideCloudy,
   setLayer,
   setLang,
   setShowProperties,
-  sliderIndices,
-  t,
   tileUrl,
+  URL_KEYS,
   togglePoiGroup,
   visibleDates,
 } from "../src/state.js";
@@ -49,8 +44,6 @@ describe("layer implies mission (SCOPE R4-Q2)", () => {
     expect(missionForLayer("rgb")).toBe("sentinel-2-l2a");
     expect(missionForLayer("mndwi")).toBe("sentinel-2-l2a");
     expect(missionForLayer("bsi")).toBe("sentinel-2-l2a");
-    expect(missionForLayer("sigma0")).toBe("sentinel-1-grd");
-    expect(missionForLayer("coherence")).toBe("sentinel-1-slc");
     expect(missionForLayer("nope")).toBeNull();
   });
 });
@@ -60,8 +53,6 @@ describe("scrubber date model", () => {
     let state = makeState({ slug: "cdp-rio-general", layers: ["ndvi", "sigma0"] });
     state = setLayer(state, "ndvi", DATES_S2);
     expect(state.date).toBe("2026-07-03"); // optical: earliest first
-    state = setLayer(state, "sigma0", DATES_S1);
-    expect(state.date).toBe("2026-07-23"); // radar: range END = latest scene
     state = setLayer(state, "ndvi", DATES_S2);
     expect(state.date).toBe("2026-07-03"); // remembered date invalid -> earliest again
   });
@@ -85,13 +76,6 @@ describe("scrubber date model", () => {
       "2026-07-03",
       "2026-07-10",
     ]);
-    // radar dates have no cloud score — they are not cloudy and must stay
-    let radar = setLayer(makeState({ slug: "p", layers: ["sigma0"] }), "sigma0", DATES_S1);
-    radar = setHideCloudy(radar, true, 20);
-    expect(visibleDates(radar).map((d) => d.date)).toEqual([
-      "2026-07-11",
-      "2026-07-23",
-    ]);
   });
 
   it("refreshed date payloads replace clouds without touching toggles", () => {
@@ -107,25 +91,21 @@ describe("scrubber date model", () => {
 });
 
 describe("tile URLs and URL state (I.5)", () => {
-  it("tileUrl carries layer and date; baseline only when chosen (always change)", () => {
-    const config = { slug: "cdp-rio-general", layers: ["sigma0"] };
-    let state = setLayer(makeState(config), "sigma0", DATES_S1);
+  it("tileUrl carries layer and date", () => {
+    const config = { slug: "cdp-rio-general", layers: ["ndvi"] };
+    const state = setLayer(makeState(config), "ndvi", DATES_S2);
     expect(tileUrl(state, 0, 0, 0)).toBe(
-      "/p/cdp-rio-general/tiles/sigma0/2026-07-23/0/0/0.png"
-    );
-    state = { ...state, baseline: "2026-07-11" };
-    expect(tileUrl(state, 0, 0, 0)).toBe(
-      "/p/cdp-rio-general/tiles/sigma0/2026-07-23/0/0/0.png?baseline=2026-07-11"
+      "/p/cdp-rio-general/tiles/ndvi/2026-07-03/0/0/0.png"
     );
   });
 
   it("serialize -> parse round-trips the whole state", () => {
     let state = setLayer(
-      makeState({ slug: "cdp-rio-general", layers: ["ndvi", "sigma0"] }),
+      makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }),
       "ndvi",
       DATES_S2,
     );
-    state = { ...state, date: "2026-07-10", baseline: "2026-07-03" };
+
     state = setHideCloudy(state, true, 15);
     state = togglePoiGroup(state, "inspection");
     state = setBasemap(state, "esri");
@@ -133,13 +113,11 @@ describe("tile URLs and URL state (I.5)", () => {
     const restored = parseState(serializeState(state));
     expect(restored).toEqual({
       layer: "ndvi",
-      date: "2026-07-10",
-      baseline: "2026-07-03",
+      date: "2026-07-03",
       hideCloudy: true,
       maxCloud: 15,
       properties: true,
       rioLine: true,
-      composite: true,
       show3d: false,
       pois: "facilities",
       basemap: "esri",
@@ -274,7 +252,8 @@ describe("language selection (ES/EN switch)", () => {
 });
 
 describe("layer help tooltips and resolution purpose text", () => {
-  const LAYERS = ["rgb", "ndvi", "mndwi", "bsi", "sigma0", "coherence"];
+  const LAYERS = ["rgb", "ndvi", "mndwi", "bsi"];
+
 
   it("every configured layer has a help tooltip in both languages", () => {
     for (const layer of LAYERS) {
@@ -382,204 +361,7 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
     // settings payload never carries transient view state
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "composite", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "show3d", "showProperties"],
+      ["basemap", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "show3d", "showProperties"],
     );
-  });
-});
-
-describe("radar range model (start -> end change)", () => {
-  const WORKS = "2026-08-01";
-  const S1_DATES = [
-    { date: "2026-01-05", cloud: null },
-    { date: "2026-07-11", cloud: null },
-    { date: "2026-07-23", cloud: null },
-  ];
-  const radarConfig = {
-    slug: "cdp-rio-general",
-    layers: ["sigma0"],
-    timeline: { start: "2026-01-01", works_start: WORKS },
-  };
-
-  it("isRadarLayer marks the two Sentinel-1 layers only", () => {
-    expect(isRadarLayer("sigma0")).toBe(true);
-    expect(isRadarLayer("coherence")).toBe(true);
-    expect(isRadarLayer("ndvi")).toBe(false);
-    expect(isRadarLayer(null)).toBe(false);
-  });
-
-  it("default baseline mirrors the server: latest acquisition before works", () => {
-    // all three dates pre-date works -> the latest one wins
-    expect(defaultBaselineIndex(S1_DATES, WORKS)).toBe(2);
-    // post-works dates exist -> the last pre-works date wins
-    const later = [...S1_DATES, { date: "2026-10-01", cloud: null }];
-    expect(defaultBaselineIndex(later, WORKS)).toBe(2);
-    // no pre-works date -> earliest overall (server fallback)
-    expect(defaultBaselineIndex([{ date: "2026-09-01", cloud: null }], WORKS)).toBe(0);
-    expect(defaultBaselineIndex([], WORKS)).toBe(0);
-  });
-
-  it("baselineIndex prefers an explicit baseline over the default", () => {
-    let state = setLayer(makeState(radarConfig), "sigma0", S1_DATES);
-    expect(state.date).toBe("2026-07-23"); // range end = latest
-    expect(baselineIndex(state, S1_DATES)).toBe(2); // default (== end here)
-    state = { ...state, baseline: "2026-07-11" };
-    expect(baselineIndex(state, S1_DATES)).toBe(1);
-    state = { ...state, baseline: "1999-01-01" }; // not in this list -> default
-    expect(baselineIndex(state, S1_DATES)).toBe(2);
-  });
-
-  it("ensureRadarRange keeps start strictly before end", () => {
-    // default baseline equals the latest end -> materialize start at end-1
-    let state = setLayer(makeState(radarConfig), "sigma0", S1_DATES);
-    state = ensureRadarRange(state, S1_DATES);
-    expect(state.baseline).toBe("2026-07-11");
-
-    // a mid-list end with the default sitting after it -> start moves to end-1
-    state = { ...state, baseline: null, date: "2026-07-11" };
-    state = ensureRadarRange(state, S1_DATES);
-    expect(state.baseline).toBe("2026-01-05");
-
-    // a valid range passes through untouched
-    state = { ...state, baseline: "2026-01-05", date: "2026-07-23" };
-    const untouched = ensureRadarRange(state, S1_DATES);
-    expect(untouched.baseline).toBe("2026-01-05");
-    expect(untouched.date).toBe("2026-07-23");
-
-    // optical layers never get a range
-    const optical = setLayer(makeState({ slug: "p", layers: ["ndvi"] }), "ndvi", DATES_S2);
-    expect(ensureRadarRange(optical, DATES_S2).baseline).toBeNull();
-  });
-
-  it("setLayer drops a baseline that is not part of the new date list", () => {
-    let state = setLayer(makeState(radarConfig), "sigma0", S1_DATES);
-    state = { ...state, baseline: "2026-07-11" };
-    const other = [
-      { date: "2026-02-01", cloud: null },
-      { date: "2026-02-13", cloud: null },
-    ];
-    state = setLayer(state, "coherence", other);
-    expect(state.baseline).toBeNull();
-  });
-});
-
-describe("sliderIndices (shared by render and handlers)", () => {
-  const S1 = [
-    { date: "2026-01-05", cloud: null },
-    { date: "2026-07-11", cloud: null },
-    { date: "2026-07-23", cloud: null },
-  ];
-
-  it("radar: start never reaches end, both inside the list", () => {
-    const config = {
-      slug: "p",
-      layers: ["sigma0"],
-      timeline: { start: "2026-01-01", works_start: "2026-08-01" },
-    };
-    let state = setLayer(makeState(config), "sigma0", S1); // end = latest
-    let idx = sliderIndices(state, S1);
-    expect(idx.radar).toBe(true);
-    expect(idx.endIdx).toBe(2);
-    expect(idx.startIdx).toBeLessThan(idx.endIdx);
-
-    // adjacent state stays adjacent and computable
-    state = { ...state, baseline: "2026-07-11" };
-    idx = sliderIndices(state, S1);
-    expect(idx.startIdx).toBe(1);
-    expect(idx.endIdx).toBe(2);
-    expect(idx.startIdx).toBe(idx.endIdx - 1);
-  });
-
-  it("optical: single thumb pinned at the chosen date, start irrelevant", () => {
-    const state = setLayer(makeState({ slug: "p", layers: ["ndvi"] }), "ndvi", DATES_S2);
-    const idx = sliderIndices(state, DATES_S2);
-    expect(idx.radar).toBe(false);
-    expect(idx.startIdx).toBe(0);
-    expect(idx.endIdx).toBe(0); // earliest date = state.date
-  });
-
-  it("empty list -> nothing to slide", () => {
-    const idx = sliderIndices(makeState({ slug: "p", layers: ["ndvi"] }), []);
-    expect(idx.endIdx).toBe(-1);
-  });
-});
-
-describe("geometry-aware default baseline (same-geometry pairing)", () => {
-  const G_DATES = [
-    { date: "2026-01-05", orbits: [["ascending", 92], ["descending", 84]] },
-    { date: "2026-04-11", orbits: [["descending", 84]] },
-    { date: "2026-05-05", orbits: [["ascending", 92], ["descending", 84]] },
-    { date: "2026-07-23", orbits: [["ascending", 92]] },
-    { date: "2026-09-09", orbits: [["ascending", 92]] },
-    { date: "2026-10-03", orbits: [["descending", 84]] },
-  ];
-  const WORKS = "2026-08-01";
-
-  it("prefers a pure same-geometry pre-works date over a newer mismatched one", () => {
-    expect(defaultBaselineIndex(G_DATES, WORKS, "2026-10-03")).toBe(1); // 04-11 desc
-    expect(defaultBaselineIndex(G_DATES, WORKS, "2026-09-09")).toBe(3); // 07-23 asc
-  });
-
-  it("tier 2 accepts a dual-track date containing the end geometry", () => {
-    const noPureDesc = G_DATES.filter((d) => d.date !== "2026-04-11");
-    // indices shift after the filter: 01-05=0, 05-05=1, 07-23=2, ...
-    expect(defaultBaselineIndex(noPureDesc, WORKS, "2026-10-03")).toBe(1); // 05-05
-  });
-
-  it("missing orbit info or end date falls back to legacy latest-pre-works", () => {
-    const plain = G_DATES.map(({ date }) => ({ date, cloud: null }));
-    expect(defaultBaselineIndex(plain, WORKS, "2026-10-03")).toBe(3); // 07-23
-    expect(defaultBaselineIndex(G_DATES, WORKS)).toBe(3); // no end date
-    // end itself is pre-works: candidates exclude it, so the OTHER
-    // dual-track date wins tier 1 instead of comparing a date to itself
-    expect(defaultBaselineIndex(G_DATES, WORKS, "2026-05-05")).toBe(0); // 01-05
-  });
-});
-
-describe("materialized default baseline never follows the end date", () => {
-  const G_DATES = [
-    { date: "2026-01-05", orbits: [["ascending", 92], ["descending", 84]] },
-    { date: "2026-04-11", orbits: [["descending", 84]] },
-    { date: "2026-07-23", orbits: [["ascending", 92]] },
-    { date: "2026-09-09", orbits: [["ascending", 92]] },
-    { date: "2026-10-03", orbits: [["descending", 84]] },
-  ];
-
-  it("materializes once at boot, then stays put while the end moves", () => {
-    let state = {
-      ...makeState({
-        slug: "cdp-rio-general",
-        layers: ["sigma0"],
-        timeline: { start: "2026-01-01", works_start: "2026-08-01" },
-      }),
-      layer: "sigma0",
-      date: "2026-10-03",
-      baseline: null,
-      worksStart: "2026-08-01",
-    };
-    state = ensureRadarRange(state, G_DATES);
-    // geometry-matched default (desc end -> pure desc pre-works date) is
-    // written into state instead of staying a derived null
-    expect(state.baseline).toBe("2026-04-11");
-    // dragging the END into ascending dates must NOT re-derive the default
-    // (that moved the left knob under the right one)
-    state = ensureRadarRange({ ...state, date: "2026-09-09" }, G_DATES);
-    expect(state.baseline).toBe("2026-04-11");
-  });
-});
-
-describe("pre-works composite baseline flag", () => {
-  it("defaults on, round-trips through URL and settings, garbage falls back", () => {
-    const base = makeState({ slug: "cdp-rio-general", layers: ["ndvi", "sigma0"] });
-    expect(base.composite).toBe(true); // user default: aggregate pre-works
-
-    const off = setComposite(base, false);
-    expect(parseState(serializeState(off)).composite).toBe(false);
-    expect(parseState(serializeState(base)).composite).toBe(true);
-
-    // settings persistence (type-strict)
-    const saved = settingsFromState(off);
-    expect(saved.composite).toBe(false);
-    expect(restoreSettings(makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }), saved).composite).toBe(false);
-    expect(restoreSettings(base, { composite: "yes" }).composite).toBe(true); // garbage ignored
   });
 });

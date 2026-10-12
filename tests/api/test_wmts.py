@@ -35,22 +35,6 @@ def client(tmp_path, fake_search, world_geotiff):
         layer_key(SLUG, "sentinel-2-l2a", "2026-07-03", "ndvi"),
         world_geotiff([0.5], nodata=-9999.0),
     )
-    storage.put(
-        layer_key(SLUG, "sentinel-1-grd", "2026-07-11", "sigma0"),
-        world_geotiff([-10.0], nodata=-9999.0),
-    )
-    storage.put(
-        layer_key(SLUG, "sentinel-1-grd", "2026-07-23", "sigma0"),
-        world_geotiff([-10.0], nodata=-9999.0),
-    )
-    # works start 2026-06-01 leaves no pre-works fixture date, so the
-    # geometry-matched default baseline for the asc end 2026-07-11 is the
-    # latest asc date: 2026-09-09 (seeded so the default-baseline tests
-    # never trigger the processor)
-    storage.put(
-        layer_key(SLUG, "sentinel-1-grd", "2026-09-09", "sigma0"),
-        world_geotiff([-10.0], nodata=-9999.0),
-    )
     return TestClient(app)
 
 
@@ -68,13 +52,11 @@ def test_getcapabilities_lists_one_layer_per_date(client):
         layer.find(f"{OWS_NS}Identifier").text
         for layer in root.findall(f".//{WMTS_NS}Layer")
     ]
-    # 4 optical layers x 25 S2 dates + sigma0 x 8 S1 dates (+0 coherence)
-    assert len(names) == 4 * 25 + 8
+    # 4 optical layers x 25 S2 dates (radar layers left the config 2026-10-12)
+    assert len(names) == 4 * 25
     assert "ndvi_2026-07-03" in names
     assert "rgb_2026-10-06" in names
-    assert "sigma0_2026-07-11" in names
-    assert all(name.rsplit("_", 1)[0] in
-               {"rgb", "ndvi", "mndwi", "bsi", "sigma0", "coherence"}
+    assert all(name.rsplit("_", 1)[0] in {"rgb", "ndvi", "mndwi", "bsi"}
                for name in names)
 
 
@@ -138,45 +120,34 @@ def test_gettile_rejects_zoom_beyond_cap(client):
     assert response.status_code == 400
 
 
-def test_xyz_and_wmts_return_byte_identical_change_tiles(client):
+def test_xyz_and_wmts_return_byte_identical_tiles(client):
     wmts = client.get(
         f"/p/{SLUG}/wmts",
         params={
             "SERVICE": "WMTS", "REQUEST": "GetTile",
-            "LAYER": "sigma0_2026-07-11", "TILEMATRIXSET": "GoogleMapsCompatible",
+            "LAYER": "ndvi_2026-07-03", "TILEMATRIXSET": "GoogleMapsCompatible",
             "TILEMATRIX": "0", "TILEROW": "0", "TILECOL": "0",
         },
     )
-    xyz = client.get(f"/p/{SLUG}/tiles/sigma0/2026-07-11/0/0/0.png")
+    xyz = client.get(f"/p/{SLUG}/tiles/ndvi/2026-07-03/0/0/0.png")
     assert wmts.status_code == 200 and xyz.status_code == 200
     assert wmts.content == xyz.content
 
 
-def test_default_baseline_change_renders_neutral_class(client):
-    """Scene and pre-works baseline both -10 dB -> delta 0 -> class 3 gray."""
-    response = client.get(f"/p/{SLUG}/tiles/sigma0/2026-07-11/0/0/0.png")
-    from io import BytesIO
-
-    from PIL import Image
-
-    img = Image.open(BytesIO(response.content)).convert("RGBA")
-    assert img.getpixel((128, 128)) == (240, 240, 240, 255)
-
-
-def test_raw_mode_renders_grayscale_ramp(client):
-    response = client.get(
-        f"/p/{SLUG}/tiles/sigma0/2026-07-11/0/0/0.png", params={"mode": "raw"}
+def _radar_config_dir(tmp_path):
+    """Config dir with sigma0 re-added: the display config dropped the
+    radar layers (2026-10-12) but this dormant machinery is kept covered
+    for the InSAR return."""
+    src = (CONFIG_DIR / f"{SLUG}.yaml").read_text(encoding="utf-8")
+    patched = src.replace(
+        "layers: [rgb, ndvi, mndwi, bsi]",
+        "layers: [rgb, ndvi, mndwi, bsi, sigma0]",
     )
-    from io import BytesIO
-
-    from PIL import Image
-
-    img = Image.open(BytesIO(response.content)).convert("RGBA")
-    pixel = img.getpixel((128, 128))
-    # -10 dB sits between ramp stops (-14,120) and (-5,240): ~173 gray
-    assert pixel[0] == pytest.approx(173, abs=3)
-    assert pixel[0] == pixel[1] == pixel[2]
-    assert pixel[3] == 255
+    assert patched != src, "layers line not found"
+    out = tmp_path / "config"
+    out.mkdir()
+    (out / f"{SLUG}.yaml").write_text(patched, encoding="utf-8")
+    return out
 
 
 def test_composite_baseline_uses_all_preworks_products(tmp_path, fake_search, world_geotiff):
@@ -206,7 +177,7 @@ def test_composite_baseline_uses_all_preworks_products(tmp_path, fake_search, wo
         ]
 
     app = create_app(
-        config_dir=CONFIG_DIR,
+        config_dir=_radar_config_dir(tmp_path),
         storage_root=tmp_path / "cache",
         search_fn=spanning_search,
         processor=lambda layer, date: pytest.fail("no processing for pre-seeded products"),
@@ -267,7 +238,7 @@ def test_composite_baseline_falls_back_below_two_products(tmp_path, world_geotif
         processed.append((layer, date))
 
     app = create_app(
-        config_dir=CONFIG_DIR,
+        config_dir=_radar_config_dir(tmp_path),
         storage_root=tmp_path / "cache",
         search_fn=spanning_search,
         processor=noop_processor,

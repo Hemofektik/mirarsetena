@@ -50,10 +50,9 @@ def test_status_payload_contains_all_sections(tmp_path, fake_search):
         "next_acquisition": "2026-10-11",
         "repeat_days": 5,
     }
-    assert missions["sentinel-1-grd"]["last_scene"] == "2026-10-03"
-    assert missions["sentinel-1-grd"]["next_acquisition"] == "2026-10-15"
-    assert missions["sentinel-1-slc"]["last_scene"] is None
-    assert missions["sentinel-1-slc"]["next_acquisition"] is None
+    # radar layers left the config (2026-10-12): the status payload carries
+    # only the missions the project's layers imply
+    assert set(missions) == {"sentinel-2-l2a"}
 
 
 def test_status_routes(tmp_path, fake_search):

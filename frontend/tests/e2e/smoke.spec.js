@@ -4,23 +4,13 @@ import { expect, test } from "@playwright/test";
 
 const SLUG = "cdp-rio-general";
 
-// Radar readiness: the cloud strip is HIDDEN on radar layers (cloudiness
-// does not affect Sentinel-1), so wait for the slider plus a populated
-// DOM instead of visual visibility.
-async function waitForRadarDates(page) {
-  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
-  await expect
-    .poll(() => page.locator("#cloud-strip span").count(), { timeout: 30_000 })
-    .toBeGreaterThan(0);
-}
-
 test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
   await expect(page.locator("#app-title")).toHaveText("Mirar Setena");
   await expect(page.locator("#project-name")).toContainText("CDP Río General");
 
-  // six configured layers
-  await expect(page.locator("#layer-buttons button")).toHaveCount(6);
+  // four configured layers (radar removed 2026-10-12)
+  await expect(page.locator("#layer-buttons button")).toHaveCount(4);
 
   // S2 dates populate the cloud strip (live catalog)
   await expect(page.locator("#cloud-strip span").first()).toBeVisible({
@@ -35,28 +25,13 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   expect(shrunk).toBeLessThan(s2Count);
   await page.locator("#hide-cloudy").uncheck();
 
-  // switch to a radar layer: controls appear, dates become the S1 set
-  // (count comes from the API — the live catalog grows over time)
-  const s1Count = await page.evaluate(async (slug) => {
-    const response = await fetch(`/p/${slug}/api/dates?layer=sigma0`);
-    return (await response.json()).dates.length;
-  }, SLUG);
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  // radar = range slider (two thumbs), no mode radios, no baseline dropdown
-  await expect(page.locator("#date-start")).toBeVisible();
+  // switch to a second optical layer: the scrubber follows
+  await page.locator('#layer-buttons button:has-text("mndwi")').click();
   await expect(page.locator("#date-end")).toBeVisible();
-  await expect(page.locator('input[name="mode"]')).toHaveCount(0);
-  await expect(page.locator("#baseline-select")).toHaveCount(0);
-  await expect(page.locator("#cloud-strip span")).toHaveCount(s1Count, {
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
     timeout: 30_000,
   });
-  // the readout shows the range and start sits strictly before end
-  await expect(page.locator("#date-value")).toContainText("→");
-  const [startIdx, endIdx] = await page.evaluate(() => [
-    Number(document.getElementById("date-start").value),
-    Number(document.getElementById("date-end").value),
-  ]);
-  expect(startIdx).toBeLessThan(endIdx);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
 
   // About dialog shows the disclaimer (i18n + attribution)
   await page.locator("#about-btn").click();
@@ -65,12 +40,6 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
 
   // works-start marker renders from config
   await expect(page.locator("#works-marker")).toContainText("2026-06-01");
-
-  // the cloud controls are gone on radar (covered by the dedicated test)
-  await expect(page.locator("#hide-cloudy-row")).toBeHidden();
-
-  // baseline select lists the S1 dates (radar controls)
-  await expect(page.locator("#date-start")).toBeVisible(); // range mode on radar
 
   // POI group toggle + basemap swap keep the app alive
   await page.locator("#poi-facilities").uncheck();
@@ -81,7 +50,7 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
 
   // share encodes state into the URL
   await page.locator("#share-btn").click();
-  await expect(page).toHaveURL(/layer=sigma0/);
+  await expect(page).toHaveURL(/layer=mndwi/);
 
   // status page renders the payload
   await page.locator("#status-link").click();
@@ -96,8 +65,7 @@ test("mobile viewport keeps the panel usable (I.7)", async ({ page }) => {
   await expect(
     page.locator("#layer-buttons button").first()
   ).toBeVisible();
-  await expect(page.locator("#date-start")).toBeHidden(); // optical: one thumb
-  await expect(page.locator("#date-end")).toBeVisible();
+  await expect(page.locator("#date-end")).toBeVisible(); // single thumb
 });
 
 test("boot does not race the map style (no render crash)", async ({ page }) => {
@@ -370,21 +338,21 @@ test("layer switch reacts immediately while the dates API is stalled", async ({ 
   });
 
   stall = true;
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await page.locator('#layer-buttons button:has-text("mndwi")').click();
 
   // the pill must react NOW, and the empty slider must be replaced by the
   // loading spinner while the stalled dates fetch is in flight
   await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveText(
-    "sigma0",
+    "mndwi",
     { timeout: 2_000 },
   );
   await expect(page.locator("#date-loading")).toBeVisible({ timeout: 2_000 });
   await expect(page.locator("#date-controls")).toBeHidden();
 
   // a second switch while the first is still in flight must win
-  await page.locator('#layer-buttons button:has-text("ndvi")').click();
+  await page.locator('#layer-buttons button:has-text("bsi")').click();
   await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveText(
-    "ndvi",
+    "bsi",
     { timeout: 2_000 },
   );
   await expect(page.locator("#date-loading")).toBeVisible({ timeout: 2_000 });
@@ -416,10 +384,12 @@ test("a failing dates request leaves the UI usable", async ({ page }) => {
   });
 
   fail = true;
-  await page.locator('#layer-buttons button:has-text("coherence")').click();
+  // mndwi: distinct from the default active layer (rgb) and the recovery
+  // layer (ndvi) — clicking the active pill would toggle the layer off
+  await page.locator('#layer-buttons button:has-text("mndwi")').click();
   // still reacts: pill switches, no crash, no stuck spinner
   await expect(page.locator('#layer-buttons [aria-pressed="true"]')).toHaveText(
-    "coherence",
+    "mndwi",
     { timeout: 2_000 },
   );
   await expect(page.locator("body")).not.toContainText("Failed to start");
@@ -614,7 +584,7 @@ test("About dialog explains the RES-1333-2017 purpose in both languages", async 
 
 test("layer and mode buttons carry help tooltips", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#layer-buttons button")).toHaveCount(6);
+  await expect(page.locator("#layer-buttons button")).toHaveCount(4);
 
   // every layer pill explains what it shows, in the active language
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
@@ -625,7 +595,7 @@ test("layer and mode buttons carry help tooltips", async ({ page }) => {
     "title",
     /superficie expuesta/,
   );
-  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(6);
+  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(4);
 
   await page.locator("#lang-select").selectOption("en");
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
@@ -760,304 +730,12 @@ test("POI pins speak the active language", async ({ page }) => {
   await expect(page.locator('#poi-markers .poi-label:text-is("Quebrador")')).toHaveCount(0);
 });
 
-test("radar range slider drives start and end of the change", async ({ page }) => {
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-end")).toBeVisible();
-  await expect(page.locator("#date-start")).toBeHidden(); // optical default
 
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await waitForRadarDates(page);
 
-  const read = () =>
-    page.evaluate(() => ({
-      start: Number(document.getElementById("date-start").value),
-      end: Number(document.getElementById("date-end").value),
-      startMin: document.getElementById("date-start").min,
-      startMax: Number(document.getElementById("date-start").max),
-      endMin: Number(document.getElementById("date-end").min),
-      endMax: Number(document.getElementById("date-end").max),
-      readout: document.getElementById("date-value").textContent,
-    }));
 
-  let v = await read();
-  expect(v.start).toBeLessThan(v.end); // range start strictly before end
-  // both thumbs share ONE static scale (0..lastIndex): a dynamic start.max
-  // repositioned the left thumb every time the end knob moved
-  expect(v.startMin).toBe("0");
-  expect(v.endMin).toBe(0);
-  expect(v.startMax).toBe(v.endMax);
-  expect(v.readout).toContain("→");
 
-  // dragging the start writes the range start into the shared URL
-  await page.locator("#date-start").evaluate((el) => {
-    el.value = "0";
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await expect(page).toHaveURL(/baseline=\d{4}-\d{2}-\d{2}/);
-  v = await read();
-  expect(v.start).toBe(0);
-  expect(v.readout).toContain("→");
 
-  // dragging the end moves the shown date while staying after the start
-  const endBefore = v.end;
-  await page.locator("#date-end").evaluate((el) => {
-    const next = Math.max(Number(el.min), Number(el.value) - 1);
-    el.value = String(next);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await expect(page).toHaveURL(/date=\d{4}-\d{2}-\d{2}/);
-  v = await read();
-  expect(v.end).toBeLessThanOrEqual(endBefore);
-  expect(v.end).toBeGreaterThanOrEqual(v.start + 1);
-  expect(v.readout).toContain("→");
-});
 
-test("the left thumb stays put while dragging the right knob", async ({ page }) => {
-  // Chrome paints a range thumb at (value - min) / (max - min) of the
-  // track. The start input used to carry a DYNAMIC max (end - 1) that was
-  // rewritten on every input event, so dragging the right knob repositioned
-  // the left thumb even though its value never changed — "the left slider
-  // knob is still moving when I drag the right knob".
-  await page.goto(`/p/${SLUG}/`);
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await waitForRadarDates(page);
-
-  const read = () =>
-    page.evaluate(() => {
-      const start = document.getElementById("date-start");
-      const end = document.getElementById("date-end");
-      const frac = (el) => {
-        const span = Number(el.max) - Number(el.min);
-        return span === 0 ? 0 : (Number(el.value) - Number(el.min)) / span;
-      };
-      return {
-        startValue: start.value,
-        startMax: start.max,
-        startMin: start.min,
-        endMax: end.max,
-        endMin: end.min,
-        startFrac: frac(start),
-      };
-    });
-
-  const rest = await read();
-  // one shared static scale for both thumbs (0..lastIndex): the left
-  // thumb's position then depends only on its own value
-  expect(rest.startMin).toBe("0");
-  expect(rest.endMin).toBe("0");
-  expect(rest.startMax).toBe(rest.endMax);
-
-  const box = await page.locator("#date-slider").boundingBox();
-  const y = box.y + 12;
-  // grab the END thumb — it sits at the far right (its value is the last index)
-  const grabX = box.x + box.width - 8;
-  await page.mouse.move(grabX, y);
-  await page.mouse.down();
-  for (let i = 1; i <= 15; i += 1) {
-    await page.mouse.move(grabX - i * 9, y);
-    await page.waitForTimeout(20);
-    const mid = await read();
-    expect(mid.startValue).toBe(rest.startValue); // value frozen...
-    expect(mid.startFrac).toBeCloseTo(rest.startFrac, 5); // ...and thumb still
-  }
-  await page.mouse.up();
-});
-
-test("adjacent knobs stay put: moving one never moves the other", async ({ page }) => {
-  await page.goto(`/p/${SLUG}/`);
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await waitForRadarDates(page);
-
-  const read = () =>
-    page.evaluate(() => ({
-      start: Number(document.getElementById("date-start").value),
-      end: Number(document.getElementById("date-end").value),
-      endMin: document.getElementById("date-end").min,
-      endMax: document.getElementById("date-end").max,
-      readout: document.getElementById("date-value").textContent,
-    }));
-
-  const initial = await read();
-
-  // push start to its wall (adjacent to end) — the END must not budge and
-  // must keep renderable bounds (this used to flip end.min == end.max and
-  // Chrome parked the end thumb at the left edge: "the other moves too")
-  await page.locator("#date-start").evaluate((el) => {
-    el.value = el.max;
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  const atWall = await read();
-  expect(atWall.end).toBe(initial.end); // end value untouched
-  expect(atWall.endMin).toBe("0"); // never degenerate
-  expect(Number(atWall.endMax)).toBeGreaterThan(0);
-  expect(atWall.start).toBe(atWall.end - 1);
-  expect(atWall.readout).toContain("→");
-
-  // dragging the END below the start clamps it back to start + 1; the
-  // START must not move in response
-  await page.locator("#date-end").evaluate((el) => {
-    el.value = "0";
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  const clamped = await read();
-  expect(clamped.start).toBe(atWall.start);
-  expect(clamped.end).toBe(atWall.start + 1);
-  expect(clamped.readout).toContain("→");
-});
-
-test("a fast range drag retargets the overlay once", async ({ page }) => {
-  // Every per-tick retarget invalidated the style (render crashes) and
-  // asked the server for a derived product per intermediate value.
-  const requested = [];
-  await page.route("**/tiles/sigma0/**", async (route) => {
-    requested.push(route.request().url());
-    await route.continue();
-  });
-
-  await page.goto(`/p/${SLUG}/`);
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await waitForRadarDates(page);
-  // pair mode: the test drags the START knob, which is parked while the
-  // pre-works composite baseline (the default) is active
-  await page.locator("#radar-composite").uncheck();
-  await page.waitForTimeout(600);
-  requested.length = 0;
-
-  const box = await page.locator("#date-slider").boundingBox();
-  const y = box.y + 12;
-  // grab the START thumb where it actually sits: value/max of the shared
-  // static scale (the old hardcoded 75% assumed a dynamic start.max)
-  const startThumb = await page.evaluate(() => {
-    const el = document.getElementById("date-start");
-    const span = Number(el.max) - Number(el.min);
-    return span === 0 ? 0 : (Number(el.value) - Number(el.min)) / span;
-  });
-  const startX = box.x + 8 + startThumb * (box.width - 16);
-  await page.mouse.move(startX, y);
-  await page.mouse.down();
-  for (let i = 1; i <= 12; i += 1) {
-    await page.mouse.move(startX + i * 5, y);
-    await page.waitForTimeout(15);
-  }
-  await page.mouse.up();
-  await page.waitForTimeout(700);
-
-  const baselines = new Set();
-  for (const url of requested) {
-    const m = /[?&]baseline=([^&]+)/.exec(url);
-    if (m) baselines.add(m[1]);
-  }
-  // the gesture collapses to ONE retarget: at most the final baseline
-  expect(baselines.size).toBeLessThanOrEqual(1);
-  expect(requested.length).toBeGreaterThan(0); // it still loads, just once
-});
-
-test("retargeting over errored tiles never crashes the renderer", async ({ page }) => {
-  // maplibre-gl-js #7775: setTiles() over a source holding `errored` tiles
-  // re-promotes them to a renderable state without a texture → the raster
-  // renderer throws `...reading 'bind'` on the next frame. Overlay tiles
-  // outside coverage (or aborted mid-scrub) really do end up errored here,
-  // so reproduce it deterministically: every tile 404s, slowly — the slow
-  // response keeps the crash window wide open during the retarget.
-  const pageErrors = [];
-  page.on("pageerror", (error) => pageErrors.push(String(error)));
-  await page.route(`**/p/${SLUG}/tiles/**`, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 1200));
-    await route.fulfill({ status: 404, body: "" });
-  });
-
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
-  // let the 404s settle so the source cache holds errored tiles in view
-  await page.waitForTimeout(8000);
-
-  // setTiles() with those errored tiles present — the crash window
-  await page.locator('#layer-buttons button:has-text("bsi")').click();
-  await expect(page).toHaveURL(/layer=bsi/);
-  await page.waitForTimeout(3000);
-  // one more retarget while the first refetch wave may still be in flight
-  await page.locator('#layer-buttons button:has-text("ndvi")').click();
-  await page.waitForTimeout(3000);
-
-  expect(pageErrors.filter((error) => error.includes("bind"))).toEqual([]);
-});
-
-test("orbit geometry labels dates and warns on mismatched pairs", async ({ page }) => {
-  // Ascending vs descending backscatter differs by slope aspect in this
-  // mountainous AOI — comparing them reads as noise. The UI must show each
-  // date's viewing geometry and flag a start/end pair that doesn't match.
-  await page.goto(`/p/${SLUG}/`);
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await waitForRadarDates(page);
-
-  // cloud-strip tooltips carry the acquisition geometry
-  const titles = await page
-    .locator("#cloud-strip span")
-    .evaluateAll((els) => els.map((el) => el.title));
-  expect(titles.some((t) => /ASC|DESC/.test(t))).toBe(true);
-
-  // the warning element exists but stays hidden while the pair matches
-  const warn = page.locator("#date-geom-warn");
-  await expect(warn).toHaveCount(1);
-  await expect(warn).toBeHidden();
-
-  // pick a start date whose geometry differs from the (default) end date
-  const idx = await page.evaluate(async (slug) => {
-    const payload = await (await fetch(`/p/${slug}/api/dates?layer=sigma0`)).json();
-    const entries = payload.dates;
-    const sig = (e) => JSON.stringify([...(e.orbits ?? [])].sort());
-    const endSig = sig(entries[entries.length - 1]);
-    let mismatch = -1;
-    let match = -1;
-    for (let i = 0; i < entries.length - 1; i += 1) {
-      if (!entries[i].orbits?.length) continue;
-      if (sig(entries[i]) !== endSig && mismatch < 0) mismatch = i;
-      if (sig(entries[i]) === endSig && match < 0) match = i;
-    }
-    return { mismatch, match };
-  }, SLUG);
-  expect(idx.mismatch).toBeGreaterThanOrEqual(0);
-  expect(idx.match).toBeGreaterThanOrEqual(0);
-
-  await page.locator("#date-start").evaluate((el, value) => {
-    el.value = String(value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }, idx.mismatch);
-  await expect(warn).toBeVisible();
-
-  await page.locator("#date-start").evaluate((el, value) => {
-    el.value = String(value);
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  }, idx.match);
-  await expect(warn).toBeHidden();
-});
-
-test("cloud controls disappear on radar layers and return on optical", async ({ page }) => {
-  // Cloudiness does not affect Sentinel-1: the strip, badge and the
-  // hide-cloudy / max-cloud rows must vanish on sigma0 and come back on
-  // an optical layer — without losing the strip's date population.
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
-    timeout: 30_000,
-  });
-  const opticalRows = {
-    strip: page.locator("#cloud-strip"),
-    badge: page.locator("#cloud-badge"),
-    hideRow: page.locator("#hide-cloudy-row"),
-    maxRow: page.locator("#max-cloud-row"),
-  };
-  for (const el of Object.values(opticalRows)) await expect(el).toBeVisible();
-
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await expect(page.locator("#date-start")).toBeVisible({ timeout: 30_000 });
-  await expect
-    .poll(() => page.locator("#cloud-strip span").count(), { timeout: 30_000 })
-    .toBeGreaterThan(0);
-  for (const el of Object.values(opticalRows)) await expect(el).toBeHidden();
-
-  await page.locator('#layer-buttons button:has-text("ndvi")').click();
-  for (const el of Object.values(opticalRows)) await expect(el).toBeVisible();
-});
 
 test("Rio General work-area line renders as an overlay", async ({ page }) => {
   // The plan's work area follows the Río General between the project
@@ -1140,47 +818,10 @@ test("date picker hides entirely when no layer is selected", async ({ page }) =>
   await page.locator('#layer-buttons [aria-pressed="true"]').click();
   await expect(page.locator("#date-section")).toBeHidden();
 
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await page.locator('#layer-buttons button:has-text("mndwi")').click();
   await expect(page.locator("#date-section")).toBeVisible();
 });
 
-test("pre-works composite baseline is the radar default and can be switched off", async ({ page }) => {
-  // User (2026-10-12): aggregate all Sentinel data before works start
-  // (2026-01-01..2026-06-01) as THE baseline — validated at 5x the works
-  // signal of a single-date baseline (quarry strong 15.5% vs 0% control).
-  const tileBaselines = new Set();
-  page.on("request", (request) => {
-    const m = /\/tiles\/sigma0\/[^?]+\?baseline=([^&]+)/.exec(request.url());
-    if (m) tileBaselines.add(m[1]);
-  });
-
-  await page.goto(`/p/${SLUG}/`);
-  await page.locator('#layer-buttons button:has-text("sigma0")').click();
-  await waitForRadarDates(page);
-
-  // default: composite ON, start knob parked, readout says so
-  await expect(page.locator("#composite-row")).toBeVisible();
-  await expect(page.locator("#radar-composite")).toBeChecked();
-  await expect(page.locator("#date-start")).toBeDisabled();
-  await expect(page.locator("#date-value")).toContainText("Composición");
-  await expect.poll(() => [...tileBaselines].includes("composite")).toBe(true);
-
-  // opting out re-enables the pair mode: the start knob drives the tiles
-  await page.locator("#radar-composite").uncheck();
-  await expect(page.locator("#date-start")).toBeEnabled();
-  await expect(page.locator("#date-value")).not.toContainText("Composición");
-  tileBaselines.clear();
-  await page.locator("#date-start").evaluate((el) => {
-    el.value = "0";
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-  });
-  await expect.poll(() => [...tileBaselines].some((b) => /^\d{4}-/.test(b))).toBe(true);
-
-  // the choice is remembered across reloads
-  await page.reload();
-  await page.waitForFunction(() => window.__mirarsetenaMap, null, { timeout: 30000 });
-  await expect(page.locator("#radar-composite")).not.toBeChecked();
-});
 
 
 test("3D terrain toggle drapes the map over the elevation DEM", async ({ page }) => {
@@ -1228,4 +869,78 @@ test("3D terrain toggle drapes the map over the elevation DEM", async ({ page })
     source: "terrain-dem",
     exaggeration: 1.3,
   });
+});
+
+test("basemap zooms cap at the provider's deepest real tile (no gray tiles)", async ({ page }) => {
+  // Measured 2026-10-12: Esri World Imagery serves uniform gray #CCCCCC
+  // placeholders from z19 up over this AOI, OSM 400s from z20. The base
+  // source must declare maxzoom so MapLibre OVERZOOMS the last real tile
+  // instead of fetching gray/404 tiles on deep zoom.
+  const grayOrFailed = [];
+  page.on("response", (response) => {
+    const url = response.url();
+    if (url.includes("arcgisonline") && /\/tile\/(19|2\d)\//.test(url)) {
+      grayOrFailed.push(`${response.status()} ${url}`);
+    }
+    if (url.includes("tile.openstreetmap.org")) {
+      const m = /\/(\d+)\/\d+\/\d+\.png/.exec(url);
+      if (m && Number(m[1]) > 19) grayOrFailed.push(`${response.status()} ${url}`);
+    }
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30_000,
+  });
+
+  // OSM (default): source declares maxzoom 19 (poll — the style loads
+  // async, the source reports the 22 default until loadTileJson lands)
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mirarsetenaMap.getSource("base").maxzoom),
+    )
+    .toBe(19);
+
+  // Esri: source declares maxzoom 18 and a deep zoom requests no z19+ tiles
+  await page.locator("#basemap-select").selectOption("esri");
+  await expect
+    .poll(() =>
+      page.evaluate(() => window.__mirarsetenaMap.getSource("base").maxzoom),
+    )
+    .toBe(18);
+  await page.evaluate(() =>
+    window.__mirarsetenaMap.jumpTo({ center: [-83.6693, 9.3854], zoom: 21 }),
+  );
+  await page.waitForTimeout(3000);
+  expect(grayOrFailed).toEqual([]);
+});
+
+test("retargeting over errored tiles never crashes the renderer", async ({ page }) => {
+  // maplibre-gl-js #7775: setTiles() over a source holding `errored` tiles
+  // re-promotes them to a renderable state without a texture → the raster
+  // renderer throws `...reading 'bind'` on the next frame. Slow 404s keep
+  // the crash window wide open during the optical layer-switch retargets.
+  const pageErrors = [];
+  page.on("pageerror", (error) => pageErrors.push(String(error)));
+  await page.route(`**/p/${SLUG}/tiles/**`, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    await route.fulfill({ status: 404, body: "" });
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+  // let the 404s settle so the source cache holds errored tiles in view
+  await page.waitForTimeout(8000);
+
+  // setTiles() with those errored tiles present — the crash window
+  await page.locator('#layer-buttons button:has-text("bsi")').click();
+  await expect(page).toHaveURL(/layer=bsi/);
+  await page.waitForTimeout(3000);
+  // one more retarget while the first refetch wave may still be in flight
+  await page.locator('#layer-buttons button:has-text("ndvi")').click();
+  await page.waitForTimeout(3000);
+
+  expect(pageErrors.filter((error) => error.includes("bind"))).toEqual([]);
 });

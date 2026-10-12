@@ -68,9 +68,19 @@ def test_s2_layer_returns_sorted_dates_with_cloud(storage, registry):
     assert result["timeline"]["works_start"] == "2026-06-01"
 
 
+def _with_radar(config, layers):
+    """Config copy with radar layers re-added: the display config dropped
+    them (2026-10-12) but the backend S1 machinery stays covered."""
+    return config.model_copy(update={"layers": list(layers)})
+
+
 def test_s1_layer_returns_eight_dates(storage, registry):
+    config = _with_radar(
+        registry.get("cdp-rio-general"),
+        ["ndvi", "rgb", "mndwi", "bsi", "sigma0"],
+    )
     result = list_dates(
-        storage, "cdp-rio-general", registry.get("cdp-rio-general"),
+        storage, "cdp-rio-general", config,
         "sigma0", search_fn=fake_search, now=NOW,
     )
     assert len(result["dates"]) == 8
@@ -78,8 +88,11 @@ def test_s1_layer_returns_eight_dates(storage, registry):
 
 
 def test_coherence_layer_is_empty_before_slc_catalog_exists(storage, registry):
+    config = _with_radar(
+        registry.get("cdp-rio-general"), ["ndvi", "coherence"]
+    )
     result = list_dates(
-        storage, "cdp-rio-general", registry.get("cdp-rio-general"),
+        storage, "cdp-rio-general", config,
         "coherence", search_fn=fake_search, now=NOW,
     )
     assert result["dates"] == []

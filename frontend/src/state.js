@@ -1,6 +1,6 @@
 /**
  * Pure frontend state model: layers, scrubber dates, POI groups, basemaps,
- * baseline selection, URL sharing and the ES/EN message catalogs.
+
  * No DOM, no MapLibre — this module is the app's single source of truth.
  */
 
@@ -9,17 +9,10 @@ const MISSION_BY_LAYER = {
   ndvi: "sentinel-2-l2a",
   mndwi: "sentinel-2-l2a",
   bsi: "sentinel-2-l2a",
-  sigma0: "sentinel-1-grd",
-  coherence: "sentinel-1-slc",
 };
 
 export function missionForLayer(layer) {
   return MISSION_BY_LAYER[layer] ?? null;
-}
-
-export function isRadarLayer(layer) {
-  const mission = missionForLayer(layer);
-  return mission === "sentinel-1-grd" || mission === "sentinel-1-slc";
 }
 
 export const BASEMAPS = ["osm", "esri"];
@@ -34,16 +27,11 @@ export function makeState(config) {
     datesLoading: Boolean(config.layers[0]), // boot fetch starts immediately
     cloudByDate: {},
     date: null,
-    baseline: null, // range start; null -> server default (last pre-works scene)
     worksStart: config.timeline?.works_start ?? null,
     hideCloudy: false,
     maxCloud: 20,
     showProperties: true, // two 1991 plan parcels drawn as outlines
     rioLine: true, // Río General start→end work-area line overlay
-    // Pre-works COMPOSITE baseline (all Sentinel dates before works_start
-    // aggregated as the median) — the default for radar change (user
-    // 2026-10-12); the range start knob becomes an opt-out pair mode.
-    composite: true,
     show3d: false, // 3D terrain draped over the elevation DEM (off by default)
     poiGroups: { facilities: true, inspection: true },
     basemap: "osm",
@@ -60,13 +48,6 @@ export function setLayer(state, layer, dates) {
   const list = dates ?? [];
   const remembered = state.date;
   const stillValid = list.some((entry) => entry.date === remembered);
-  const radar = isRadarLayer(layer);
-  // Radar sliders are a start->end range: when the remembered date does not
-  // exist in this mission's list, the range END starts at the latest scene
-  // (change against the pre-works default baseline). Optical keeps its
-  // oldest-first behaviour.
-  const fallback =
-    radar && list.length ? list[list.length - 1].date : (list[0]?.date ?? null);
   return {
     ...state,
     layer,
@@ -75,12 +56,7 @@ export function setLayer(state, layer, dates) {
     cloudByDate: Object.fromEntries(
       list.map((entry) => [entry.date, entry.cloud])
     ),
-    date: stillValid ? remembered : fallback,
-    // a baseline from another mission's list would 404 every tile
-    baseline:
-      state.baseline && list.some((entry) => entry.date === state.baseline)
-        ? state.baseline
-        : null,
+    date: stillValid ? remembered : (list[0]?.date ?? null),
   };
 }
 
@@ -95,133 +71,6 @@ export function applyDates(state, dates) {
 
 export function setDate(state, date) {
   return { ...state, date };
-}
-
-export function setBaseline(state, baseline) {
-  return { ...state, baseline };
-}
-
-/**
- * Baseline = range start of the change comparison. Mirrors the server's
- * pipeline.change.default_baseline_date: latest acquisition before works
- * started, earliest overall as fallback (index within `dates`, ascending).
- */
-/**
- * Normalized viewing-geometry signature of one acquisition date: the sorted
- * [orbit_state, relative_orbit] pairs merged into that daily product, or
- * null when the catalog didn't record geometry (legacy tolerance).
- */
-export function orbitSignature(entry) {
-  if (!entry || !Array.isArray(entry.orbits) || !entry.orbits.length) return null;
-  return JSON.stringify(
-    entry.orbits.map((pair) => [pair[0] ?? null, pair[1] ?? null]).sort(),
-  );
-}
-
-/**
- * Default range start (mirrors the server's default_baseline_date):
- * latest acquisition before works started, earliest overall as fallback —
- * unless the end date's viewing geometry is known, then the pre-works
- * date with the SAME orbit set wins (tier 1), then one CONTAINING it
- * (tier 2, dual-track dates). Ascending vs descending backscatter
- * differs by slope aspect: that difference is geometry, not change.
- */
-export function defaultBaselineIndex(dates, worksStart, endDate) {
-  if (!dates.length) return 0;
-  if (!worksStart) return 0;
-  let found = 0;
-  for (let i = 0; i < dates.length; i += 1) {
-    if (dates[i].date < worksStart) found = i;
-  }
-  if (!endDate) return found;
-  const endEntry = dates.find((entry) => entry.date === endDate);
-  const endSig = orbitSignature(endEntry);
-  if (!endSig) return found; // no geometry recorded -> legacy behavior
-
-  const ordered = [...dates].sort((a, b) =>
-    a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
-  );
-  const pre = ordered.filter((entry) => entry.date < worksStart);
-  const pool = pre.length ? pre : ordered;
-  const candidates = pool.filter((entry) => entry.date !== endDate);
-  const same = candidates.filter(
-    (entry) => orbitSignature(entry) === endSig,
-  );
-  if (same.length) return dates.indexOf(same[same.length - 1]);
-  const covering = candidates.filter((entry) => {
-    const sig = orbitSignature(entry);
-    if (!sig) return false;
-    const pairs = JSON.parse(sig);
-    const endPairs = JSON.parse(endSig);
-    return endPairs.every((pair) =>
-      pairs.some((candidate) => JSON.stringify(candidate) === JSON.stringify(pair)),
-    );
-  });
-  if (covering.length) return dates.indexOf(covering[covering.length - 1]);
-  if (candidates.length) return dates.indexOf(candidates[candidates.length - 1]);
-  return found;
-}
-
-/** Which slider position the range start currently sits at. */
-export function baselineIndex(state, dates) {
-  if (!dates.length) return 0;
-  if (state.baseline) {
-    const idx = dates.findIndex((entry) => entry.date === state.baseline);
-    if (idx >= 0) return idx;
-  }
-  return defaultBaselineIndex(dates, state.worksStart, state.date);
-}
-
-/**
- * Keep the radar range coherent: materialize the default baseline once
- * (so later end-date moves never re-derive it — that moved the left knob
- * under the right one), then keep the range strictly start < end:
- * when the resolved baseline is not before the end date (default
- * baseline == latest scene, or the end sits earlier in the list),
- * materialize the start one step before the end.
- */
-export function ensureRadarRange(state, dates) {
-  if (!state.layer || !isRadarLayer(state.layer) || !dates.length) return state;
-  let endIdx = dates.findIndex((entry) => entry.date === state.date);
-  if (endIdx < 0) return state; // setLayer() owns date validity
-  let next = state;
-  if (!next.baseline) {
-    const idx = defaultBaselineIndex(dates, next.worksStart, next.date);
-    if (dates[idx]) next = { ...next, baseline: dates[idx].date };
-  }
-  let startIdx = baselineIndex(next, dates);
-  if (startIdx < endIdx) return next;
-  if (endIdx === 0) {
-    // nothing before the end: move the end to the latest scene first
-    const latest = dates[dates.length - 1].date;
-    endIdx = dates.length - 1;
-    startIdx = baselineIndex({ ...next, date: latest }, dates);
-    if (startIdx >= endIdx) {
-      return { ...next, date: latest, baseline: dates[endIdx - 1]?.date ?? null };
-    }
-    return { ...next, date: latest };
-  }
-  return { ...next, baseline: dates[endIdx - 1].date };
-}
-
-/**
- * Slider geometry shared by renderScrubber and the input handlers: which
- * indices the two thumbs sit at. End bounds are always static (min 0) — a
- * dynamic end.min became degenerate (min == max) whenever the thumbs were
- * adjacent and Chrome parked the end thumb at the left edge, so moving one
- * knob appeared to move the other.
- */
-export function sliderIndices(state, dates) {
-  const radar = isRadarLayer(state.layer);
-  const lastIndex = dates.length - 1;
-  if (dates.length === 0) return { radar, lastIndex, startIdx: 0, endIdx: -1 };
-  let endIdx = dates.findIndex((entry) => entry.date === state.date);
-  if (endIdx < 0) endIdx = lastIndex;
-  let startIdx = radar
-    ? Math.min(baselineIndex(state, dates), Math.max(endIdx - 1, 0))
-    : 0;
-  if (startIdx > endIdx) startIdx = Math.max(endIdx - 1, 0);
-  return { radar, lastIndex, startIdx, endIdx };
 }
 
 export function setHideCloudy(state, hideCloudy, maxCloud) {
@@ -252,11 +101,6 @@ export function setShow3d(state, on) {
   return { ...state, show3d: Boolean(on) };
 }
 
-export function setComposite(state, on) {
-  return { ...state, composite: Boolean(on) };
-}
-
-
 export function setBasemap(state, name) {
   if (!BASEMAPS.includes(name)) return state;
   return { ...state, basemap: name };
@@ -279,7 +123,6 @@ export function settingsFromState(state) {
     poiGroups: { ...state.poiGroups },
     showProperties: Boolean(state.showProperties),
     rioLine: Boolean(state.rioLine),
-    composite: Boolean(state.composite),
     show3d: Boolean(state.show3d),
   };
 }
@@ -296,7 +139,6 @@ export function restoreSettings(state, saved) {
   if (typeof saved.hideCloudy === "boolean") next = { ...next, hideCloudy: saved.hideCloudy };
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
   if (typeof saved.rioLine === "boolean") next = { ...next, rioLine: saved.rioLine };
-  if (typeof saved.composite === "boolean") next = { ...next, composite: saved.composite };
   if (typeof saved.show3d === "boolean") next = { ...next, show3d: saved.show3d };
   if (
     typeof saved.maxCloud === "number" &&
@@ -330,16 +172,12 @@ export function visibleDates(state) {
 }
 
 export function tileUrl(state, z, x, y) {
-  const params = new URLSearchParams();
-  if (state.baseline) params.set("baseline", state.baseline);
-  const query = params.toString();
-  return (
-    `/p/${state.slug}/tiles/${state.layer}/${state.date}/${z}/${x}/${y}.png` +
-    (query ? `?${query}` : "")
-  );
+  return `/p/${state.slug}/tiles/${state.layer}/${state.date}/${z}/${x}/${y}.png`;
 }
 
-const URL_KEYS = ["layer", "date", "baseline"];
+
+
+const URL_KEYS = ["layer", "date"];
 
 export function serializeState(state) {
   const params = new URLSearchParams();
@@ -351,7 +189,6 @@ export function serializeState(state) {
   params.set("maxCloud", String(state.maxCloud));
   params.set("properties", state.showProperties ? "1" : "0");
   params.set("rio", state.rioLine ? "1" : "0");
-  params.set("comp", state.composite ? "1" : "0");
   params.set("d3", state.show3d ? "1" : "0");
   const groups = Object.entries(state.poiGroups)
     .filter(([, on]) => on)
@@ -401,12 +238,10 @@ export function parseState(search) {
   return {
     layer: params.get("layer"),
     date: params.get("date"),
-    baseline: params.get("baseline"),
     hideCloudy: params.get("hideCloudy") === "1",
     maxCloud,
     properties: params.get("properties") !== "0",
     rioLine: params.get("rio") !== "0",
-    composite: params.get("comp") !== "0",
     show3d: params.get("d3") === "1",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
@@ -433,8 +268,6 @@ export const MESSAGES = {
     properties_label: "Perímetro de propiedades",
     rio_line: "Línea Río General (inicio–fin)",
     view_3d: "Vista 3D (relieve)",
-    radar_composite: "Base pre-obras (composición ene–may 2026)",
-    composite_badge: "Composición",
     works_start: "Inicio de obras",
     about: "Acerca de",
     disclaimer:
@@ -447,13 +280,6 @@ export const MESSAGES = {
     status: "Estado",
     cloud: "Nube",
     loading_dates: "Cargando fechas…",
-    range_start: "Inicio del rango",
-    range_end: "Fin del rango",
-    geom_mismatch: "Geometría distinta",
-    geom_mismatch_help:
-      "Las fechas del rango miran desde direcciones distintas " +
-      "(ascendente/descendente): sobre laderas parte de la diferencia " +
-      "es geometría, no cambio real.",
     // POI pin names — official labels from the RES-1333-2017 coordinate
     // table and the 2016 GPS record (ids from pois.geojson)
     "poi_project-start": "Inicio",
@@ -504,14 +330,6 @@ export const MESSAGES = {
       "Índice de superficie expuesta (BSI): resalta suelo desnudo, roca " +
       "y terreno removido. Útil para ver dónde se expanden el patio de " +
       "acopio y las terrazas de extracción.",
-    layer_sigma0_help:
-      "Retrodispersión Sigma0 (Sentinel-1, radar): intensidad del eco " +
-      "radar. Las diferencias frente a la línea base indican movimiento " +
-      "de tierra o obras.",
-    layer_coherence_help:
-      "Coherencia temporal (Sentinel-1): estabilidad del terreno entre " +
-      "la línea base y la fecha. Alta = sin cambios; baja = el terreno " +
-      "cambió (excavación, acopio, maquinaria).",
   },
   en: {
     app: "Mirar Setena",
@@ -529,8 +347,6 @@ export const MESSAGES = {
     properties_label: "Property perimeter",
     rio_line: "Río General line (start–end)",
     view_3d: "3D view (terrain)",
-    radar_composite: "Pre-works baseline (Jan–May 2026 composite)",
-    composite_badge: "Composite",
     works_start: "Works start",
     about: "About",
     disclaimer:
@@ -543,13 +359,6 @@ export const MESSAGES = {
     status: "Status",
     cloud: "Cloud",
     loading_dates: "Loading dates…",
-    range_start: "Range start",
-    range_end: "Range end",
-    geom_mismatch: "Different geometry",
-    geom_mismatch_help:
-      "The range dates look from different directions " +
-      "(ascending/descending): on slopes part of the difference is " +
-      "geometry, not real change.",
     // POI pin names (ids from pois.geojson; English names as published)
     "poi_project-start": "Project start",
     "poi_project-end": "Project end",
@@ -599,14 +408,6 @@ export const MESSAGES = {
       "Bare Soil Index (BSI): highlights bare soil, rock and disturbed " +
       "ground. Useful for seeing where the storage yard and extraction " +
       "terraces expand.",
-    layer_sigma0_help:
-      "Sigma0 backscatter (Sentinel-1, radar): strength of the radar " +
-      "echo. Differences against the baseline indicate earthworks or " +
-      "construction.",
-    layer_coherence_help:
-      "Temporal coherence (Sentinel-1): how stable the ground is " +
-      "between baseline and date. High = unchanged; low = the ground " +
-      "changed (excavation, stockpiles, machinery).",
   },
 };
 

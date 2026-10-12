@@ -20,16 +20,22 @@ let poisData = null;
 let aoiData = null;
 let rioData = null;
 
+// maxzoom = the deepest tile the provider actually serves over this AOI
+// (measured 2026-10-12: Esri World Imagery returns uniform gray #CCCCCC
+// placeholders from z19 up, OSM 400s from z20). MapLibre then OVERZOOMS
+// — upscaling the last real tile — instead of requesting gray/404 tiles.
 const BASEMAPS = {
   osm: {
     tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
     attribution: "© OpenStreetMap contributors",
+    maxzoom: 19,
   },
   esri: {
     tiles: [
       "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
     ],
     attribution: "Esri, Maxar, Earthstar Geographics · Río General © OpenStreetMap contributors",
+    maxzoom: 18,
   },
 };
 
@@ -39,24 +45,10 @@ async function getJSON(url) {
   return response.json();
 }
 
-function isRadar(layer) {
-  return layer === "sigma0" || layer === "coherence";
-}
-
 function overlayTemplate() {
-  const params = new URLSearchParams();
-  if (isRadar(state.layer) && state.composite) {
-    // pre-works aggregate baseline: the server medians every processed
-    // product before works_start (user 2026-10-12: everything the project
-    // changed since 2026-06-01 vs the quiet Jan-May period)
-    params.set("baseline", "composite");
-  } else if (state.baseline) {
-    params.set("baseline", state.baseline);
-  }
-  const query = params.toString();
   return (
     `${location.origin}/p/${state.slug}/tiles/${state.layer}/` +
-    `${state.date}/{z}/{x}/{y}.png${query ? `?${query}` : ""}`
+    `${state.date}/{z}/{x}/{y}.png`
   );
 }
 
@@ -187,8 +179,15 @@ function updateBasemap() {
   if (!source) return;
   const basemap = BASEMAPS[state.basemap] ?? BASEMAPS.osm;
   if (!basemap.tiles.every((t, i) => source.tiles?.[i] === t)) {
+    // the reload after setTiles() re-extends maxzoom from _options — keep
+    // both in sync or the new cap is silently reverted one frame later
+    source._options.maxzoom = basemap.maxzoom;
     source.setTiles(basemap.tiles);
   }
+  // setTiles() reloads from the boot _options and never touches maxzoom;
+  // each provider caps at a different depth (Esri 18, OSM 19), so the
+  // overzoom ceiling must follow the active basemap too
+  source.maxzoom = basemap.maxzoom;
   // AttributionControl takes customAttribution at construction only — swap
   // the tracked control whenever the basemap (and its credit) changes.
   // (Map has no setAttributionControl; the source-level attribution field
@@ -211,18 +210,6 @@ function cloudClass(cloud) {
   if (cloud <= 20) return "clear";
   if (cloud <= 60) return "mid";
   return "cloudy";
-}
-
-/** "ASC·92/DESC·84" for a date entry; "" when geometry is unknown. */
-function orbitLabel(entry) {
-  if (!entry?.orbits?.length) return "";
-  return entry.orbits
-    .map(
-      ([state, rel]) =>
-        `${String(state ?? "?").slice(0, 3).toUpperCase()}` +
-        (rel != null ? `·${rel}` : ""),
-    )
-    .join("/");
 }
 
 function renderLayerButtons() {
@@ -264,20 +251,6 @@ function renderScrubber() {
   section.hidden = !state.layer;
   if (!state.layer) return;
 
-  // Cloud metrics are an optical-only concept: on radar layers the strip,
-  // badge and the hide-cloudy / max-cloud rows disappear entirely — and
-  // they must vanish immediately, even while dates are still loading.
-  const cloudless = S.isRadarLayer(state.layer);
-  // composite baseline row is radar-only; when ON the range start is the
-  // aggregate, so the start knob is parked (pair mode is an opt-out)
-  const compositeOn = cloudless && state.composite;
-  document.getElementById("composite-row").hidden = !cloudless;
-  document.getElementById("radar-composite").checked = state.composite;
-  document.getElementById("date-start").disabled = compositeOn;
-  document.getElementById("cloud-strip").hidden = cloudless;
-  document.getElementById("cloud-badge").hidden = cloudless;
-  document.getElementById("hide-cloudy-row").hidden = cloudless;
-  document.getElementById("max-cloud-row").hidden = cloudless;
 
   const loading = state.datesLoading;
   const dates = S.visibleDates(state);
@@ -287,52 +260,17 @@ function renderScrubber() {
   document.getElementById("date-controls").hidden = loading || empty;
   if (loading || empty) return;
 
-  // Radar layers get a start->end range (change between the two thumbs);
-  // optical layers keep a single thumb on the acquisition date.
-  const { radar, lastIndex, startIdx, endIdx } = S.sliderIndices(state, dates);
-  const startInput = document.getElementById("date-start");
+  // single thumb on the acquisition date (static bounds; Chrome paints a
+  // range thumb at value/max so the position follows only its own value)
   const endInput = document.getElementById("date-end");
-  startInput.hidden = !radar;
-
-  // Both thumbs keep STATIC bounds (0..last): Chrome paints a thumb at
-  // value/max, so the start input's former dynamic max (end - 1) —
-  // rewritten on every input event — repositioned the LEFT thumb whenever
-  // the END knob moved ("the left slider knob moves when I drag the right
-  // knob"). The start<end wall is value-clamped in the input handlers and
-  // applyDate() instead of via bounds (a dynamic min/max went degenerate
-  // min == max when the thumbs were adjacent and Chrome parked the thumb
-  // at the left edge).
   endInput.min = "0";
-  endInput.max = String(lastIndex);
-  endInput.value = String(Math.max(endIdx, 0));
-  startInput.min = "0";
-  startInput.max = String(lastIndex);
-  startInput.value = String(startIdx);
+  endInput.max = String(Math.max(dates.length - 1, 0));
+  endInput.value = String(
+    Math.max(dates.findIndex((entry) => entry.date === state.date), 0),
+  );
 
-  const span = document.getElementById("range-span");
-  if (radar && lastIndex > 0) {
-    span.hidden = false;
-    span.style.left = `calc(8px + ${(startIdx / lastIndex).toFixed(4)} * (100% - 16px))`;
-    span.style.width = `calc(${((endIdx - startIdx) / lastIndex).toFixed(4)} * (100% - 16px))`;
-  } else {
-    span.hidden = true;
-  }
+  document.getElementById("date-value").textContent = state.date ?? "";
 
-  document.getElementById("date-value").textContent = radar
-    ? (state.composite
-        ? `${S.t(state.lang, "composite_badge")} → ${dates[endIdx].date}`
-        : `${dates[startIdx].date} → ${dates[endIdx].date}`)
-    : dates[endIdx].date;
-  // viewing-geometry mismatch between the range ends: over slopes the
-  // difference can be look direction, not real change (SCOPE pairing rule)
-  const warn = document.getElementById("date-geom-warn");
-  const startSig = S.orbitSignature(dates[startIdx]);
-  const endSig = S.orbitSignature(dates[endIdx]);
-  const geometryMismatch =
-    radar && Boolean(startSig) && Boolean(endSig) && startSig !== endSig;
-  warn.hidden = !geometryMismatch;
-  warn.textContent = S.t(state.lang, "geom_mismatch");
-  warn.title = S.t(state.lang, "geom_mismatch_help");
   const cloud = state.cloudByDate?.[state.date];
   document.getElementById("cloud-badge").textContent =
     cloud == null ? "" : `${S.t(state.lang, "cloud")}: ${cloud}%`;
@@ -342,9 +280,7 @@ function renderScrubber() {
   for (const entry of dates) {
     const dot = document.createElement("span");
     dot.dataset.cloud = cloudClass(entry.cloud);
-    const geom = orbitLabel(entry);
-    dot.title = `${entry.date} (${entry.cloud == null ? "—" : entry.cloud + "%"})` +
-      (geom ? ` · ${geom}` : "");
+
     dot.addEventListener("click", () => applyDate(entry.date));
     strip.appendChild(dot);
   }
@@ -353,8 +289,6 @@ function renderScrubber() {
 }
 
 function renderAll() {
-  // radar: keep the range start strictly before its end before rendering
-  state = S.ensureRadarRange(state, S.visibleDates(state));
   renderLayerButtons();
   renderScrubber();
   updateOverlay();
@@ -377,7 +311,6 @@ function syncControlsFromState() {
   document.getElementById("show-properties").checked = state.showProperties;
   document.getElementById("show-rio-line").checked = state.rioLine;
   document.getElementById("show-3d").checked = state.show3d;
-  document.getElementById("radar-composite").checked = state.composite;
   document.getElementById("basemap-select").value = state.basemap;
 }
 
@@ -430,14 +363,7 @@ function selectLayer(layer) {
 async function applyDate(date) {
   const dates = S.visibleDates(state);
   if (dates.length) {
-    // one choke point for both handlers: the end can never land on or
-    // before the range start (drags, cloud-strip clicks) — clamp it up
-    // instead of letting ensureRadarRange MOVE THE OTHER KNOB.
-    const { radar, startIdx } = S.sliderIndices(state, dates);
-    let idx = dates.findIndex((entry) => entry.date === date);
-    if (idx < 0) idx = dates.length - 1;
-    if (radar && idx <= startIdx) idx = Math.min(startIdx + 1, dates.length - 1);
-    date = dates[idx].date;
+
   }
   state = S.setDate(state, date);
   renderAll();
@@ -455,6 +381,9 @@ function buildMap() {
           type: "raster",
           tiles: basemap.tiles,
           tileSize: 256,
+          // cap at the provider's deepest real tile: past it MapLibre
+          // overzooms (upscales) instead of fetching gray placeholders
+          maxzoom: basemap.maxzoom,
           // no static attribution here: it is frozen to the boot basemap;
           // the tracked AttributionControl follows the active one instead
         },
@@ -614,19 +543,6 @@ function wireUi() {
     const entry = dates[Number(event.target.value)];
     if (entry) applyDate(entry.date);
   });
-  document.getElementById("date-start").addEventListener("input", (event) => {
-    // static bounds let the thumb travel past the end knob: clamp it back
-    // to end - 1 here (the mirror of applyDate's end >= start + 1 clamp)
-    const dates = S.visibleDates(state);
-    const { endIdx } = S.sliderIndices(state, dates);
-    let idx = Number(event.target.value);
-    if (idx >= endIdx) idx = Math.max(endIdx - 1, 0);
-    const entry = dates[idx];
-    if (entry) {
-      state = S.setBaseline(state, entry.date);
-      renderAll();
-    }
-  });
   document.getElementById("hide-cloudy").addEventListener("change", (event) => {
     state = S.setHideCloudy(
       state,
@@ -656,10 +572,6 @@ function wireUi() {
   document.getElementById("show-3d").addEventListener("change", (event) => {
     state = S.setShow3d(state, event.target.checked);
     applyTerrain();
-    renderAll();
-  });
-  document.getElementById("radar-composite").addEventListener("change", (event) => {
-    state = S.setComposite(state, event.target.checked);
     renderAll();
   });
   document.getElementById("basemap-select").addEventListener("change", (event) => {
@@ -748,11 +660,9 @@ async function boot() {
     }
     state.hideCloudy = restored.hideCloudy;
     state.maxCloud = restored.maxCloud;
-    state.baseline = restored.baseline;
     state.showProperties = restored.properties;
     state.rioLine = restored.rioLine;
     state.show3d = restored.show3d;
-    state.composite = restored.composite;
     state = S.setBasemap(state, restored.basemap);
     const groups = restored.pois.split(",");
     state.poiGroups = {

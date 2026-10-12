@@ -74,11 +74,9 @@ def test_stale_index_refreshes_once_under_concurrency(tmp_path):
             )
         )
 
-    assert calls == {
-        "sentinel-2-l2a": 1,
-        "sentinel-1-grd": 1,
-        "sentinel-1-slc": 1,
-    }
+    # the display config dropped the radar layers (2026-10-12): the index
+    # refresh issues exactly one search per remaining mission
+    assert calls == {"sentinel-2-l2a": 1}
 
 
 def test_app_shares_one_processor_across_concurrent_tile_requests(tmp_path):
