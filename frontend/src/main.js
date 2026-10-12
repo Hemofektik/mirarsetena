@@ -19,6 +19,7 @@ let map;
 let poisData = null;
 let aoiData = null;
 let rioData = null;
+let officialData = null;
 
 const BASEMAPS = {
   osm: {
@@ -167,6 +168,14 @@ function updateAoiVisibility() {
   for (const id of ["rio-casing", "rio-outline"]) {
     if (!map.getLayer(id)) continue;
     map.setLayoutProperty(id, "visibility", state.rioLine ? "visible" : "none");
+  }
+  for (const id of ["official-casing", "official-outline"]) {
+    if (!map.getLayer(id)) continue;
+    map.setLayoutProperty(
+      id,
+      "visibility",
+      state.showOfficial ? "visible" : "none",
+    );
   }
 }
 
@@ -366,6 +375,7 @@ function syncControlsFromState() {
   document.getElementById("show-properties").checked = state.showProperties;
   document.getElementById("show-rio-line").checked = state.rioLine;
   document.getElementById("radar-composite").checked = state.composite;
+  document.getElementById("show-official").checked = state.showOfficial;
   document.getElementById("basemap-select").value = state.basemap;
 }
 
@@ -462,6 +472,10 @@ function buildMap() {
           type: "geojson",
           data: rioData ?? { type: "FeatureCollection", features: [] },
         },
+        official: {
+          type: "geojson",
+          data: officialData ?? { type: "FeatureCollection", features: [] },
+        },
       },
       layers: [
         { id: "base", type: "raster", source: "base" },
@@ -528,6 +542,32 @@ function buildMap() {
             visibility: state.rioLine ? "visible" : "none",
           },
           paint: { "line-color": "#4f46e5", "line-width": 3.5, "line-opacity": 0.5 },
+        },
+        // official cadastral perimeter (SNITCR SIRI): white casing +
+        // dashed green outline so it reads as the registry reference
+        {
+          id: "official-casing",
+          type: "line",
+          source: "official",
+          layout: {
+            "line-join": "round",
+            visibility: state.showOfficial ? "visible" : "none",
+          },
+          paint: { "line-color": "#ffffff", "line-width": 6 },
+        },
+        {
+          id: "official-outline",
+          type: "line",
+          source: "official",
+          layout: {
+            "line-join": "round",
+            visibility: state.showOfficial ? "visible" : "none",
+          },
+          paint: {
+            "line-color": "#15803d",
+            "line-width": 2.5,
+            "line-dasharray": [3, 2],
+          },
         },
       ],
     },
@@ -629,6 +669,10 @@ function wireUi() {
     state = S.setComposite(state, event.target.checked);
     renderAll();
   });
+  document.getElementById("show-official").addEventListener("change", (event) => {
+    state = S.setShowOfficial(state, event.target.checked);
+    renderAll();
+  });
   document.getElementById("basemap-select").addEventListener("change", (event) => {
     state = S.setBasemap(state, event.target.value);
     updateBasemap();
@@ -719,6 +763,7 @@ async function boot() {
     state.showProperties = restored.properties;
     state.rioLine = restored.rioLine;
     state.composite = restored.composite;
+    state.showOfficial = restored.showOfficial;
     state = S.setBasemap(state, restored.basemap);
     const groups = restored.pois.split(",");
     state.poiGroups = {
@@ -743,6 +788,14 @@ async function boot() {
       rioData = await getJSON(`/p/${state.slug}/rio.geojson`);
     } catch {
       rioData = null;
+    }
+  }
+  if (config.official_path) {
+    // optional: official cadastral perimeter (SNITCR SIRI, tools/siri.py)
+    try {
+      officialData = await getJSON(`/p/${state.slug}/official.geojson`);
+    } catch {
+      officialData = null;
     }
   }
 

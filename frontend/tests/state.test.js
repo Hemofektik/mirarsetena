@@ -25,6 +25,7 @@ import {
   setHideCloudy,
   setLayer,
   setLang,
+  setShowOfficial,
   setShowProperties,
   sliderIndices,
   t,
@@ -140,6 +141,7 @@ describe("tile URLs and URL state (I.5)", () => {
       properties: true,
       rioLine: true,
       composite: true,
+      showOfficial: true,
       pois: "facilities",
       basemap: "esri",
       lang: "es",
@@ -222,7 +224,9 @@ describe("layer toggle: disable the active layer (user request)", () => {
   it("an enabled layer still serializes its own name (no off token)", () => {
     const state = setLayer(makeState(config), "rgb", DATES_S2);
     expect(serializeState(state)).toContain("layer=rgb");
-    expect(serializeState(state)).not.toContain("off");
+    // the disabled-layer token specifically (other params may contain
+    // the substring, e.g. official=1)
+    expect(serializeState(state)).not.toContain("layer=off");
   });
 });
 
@@ -379,7 +383,7 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
     // settings payload never carries transient view state
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "composite", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "showProperties"],
+      ["basemap", "composite", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "showOfficial", "showProperties"],
     );
   });
 });
@@ -578,5 +582,23 @@ describe("pre-works composite baseline flag", () => {
     expect(saved.composite).toBe(false);
     expect(restoreSettings(makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }), saved).composite).toBe(false);
     expect(restoreSettings(base, { composite: "yes" }).composite).toBe(true); // garbage ignored
+  });
+});
+
+describe("official perimeter toggle", () => {
+  it("defaults on, round-trips through URL and settings, garbage falls back", () => {
+    const base = makeState({ slug: "cdp-rio-general", layers: ["ndvi"] });
+    expect(base.showOfficial).toBe(true);
+
+    const off = setShowOfficial(base, false);
+    expect(parseState(serializeState(off)).showOfficial).toBe(false);
+    expect(parseState(serializeState(base)).showOfficial).toBe(true);
+
+    const saved = settingsFromState(off);
+    expect(saved.showOfficial).toBe(false);
+    expect(
+      restoreSettings(makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }), saved).showOfficial,
+    ).toBe(false);
+    expect(restoreSettings(base, { showOfficial: "no" }).showOfficial).toBe(true);
   });
 });

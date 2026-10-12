@@ -1170,3 +1170,42 @@ test("pre-works composite baseline is the radar default and can be switched off"
   await page.waitForFunction(() => window.__mirarsetenaMap, null, { timeout: 30000 });
   await expect(page.locator("#radar-composite")).not.toBeChecked();
 });
+
+test("official SNITCR perimeter renders as its own toggleable layer", async ({ page }) => {
+  // The official cadastral perimeter (fetched from the SIRI API) must be
+  // VISIBLE on the map as its own outline — the user asked 'did you
+  // replace the old perimeter? it looks unchanged' — so it ships as a
+  // separate, toggleable layer alongside the reconstruction.
+  const official = await page.request.get(`/p/${SLUG}/official.geojson`);
+  expect(official.status()).toBe(200);
+  const payload = await official.json();
+  expect(payload.features).toHaveLength(2);
+
+  await page.goto(`/p/${SLUG}/`);
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30_000,
+  });
+  const officialVisible = () =>
+    page.evaluate(() =>
+      ["official-casing", "official-outline"].every((id) => {
+        const map = window.__mirarsetenaMap;
+        if (!map.getLayer(id)) return false;
+        return map.getLayoutProperty(id, "visibility") !== "none";
+      }),
+    );
+
+  await expect.poll(officialVisible).toBe(true); // default ON
+  await expect(page.locator("#show-official")).toBeChecked();
+
+  await page.locator("#show-official").uncheck();
+  await expect.poll(officialVisible).toBe(false);
+  await expect(page).toHaveURL(/official=0/);
+
+  await page.locator("#show-official").check();
+  await page.reload();
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30_000,
+  });
+  await expect.poll(officialVisible).toBe(true);
+  await expect(page.locator("#show-official")).toBeChecked();
+});
