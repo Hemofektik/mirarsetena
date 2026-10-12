@@ -87,7 +87,7 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 |---|---|
 | Q1 | **Dual catalog**: Earth Search STAC (no-auth) for S2/GRD discovery + date lists; CDSE queried **only** for SLC/coherence → expired token degrades only the coherence layer. |
 | Q2 | **Layer-driven scrubber dates**: RGB/NDVI/MNDWI/BSI → S2 dates; σ⁰/coherence → S1 dates (mission implied by layer). |
-| Q3 | S1 layers rendered as **change-vs-baseline** (dB / 0–1 ramps), baseline defaults to the latest pre-works scene (works start 2026-06-01 since the 2026-10-09 correction). *Revised 2026-10-08 by user:* no baseline dropdown, no raw toggle — the date slider becomes a **start→end range slider** (change between the two selections, raw mode removed entirely). *Refined 2026-10-09:* the default range start is the latest pre-works date with the **same viewing geometry** (orbit state + relative orbit) as the selected end — the pairing rule below applied to the baseline default (fallback: legacy latest pre-works); the UI labels each date's geometry (ASC·92 / DESC·84) and flags mismatched pairs. **Superseded 2026-10-12 (user):** sigma0/coherence were removed from the app entirely — GRD magnitude change "does not make sense currently" over this terrain; the long-term path is **full InSAR from SLC phase** (to be planned separately); the backend serving/machinery stays dormant for that return. |
+| Q3 | S1 layers rendered as **change-vs-baseline** (dB / 0–1 ramps), baseline defaults to the latest pre-works scene (works start 2026-06-01 since the 2026-10-09 correction). *Revised 2026-10-08 by user:* no baseline dropdown, no raw toggle — the date slider becomes a **start→end range slider** (change between the two selections, raw mode removed entirely). *Refined 2026-10-09:* the default range start is the latest pre-works date with the **same viewing geometry** (orbit state + relative orbit) as the selected end — the pairing rule below applied to the baseline default (fallback: legacy latest pre-works); the UI labels each date's geometry (ASC·92 / DESC·84) and flags mismatched pairs. **Superseded 2026-10-12 (user):** sigma0/coherence were removed from the app entirely — GRD magnitude change "does not make sense currently" over this terrain; the long-term path is **full InSAR from SLC phase** (planned in [INSAR-PLAN.md](./INSAR-PLAN.md)); the backend serving/machinery stays dormant for that return. |
 | Q4 | SLC handling: **compute-and-purge** — download, compute coherence pair, delete source; only small results cached (bounded disk forever). |
 | Q5 | Name: **Mirar Setena**. |
 
@@ -158,7 +158,7 @@ flowchart LR
 4. Before/after swipe comparison
 5. Flood/water-extent mapping (S1)
 6. GeoTIFF clip export
-7. InSAR deformation time series (research tier)
+7. InSAR deformation time series (research tier — phased as L.6b in [INSAR-PLAN.md](./INSAR-PLAN.md))
 
 ---
 

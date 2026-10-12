@@ -1,0 +1,238 @@
+# InSAR visualization plan — LOS displacement as a colorized map overlay
+
+Status: **plan** (user request 2026-10-12: "make a plan to implement the InSAR
+visualization. So we can apply the height delta that was measured but also
+display it using a colorized map overlay"). Links: SCOPE Q3 (supersession
+note), research tier §5.7, IMPLEMENTATION H.3 (pending processor spike). This
+document becomes a Phase L in IMPLEMENTATION when implementation starts.
+
+## 1. Goal & user deliverables
+
+1. **Apply the height delta that was measured:** convert the interferometric
+   phase of Sentinel-1 SLC pairs into a physical line-of-sight (LOS)
+   displacement in centimetres — relative to a reference epoch — so the number
+   is a real measurement, not a raw phase image.
+2. **Display it as a colourized map overlay:** a new map layer rendering that
+   displacement with a diverging colour ramp centred at 0 cm, on top of the
+   basemap/terrain (the 3D drape works unchanged), with a legend and units.
+
+## 2. Honest interpretation brief (acceptance expectations)
+
+This plan deliberately does not promise "a height map of the quarry":
+
+- **What we measure:** change in distance between the satellite and every
+  *coherent* scatterer, $\Delta r = -\frac{\lambda \phi}{4\pi}$ with
+  $\lambda = 0.055465763$ m (C-band, 5.405 GHz); one full fringe =
+  λ/2 = **2.77 cm**. Vertical motion maps to LOS as
+  $d_{LOS} = d_v \cos\theta$, θ ≈ 39° mid-swath → $d_v \approx d_{LOS}/0.78$
+  (factor pinned by test, documented in the legend).
+- **Expected signal:** stability/mm–cm motion of the surrounding terrain. The
+  excavation pit itself will most likely **decorrelate** (the surface is
+  physically replaced) — that reads as *mask/no-data* in the displacement
+  overlay. Loss of coherence is therefore itself a result: ship it as a
+  visible quality signal (coherence band → alpha mask, and optionally a
+  companion "disturbance" view later).
+- **Noise floors:** atmosphere (cm-scale over a 1.6 km AOI between epochs),
+  unwrapping 2.77-cm ambiguities, layover/foreshortening on the steep valley
+  slopes. Per-pair absolute levels are *indicative*; patterns plus a stack
+  (L.6) are the credible product. This mirrors the σ⁰ verdict (SCOPE K.1):
+  an instrument reading with documented caveats, not certified measurement.
+
+## 3. Current state (what already exists — reuse, don't rebuild)
+
+| Component | Where | Status |
+|---|---|---|
+| CDSE OAuth (client-credentials, cached token, graceful disable) | `mirarsetena/coherence/cdse.py` | ✅ built, tested (`.env.example` has CDSE_CLIENT_ID/SECRET) |
+| Pair planner: same relative orbit + orbit state, 11–13 d temporal baseline | `coherence/pairs.py` | ✅ built, tested; runs on GRD metadata (same passes as SLC) |
+| Compute-and-purge pair job (download → process → cache → purge in `finally`, byte accounting) | `coherence/pipeline.py` | ✅ built, tested with fake downloader/processor |
+| First-view eager job + append-new-pairs trigger (fires from `/api/dates`) | `coherence/trigger.py` | ✅ built, tested |
+| Processor probe (`gpt` / `isce2` / `snaphu`) | `coherence/pipeline.py::find_processor` | ⚠️ returns `None` — H.3 spike `_pending_` |
+| Radar tile branches (no-lazy-path for `sentinel-1-slc`, LRU namespace `coherence/`) | `tiles/service.py` | dormant, kept covered via config copies |
+| Ramp renderer (diverging ramps = style dict) | `tiles/render.py::_ramp_rgba`, `tiles/styles.py` | ✅ reuse directly |
+| Scrubber date model (single thumb, hide-cloudy keeps cloudless dates) | frontend | ✅ reuse as-is for the InSAR layer |
+
+## 4. Gaps this plan must close
+
+1. **No processor:** SNAP/ISCE2/snaphu not installed anywhere (host or image);
+   `find_processor()` returns `None`, handlers raise `CoherenceUnavailable`.
+2. **No real SLC downloader:** only fakes in tests; CDSE product query +
+   `/Products(<id>)/$value` download never implemented.
+3. **Jobs never run:** `jobs/poller.py::cycle()` registers **only**
+   `catalog_poll` — `coherence_pair`/`coherence_eager` are enqueued but stay
+   parked forever.
+4. **No date source for SLC:** `list_dates` searches mission
+   `sentinel-1-slc` in Earth Search, which serves S1 **GRD only** → empty
+   list. InSAR dates must be **pair-derived** (pair end dates, cloud `null`).
+5. **No InSAR product format or layer:** no phase→cm conversion, no coherence
+   masking, no `insar` style/layer id, no legend.
+6. **Latency:** poller default `MIRAR_POLL_SECONDS=3600` — on-demand work
+   (user opens the layer) would wait up to an hour.
+
+## 5. Target architecture
+
+```mermaid
+flowchart LR
+  subgraph data
+    CDSE["CDSE OData<br/>SLC zips (L.2)"]
+    GRD["Earth Search GRD<br/>(pair planning, existing)"]
+  end
+  subgraph jobs["job queue (L.1 gap-fix: register handlers)"]
+    JOB["pair job: compute-and-purge<br/>(existing Phase H skeleton)"]
+  end
+  subgraph proc["processor (L.1 spike gate)"]
+    SNAP["SNAP gpt graph + snaphu<br/>coreg → ifg → topo removal<br/>→ Goldstein → unwrap → geocode"]
+  end
+  TIF["insar/&lt;pair-id&gt;.tif<br/>float32 LOS cm, coh-masked nodata"]
+  TIF --> ACC["accumulate vs reference<br/>(L.6)"]
+  ACC --> TIF
+  TIF --> TILE["tiles: diverging ramp<br/>style_for('insar') (L.4)"]
+  TILE --> UI["map overlay + legend<br//>cm units, 3D drape (L.5)"]
+  CDSE --> JOB --> SNAP --> TIF
+  GRD --> JOB
+```
+
+Reuse unchanged: compute-and-purge job, trigger policy, ramp renderer,
+scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
+≈ 8–12 GB inside a purged workdir), 3D terrain drape.
+
+## 6. Phases (TDD: red test → green; effort = one developer)
+
+### L.1 Processor spike (closes H.3 `_pending_`) — 0.5–1 day
+- **Deliverable:** SNAP `gpt` + `snaphu` installed in a dedicated Docker
+  build stage (the slim image gets a Java profile or `Dockerfile.insar`);
+  **one real pair** run end-to-end over the AOI; `find_processor()` returns a
+  real callable; spike result (size/runtime/RAM per pair, quota check) written
+  into H.3.
+- **Decision gate:** SNAP (recommended: mature S1 graphs, EOF orbits, DEM
+  handling) vs ISCE2, decided by the measured run — runtime is the open
+  question (full-IW coreg on a laptop can be 1–3 h; **burst/scene subsetting
+  to the AOI is the lever** the spike must measure).
+- **TDD:** pytest — with `gpt` on PATH `find_processor()` yields a callable;
+  processor invocation test uses a canned output GeoTIFF fixture (no SNAP in CI).
+- **Acceptance:** H.3 spike note filled with real numbers; image builds in CI.
+
+### L.2 CDSE SLC downloader — 0.5–1 day
+- **Deliverable:** OData query (`Products?$filter=...Name eq 'S1A_...'`)
+  + `$value` streaming download into the pair workdir, reusing `CdseAuth`.
+- **TDD:** httpx `MockTransport` — product query builds the right filter
+  (name from GRD scene id → SLC SAFE name), token attached, download streams
+  to disk, purge still happens on failure (existing test keeps passing).
+- **Acceptance:** opt-in `@pytest.mark.network` run on the live CDSE account
+  records real bytes (`downloaded_bytes` in the job result).
+- **Note:** free-tier quota (~1 TB/30 d — verify in L.1) covers ≈ 23 pairs/track
+  × 2 scenes × ≈ 3.5 GB ≈ 160 GB comfortably.
+
+### L.3 Interferogram → displacement product ("apply the height delta") — 1.5–2 days
+- **Deliverable:** SNAP graph per pair: Read (AOI subset) → Apply-Orbit-File →
+  Back-Geocoding → Interferogram → **Topographic-Phase-Removal** (mandatory at
+  ~1169 m relief) → Goldstein filtering (+coherence band) → Snaphu export →
+  unwrap → Range-Doppler geocode (UTM 17N) → band math
+  $-100 \cdot 0.055465763 \cdot \phi / (4\pi)$ → float32 GeoTIFF at
+  `cache/<slug>/insar/<pair-id>.tif`. Python side (tested without SNAP):
+  mask where coherence < 0.35 → nodata; store only cm values.
+- **TDD:** pytest goldens — phase→cm sign golden (φ = +π ⇒ −1.3866 cm, i.e.
+  range decrease), coherence mask golden (fixture coherence GeoTIFF → nodata
+  pattern), vertical factor cos(39°) documented/tested, product is georeferenced
+  and reprojects through the existing `_reproject`.
+- **Acceptance:** one live pair (L.1 machinery) yields a cm-labelled GeoTIFF
+  whose stable ground reads ≈ 0 and whose magnitude is ≤ fringe scale.
+
+### L.4 Layer + colourized tile rendering — 0.5 day
+- **Deliverable:** `insar` layer id (mission `sentinel-1-slc`), style in
+  `styles.py`: `kind: "ramp"`, **diverging** stops
+  `[-5 "#2166ac" … 0 "#f7f7f7" … +5 "#b2182b"]` (fixed ±5 cm MVP, adaptive
+  range later), registered in `config.layers`; the existing slc-no-lazy-path
+  branch serves job-produced products only.
+- **TDD:** pytest — `style_for("insar")` golden; value→RGBA golden
+  (−5 → blue, 0 → near-white, +5 → red, NaN → transparent); tile over a
+  fixture product returns PNG; unknown date → 404 (existing pattern).
+- **Acceptance:** numeric tile from `/p/<slug>/tiles/insar/<pair-date>/…`.
+
+### L.5 Frontend overlay + legend + job wiring — 1–1.5 days
+- **Deliverable:**
+  - pair-derived date list: `/api/dates?layer=insar` returns **pair end
+    dates** (cloud `null` — the scrubber already keeps cloudless dates);
+    fallback note: works with no CDSE creds → honest empty + status pointer.
+  - layer pill `insar`, ES/EN i18n + help tooltip (LOS cm, sign convention,
+    coherence mask caveat), gradient legend (−5…0…+5 cm, "cm de movimiento
+    hacia/desde el satélite"), readout shows pair track (ASC/DESC) — the old
+    geometry-pill code is gone, a text suffix is enough.
+  - **job registration:** add `coherence_pair`/`coherence_eager` to
+    `jobs/poller.py::cycle()`; shorten poll interval (or drain on request)
+    while the layer is open so pairs compute in minutes, not the default
+    hour; pair progress visible on the existing `/status` page.
+- **TDD:** vitest (pill toggles, legend copy, i18n parity) + Playwright
+  (select `insar` → scrubber lists pair dates, tile requests numeric, legend
+  visible, URL `layer=insar` round-trip, 3D toggle drapes the colour overlay).
+- **Acceptance:** live pair colourizes the map over the terrain; bare-URL and
+  shared-URL state behave like every other layer.
+
+### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
+- **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
+  products referenced to the first pre-works pair (echoes the optical
+  composite-baseline philosophy: reference = pre-works epoch
+  2026-01-01…2026-05-31, works marker 2026-06-01 already exists in the UI).
+  Scrubbing the accumulated layer shows motion *up to* the selected date.
+- **Deliverable (b, gated):** if (a)'s validation shows unwrap offsets/ramps —
+  MintPy SBAS over the unwrapped stack (SCOPE research tier §5.7 "InSAR
+  deformation time series"). Decision made after L.7, not before.
+- **TDD:** pytest — accumulation golden (pair deltas → cumulative series,
+  reference epoch honoured, gaps skipped not zero-filled); e2e scrub over the
+  cumulative dates.
+
+### L.7 Validation & honesty pass — 0.5 day + ongoing
+- **Deliverable:** stable reference area (outside official perimeter, non-forested)
+  must read |median| below a pinned threshold; report per-pair coherence
+  coverage over the AOI; document results and remaining caveats in this file
+  (and IMPLEMENTATION Phase L once started).
+- **Checks:** sign convention verified against known subsidence-free terrain;
+  no km-scale ramps (atmosphere) surviving the stack; two tracks not mixed.
+
+### L.8 Documentation & scope sync — 0.25 day
+- SCOPE Q3 row → link this plan; research tier §5.7 status note; IMPLEMENTATION
+  Phase L (when implementation starts); README feature line; `.env.example`
+  already carries the CDSE keys.
+
+**MVP (L.1–L.5): ≈ 4.5–6.5 days. Full incl. naive accumulation + validation
+(L.1–L.7): ≈ 6–9 days; MintPy tier adds 2–3.**
+
+## 7. Decisions (recommended defaults; gates marked)
+
+1. **Processor: SNAP `gpt` + snaphu** — gate L.1 measurement (ISCE2 fallback).
+2. **Track:** plan pairs with `plan_pairs` for both tracks; process the track
+   with more pairs first; keep the other date list available (do not mix
+   geometries in one stack).
+3. **Layer id:** `insar`; mission `sentinel-1-slc` (tiles never lazily
+   produce it — jobs only).
+4. **Units/sign (pinned by tests):** value = LOS displacement **cm**,
+   positive = **increasing range (away from satellite ⇒ sinking for vertical
+   motion)**; red end of ramp = sinking; nodata where coherence < 0.35
+   (threshold configurable later).
+5. **Ramp:** fixed ±5 cm for MVP (predictable legend); adaptive percentile
+   range only after real data says ±5 is wrong.
+6. **Reference epoch:** first pre-works pair ≤ 2026-05-31 (composite-baseline
+   parity).
+7. **Job latency:** register handlers + short poll while layer active (L.5).
+8. **Credentials:** CDSE free account required for anything past the spike —
+   documented; app degrades gracefully without it (existing R4-Q1 behaviour).
+
+## 8. Non-goals (this plan)
+
+- Absolute elevation / DEM products (SCOPE §5.1 DEM differencing is a
+  different research item — SRTM vs Copernicus DEM over a 1.6 km AOI has
+  ≈ 1–2 px, unsuitable for the quarry).
+- 3D motion decomposition from ASC+DESC, atmosphere model correction (ERA5),
+  mm-grade geodesy — research tier, after MintPy proves necessary.
+- Reintroducing σ⁰ / GRD coherence layers (stay removed until a separate
+  reason appears).
+
+## 9. Risks
+
+| Risk | Mitigation |
+|---|---|
+| SNAP too slow/heavy on the local machine | L.1 spike measures; burst/AOI subsetting; compute-and-purge already bounds disk |
+| Vegetated slopes decorrelate | coherence mask (nodata) — honest gaps, not fake smoothness |
+| Unwrapping 2.77-cm ambiguities | coherence gate + connected-component-style mask; stack validation (L.7) gates naive accumulation vs MintPy |
+| Atmosphere masquerading as motion | reference epoch + stable-area check + report; per-pair values labelled indicative |
+| Excavation pit becomes incoherent | by design: shown as mask; coherence-loss readout documented in the legend tooltip |
+| CDSE quota/credentials missing | graceful disable (existing); status page shows parked jobs |
