@@ -48,6 +48,12 @@ export function setLayer(state, layer, dates) {
   const list = dates ?? [];
   const remembered = state.date;
   const stillValid = list.some((entry) => entry.date === remembered);
+  // The slider opens on the NEWEST date the user can actually pick:
+  // newest of the cloud-filtered list, else newest overall (API is ascending).
+  const visible = state.hideCloudy
+    ? list.filter((entry) => entry.cloud == null || entry.cloud <= state.maxCloud)
+    : list;
+  const fallback = (visible.length ? visible : list).at(-1)?.date ?? null;
   return {
     ...state,
     layer,
@@ -56,7 +62,7 @@ export function setLayer(state, layer, dates) {
     cloudByDate: Object.fromEntries(
       list.map((entry) => [entry.date, entry.cloud])
     ),
-    date: stillValid ? remembered : (list[0]?.date ?? null),
+    date: stillValid ? remembered : fallback,
   };
 }
 

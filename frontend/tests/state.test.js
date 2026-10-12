@@ -49,12 +49,23 @@ describe("layer implies mission (SCOPE R4-Q2)", () => {
 });
 
 describe("scrubber date model", () => {
-  it("switching layer replaces the date list and keeps a valid date", () => {
+  it("switching layer replaces the date list and opens on the newest date", () => {
     let state = makeState({ slug: "cdp-rio-general", layers: ["ndvi", "sigma0"] });
     state = setLayer(state, "ndvi", DATES_S2);
-    expect(state.date).toBe("2026-07-03"); // optical: earliest first
+    expect(state.date).toBe("2026-07-10"); // opens on the newest acquisition
+    // remembered date stays while the new list still has it
     state = setLayer(state, "ndvi", DATES_S2);
-    expect(state.date).toBe("2026-07-03"); // remembered date invalid -> earliest again
+    expect(state.date).toBe("2026-07-10");
+    // remembered date the new list does not have -> newest of the new list
+    state = setLayer(state, "ndvi", [{ date: "2026-07-20", cloud: 1.0 }]);
+    expect(state.date).toBe("2026-07-20");
+  });
+
+  it("opens on the newest date the slider actually shows (hide-cloudy)", () => {
+    let state = makeState({ slug: "p", layers: ["ndvi"] });
+    state = setHideCloudy(state, true, 5); // hides 2026-07-08 (45%) and 2026-07-10 (10%)
+    state = setLayer(state, "ndvi", DATES_S2);
+    expect(state.date).toBe("2026-07-03"); // newest visible, not a hidden one
   });
 
   it("loading flag: new layer starts loading, dates arriving clear it", () => {
@@ -95,7 +106,7 @@ describe("tile URLs and URL state (I.5)", () => {
     const config = { slug: "cdp-rio-general", layers: ["ndvi"] };
     const state = setLayer(makeState(config), "ndvi", DATES_S2);
     expect(tileUrl(state, 0, 0, 0)).toBe(
-      "/p/cdp-rio-general/tiles/ndvi/2026-07-03/0/0/0.png"
+      "/p/cdp-rio-general/tiles/ndvi/2026-07-10/0/0/0.png"
     );
   });
 
@@ -113,7 +124,7 @@ describe("tile URLs and URL state (I.5)", () => {
     const restored = parseState(serializeState(state));
     expect(restored).toEqual({
       layer: "ndvi",
-      date: "2026-07-03",
+      date: "2026-07-10",
       hideCloudy: true,
       maxCloud: 15,
       properties: true,

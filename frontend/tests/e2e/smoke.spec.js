@@ -1,5 +1,6 @@
 // Smoke test (I.2 / I.6 / I.7): app boots against the live backend,
 // layer switching drives the date scrubber, and the mobile viewport stays usable.
+import { readFileSync } from "node:fs";
 import { expect, test } from "@playwright/test";
 
 const SLUG = "cdp-rio-general";
@@ -477,6 +478,11 @@ test("each in-flight tile request shows a loading animation", async ({ page }) =
 });
 
 test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
+  // The slider opens on the newest acquisition — dynamic, the catalog grows.
+  const catalog = await (
+    await page.request.get(`http://127.0.0.1:4173/p/${SLUG}/api/dates?layer=ndvi`)
+  ).json();
+  const newest = catalog.dates.at(-1).date;
   await page.addInitScript(() => {
     window.__tileEv = [];
     const real = window.fetch;
@@ -505,10 +511,10 @@ test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
   });
 
   await page.goto(`/p/${SLUG}/?layer=ndvi`);
-  await expect(page.locator("#date-value")).toHaveText("2026-01-04", {
+  await expect(page.locator("#date-value")).toHaveText(newest, {
     timeout: 30_000,
   });
-  // first date settles normally (warm)
+  // the newest date settles normally (warm)
   await expect(page.locator(".tile-loader")).toHaveCount(0, {
     timeout: 60_000,
   });
@@ -523,13 +529,13 @@ test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
     timeout: 10_000,
   });
 
-  // scrub back: the abandoned date must be aborted, not waited out, and
-  // the cached first date must render without it
+  // scrub back to the newest: the abandoned date must be aborted, not
+  // waited out, and the already-rendered date must show without it
   await page.locator("#date-end").evaluate((el) => {
-    el.value = "0";
+    el.value = el.max;
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await expect(page.locator("#date-value")).toHaveText("2026-01-04");
+  await expect(page.locator("#date-value")).toHaveText(newest);
   await expect
     .poll(
       () =>
@@ -718,6 +724,51 @@ test("settings are memorized for bare-URL visits", async ({ page }) => {
     () => window.__mirarsetenaMap.getSource("base").tiles?.[0] ?? "",
   );
   expect(base).toContain("arcgisonline");
+});
+
+test("PNG export captures the rendered map, not a transparent image", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+  // wait until the map really painted (style + raster tiles) before capture
+  await page.waitForFunction(
+    () => {
+      const map = window.__mirarsetenaMap;
+      return Boolean(map) && map.loaded() && map.areTilesLoaded();
+    },
+    null,
+    { timeout: 60_000 },
+  );
+  await page.waitForTimeout(1500); // let the final frame composite
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.click("#png-btn"),
+  ]);
+  const base64 = readFileSync(await download.path()).toString("base64");
+  const opaqueRatio = await page.evaluate(async (payload) => {
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+      image.src = `data:image/png;base64,${payload}`;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const context = canvas.getContext("2d");
+    context.drawImage(image, 0, 0);
+    const { data } = context.getImageData(0, 0, canvas.width, canvas.height);
+    let opaque = 0;
+    let total = 0;
+    for (let index = 3; index < data.length; index += 4 * 97) {
+      total += 1;
+      if (data[index] > 10) opaque += 1;
+    }
+    return opaque / total;
+  }, base64);
+  expect(opaqueRatio).toBeGreaterThan(0.5);
 });
 
 test("POI pins speak the active language", async ({ page }) => {

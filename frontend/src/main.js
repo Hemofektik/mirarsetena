@@ -605,7 +605,10 @@ function buildMap() {
     },
     center: [-83.668, 9.383],
     zoom: 13,
-    preserveDrawingBuffer: true,
+    // v6 moved preserveDrawingBuffer into canvasContextAttributes — as a
+    // top-level option it is silently ignored and toDataURL exports a
+    // transparent image (the drawing buffer is cleared after each frame)
+    canvasContextAttributes: { preserveDrawingBuffer: true },
     // managed explicitly so it can follow basemap switches
     attributionControl: false,
   });
@@ -696,6 +699,7 @@ function wireUi() {
     await navigator.clipboard?.writeText(location.href);
   });
   document.getElementById("png-btn").addEventListener("click", () => {
+    if (!map) return; // WebGL unavailable: there is no canvas to export
     const link = document.createElement("a");
     link.download = `${state.slug}-${state.layer}-${state.date}.png`;
     link.href = map.getCanvas().toDataURL("image/png");
