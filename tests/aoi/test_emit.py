@@ -207,3 +207,41 @@ def test_alignment_snaps_parcels_to_quebrada_and_forest(tmp_path):
     south_gaps = [dist_to_polyline(p, forest) for p in south]
     assert max(east_gaps) <= 15, f"east edge not adjacent to ravine: {east_gaps}"
     assert max(south_gaps) <= 25, f"south edge not adjacent to forest: {south_gaps}"
+
+
+def test_south_border_snaps_onto_the_forest_line(emitted):
+    """User (2026-10-09): 'the southern border of the perimeter should
+    align with the forest — between the forest and the southern border'.
+    The rigid fit alone left +/-18 m (a 1.6 deg angle mismatch at the
+    accepted -4 deg rotation: overlapping the orchard west, gapping it
+    east). The southern band is projected onto the forest line after the
+    rigid step; north/east keep the approved rigid placement."""
+    import itertools as _itertools
+    import math as _math
+
+    from mirarsetena.aoi.anchor import load_reference
+    reference = load_reference(PROJECT_DIR / "reference.yaml")
+    forest = [tuple(p) for poly in reference.forest for p in poly]
+    quebrada = [tuple(p) for poly in reference.quebrada for p in poly]
+
+    aoi, _ = emitted
+    by_id = _by_id(aoi)
+    south = [INV_CRTM.transform(*p)
+             for p in by_id["SJ-980860-1991"]["geometry"]["coordinates"][0][2:9]]
+    east_ring = by_id["SJ-980861-1991"]["geometry"]["coordinates"][0]
+    south_ring = by_id["SJ-980860-1991"]["geometry"]["coordinates"][0]
+    east = [INV_CRTM.transform(*p) for p in east_ring[0:4] + [south_ring[2]]]
+
+    def dist(p, chain):
+        best = float("inf")
+        for a, b in _itertools.pairwise(chain):
+            dx, dy = b[0] - a[0], b[1] - a[1]
+            L2 = dx * dx + dy * dy
+            t = 0 if L2 == 0 else max(0.0, min(1.0, ((p[0]-a[0])*dx + (p[1]-a[1])*dy) / L2))
+            best = min(best, _math.hypot(p[0]-(a[0]+t*dx), p[1]-(a[1]+t*dy)))
+        return best
+
+    south_gaps = [dist(p, forest) for p in south]
+    east_gaps = [dist(p, quebrada) for p in east]
+    assert max(south_gaps) <= 2.0, f"south not on the forest line: {south_gaps}"
+    assert max(east_gaps) <= 15.0, f"east adjacency regressed: {east_gaps}"

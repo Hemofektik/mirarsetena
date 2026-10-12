@@ -240,6 +240,12 @@ function renderLayerButtons() {
 }
 
 function renderScrubber() {
+  // No layer selected: there is nothing to scrub — hide the whole Fecha
+  // section (title, empty message, controls), not just its innards.
+  const section = document.getElementById("date-section");
+  section.hidden = !state.layer;
+  if (!state.layer) return;
+
   // Cloud metrics are an optical-only concept: on radar layers the strip,
   // badge and the hide-cloudy / max-cloud rows disappear entirely — and
   // they must vanish immediately, even while dates are still loading.

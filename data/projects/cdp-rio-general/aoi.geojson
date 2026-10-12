@@ -8,7 +8,7 @@
     "finca": "1-386536-000",
     "stated_area_m2": 111820.13,
     "source": "plan-survey-1991",
-    "aligned": "rigid adjust -4.0deg (+26.2,-11.6)m rms 18.7m 2026-10-09: east edge adjacent to Quebrada Grande, south edge to orchard/forest"
+    "aligned": "rigid adjust -4.0deg (+26.2,-11.6)m rms 18.7m 2026-10-09: east edge adjacent to Quebrada Grande; southern band then projected onto the orchard/forest line (south border ON the forest edge)"
    },
    "geometry": {
     "type": "Polygon",
@@ -23,32 +23,32 @@
        9.384564791334036
       ],
       [
-       -83.66637323604789,
-       9.383386526820006
+       -83.66650561790065,
+       9.383230490085454
       ],
       [
-       -83.66634756663645,
-       9.383344565031694
+       -83.66650561790065,
+       9.383230490085454
       ],
       [
-       -83.66654388956067,
-       9.383159360812272
+       -83.66653641973173,
+       9.38323354876178
       ],
       [
-       -83.66667013896883,
-       9.383097950759039
+       -83.6666552973505,
+       9.383245353494097
       ],
       [
-       -83.66747675311078,
-       9.383156835148894
+       -83.66745979717774,
+       9.383325240510251
       ],
       [
-       -83.66972857857044,
-       9.38340190397636
+       -83.6697137640811,
+       9.383549050034071
       ],
       [
-       -83.67220626444873,
-       9.383689659953745
+       -83.67219561233354,
+       9.383795470341125
       ],
       [
        -83.67230212357316,
@@ -81,7 +81,7 @@
     "finca": "1-101880-000",
     "stated_area_m2": 111826.59,
     "source": "plan-survey-1991",
-    "aligned": "rigid adjust -4.0deg (+26.2,-11.6)m rms 18.7m 2026-10-09: east edge adjacent to Quebrada Grande, south edge to orchard/forest"
+    "aligned": "rigid adjust -4.0deg (+26.2,-11.6)m rms 18.7m 2026-10-09: east edge adjacent to Quebrada Grande; southern band then projected onto the orchard/forest line (south border ON the forest edge)"
    },
    "geometry": {
     "type": "Polygon",

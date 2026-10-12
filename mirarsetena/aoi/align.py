@@ -22,6 +22,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+SOUTH_PLAN = "SJ-980860-1991"
+
 # Candidate rotations (degrees) about the parcel centroid. The minimax
 # wants −5.6° to fit Quebrada + forest hard, but the user rejected that
 # range — "much closer than before but probably rotated too far... does
@@ -44,7 +46,8 @@ class Alignment:
             f"rigid adjust {self.rotation_deg:+.1f}deg "
             f"({self.east_m:+.1f},{self.north_m:+.1f})m "
             f"rms {self.rms_m:.1f}m 2026-10-09: east edge adjacent to "
-            "Quebrada Grande, south edge to orchard/forest"
+            "Quebrada Grande; southern band then projected onto the "
+            "orchard/forest line (south border ON the forest edge)"
         )
 
 
@@ -142,6 +145,56 @@ def fit_alignment(
 
     worst_gap, deg, tx, ty = best
     return Alignment(rotation_deg=deg, east_m=tx, north_m=ty, rms_m=worst_gap)
+
+
+SOUTH_CHAIN = range(2, 9)  # ring indices of plan 980860's southern band
+
+
+def snap_south_to_forest(
+    vertices: dict[str, list[tuple[float, float]]],
+    forest: list[list[tuple[float, float]]],
+) -> dict[str, list[tuple[float, float]]]:
+    """Project plan 980860's southern band onto the forest line.
+
+    The rigid fit (fit_alignment) only *centres* the south edge on the
+    forest, so a residual angle mismatch leaves a visible strip between
+    the two — gapping it at one end and overlapping it at the other
+    (user: "between the forest and the southern border of the perimeter").
+    Every vertex of the southern band drops perpendicular onto the forest
+    polyline, which closes that strip to zero. This is a small NON-rigid
+    adjustment (<= ~20 m, local to the southern band); the north/east
+    edges keep the approved rigid placement and the rest of the shape is
+    untouched.
+    """
+    chain = [tuple(p) for poly in forest for p in poly]
+    out = {plan: list(pts) for plan, pts in vertices.items()}
+    ring = out[SOUTH_PLAN]
+    if len(ring) <= max(SOUTH_CHAIN):
+        return out  # plan shape changed; leave the rigid result alone
+    snapped = []
+    for idx, pt in enumerate(ring):
+        if idx in SOUTH_CHAIN:
+            snapped.append(_closest_on_polyline(np.asarray(pt, float), chain))
+        else:
+            snapped.append(pt)
+    out[SOUTH_PLAN] = snapped
+    return out
+
+
+def _closest_on_polyline(p: np.ndarray, chain) -> tuple[float, float]:
+    """The point on the polyline `chain` nearest to p (m CRTM)."""
+    best = (float("inf"), (float(p[0]), float(p[1])))
+    for a, b in itertools.pairwise(chain):
+        a = np.asarray(a, dtype=float)
+        b = np.asarray(b, dtype=float)
+        ab = b - a
+        L2 = float(ab @ ab)
+        t = 0.0 if L2 == 0 else max(0.0, min(1.0, float((p - a) @ ab) / L2))
+        c = a + t * ab
+        d = float(np.linalg.norm(p - c))
+        if d < best[0]:
+            best = (d, (float(c[0]), float(c[1])))
+    return best[1]
 
 
 def apply_alignment(

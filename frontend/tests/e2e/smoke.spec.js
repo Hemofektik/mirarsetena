@@ -1115,3 +1115,17 @@ test("Rio start-end line has a toggle checkbox, is 50% transparent, and remember
   await expect.poll(rioVisible).toBe(true);
   await expect(page.locator("#show-rio-line")).toBeChecked();
 });
+
+test("date picker hides entirely when no layer is selected", async ({ page }) => {
+  // With no layer active there is nothing to scrub: the whole Fecha
+  // section (title, empty message, controls) must disappear — not show
+  // 'Sin fechas disponibles' for a layer the user deliberately turned off.
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-section")).toBeVisible();
+
+  await page.locator('#layer-buttons [aria-pressed="true"]').click();
+  await expect(page.locator("#date-section")).toBeHidden();
+
+  await page.locator('#layer-buttons button:has-text("sigma0")').click();
+  await expect(page.locator("#date-section")).toBeVisible();
+});

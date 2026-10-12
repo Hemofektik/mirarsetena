@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mirarsetena.aoi.align import apply_alignment, fit_alignment
+from mirarsetena.aoi.align import apply_alignment, fit_alignment, snap_south_to_forest
 from mirarsetena.aoi.anchor import load_reference, resolve
 from mirarsetena.aoi.emit import (
     feature_collection,
@@ -40,6 +40,9 @@ def generate(project_dir: str | Path) -> dict[str, Path]:
         solution.vertices, reference.quebrada, reference.forest
     )
     aligned_vertices = apply_alignment(solution.vertices, alignment)
+    # close the residual strip between forest and southern border: the
+    # rigid fit only centres the south edge, the snap puts it ON the line
+    aligned_vertices = snap_south_to_forest(aligned_vertices, reference.forest)
 
     parcels = [
         parcel_feature(
