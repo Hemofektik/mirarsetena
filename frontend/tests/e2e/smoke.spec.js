@@ -34,6 +34,8 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   // switch to a second optical layer: the scrubber follows
   await page.locator('#layer-buttons button:has-text("mndwi")').click();
   await expect(page.locator("#date-end")).toBeVisible();
+  // the slider rail must render, not just the thumb
+  await expect(page.locator("#date-slider .range-track")).toBeVisible();
   await expect(page.locator("#cloud-strip span").first()).toBeVisible({
     timeout: 30_000,
   });
