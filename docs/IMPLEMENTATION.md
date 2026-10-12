@@ -101,7 +101,7 @@ Depends: A. Produces the canonical project geometry consumed by C/D/E (`tools/ao
 3. Take the first feature of the first non-empty zone (prefer a feature whose `properties.plano` matches the request), reproject rings CRTM05→WGS84, keep the registry properties, tag `source: snitcr-siri`.
 4. Store as `<project>/official.geojson`, set `official_path` in the project YAML — the app serves it at `/p/<slug>/official.geojson` (404 when unconfigured, so projects without a fetch simply omit it).
 5. Re-run `python -m tools.siri --project-dir <dir>` whenever the cadastre updates (the API reflects registry edits; fixture-recorded tests keep the contract pinned).
-6. **Display**: the app fetches `official.geojson` at boot (when `official_path` is configured) and draws it as its own **dashed green outline with white casing** (`official-casing`/`official-outline` layers), toggled by the "Perímetro oficial (SNITCR)" checkbox (default ON, `official=` URL param + memorized settings) — the reconstruction (`aoi.geojson`) stays the primary perimeter; the official layer is the independent registry reference (user 2026-10-12: "did you replace the old perimeter? it looks unchanged" — it hadn't been *displayed*, only fetched). All six on-site POIs verified inside the official polygons.
+6. **Display**: the perimeter layer draws `official.geojson` when `official_path` is configured — the official geometry **is** the perimeter (user 2026-10-12: "replace our own by the official one — no need to have two"); `aoi.geojson` (reconstruction) is the fallback for projects without an official fetch. An intermediate step had shown both as separate layers with a checkbox; that duplicate was removed in the same day. All six on-site POIs verified inside the official polygons.
 
 ---
 

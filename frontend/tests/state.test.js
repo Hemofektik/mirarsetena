@@ -25,7 +25,6 @@ import {
   setHideCloudy,
   setLayer,
   setLang,
-  setShowOfficial,
   setShowProperties,
   sliderIndices,
   t,
@@ -141,7 +140,6 @@ describe("tile URLs and URL state (I.5)", () => {
       properties: true,
       rioLine: true,
       composite: true,
-      showOfficial: true,
       pois: "facilities",
       basemap: "esri",
       lang: "es",
@@ -383,7 +381,7 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
     // settings payload never carries transient view state
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "composite", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "showOfficial", "showProperties"],
+      ["basemap", "composite", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "showProperties"],
     );
   });
 });
@@ -582,23 +580,5 @@ describe("pre-works composite baseline flag", () => {
     expect(saved.composite).toBe(false);
     expect(restoreSettings(makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }), saved).composite).toBe(false);
     expect(restoreSettings(base, { composite: "yes" }).composite).toBe(true); // garbage ignored
-  });
-});
-
-describe("official perimeter toggle", () => {
-  it("defaults on, round-trips through URL and settings, garbage falls back", () => {
-    const base = makeState({ slug: "cdp-rio-general", layers: ["ndvi"] });
-    expect(base.showOfficial).toBe(true);
-
-    const off = setShowOfficial(base, false);
-    expect(parseState(serializeState(off)).showOfficial).toBe(false);
-    expect(parseState(serializeState(base)).showOfficial).toBe(true);
-
-    const saved = settingsFromState(off);
-    expect(saved.showOfficial).toBe(false);
-    expect(
-      restoreSettings(makeState({ slug: "cdp-rio-general", layers: ["ndvi"] }), saved).showOfficial,
-    ).toBe(false);
-    expect(restoreSettings(base, { showOfficial: "no" }).showOfficial).toBe(true);
   });
 });

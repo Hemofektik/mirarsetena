@@ -44,7 +44,6 @@ export function makeState(config) {
     // aggregated as the median) — the default for radar change (user
     // 2026-10-12); the range start knob becomes an opt-out pair mode.
     composite: true,
-    showOfficial: true, // official SNITCR cadastral perimeter (SIRI)
     poiGroups: { facilities: true, inspection: true },
     basemap: "osm",
     bbox: null,
@@ -252,9 +251,6 @@ export function setComposite(state, on) {
   return { ...state, composite: Boolean(on) };
 }
 
-export function setShowOfficial(state, on) {
-  return { ...state, showOfficial: Boolean(on) };
-}
 
 export function setBasemap(state, name) {
   if (!BASEMAPS.includes(name)) return state;
@@ -279,7 +275,6 @@ export function settingsFromState(state) {
     showProperties: Boolean(state.showProperties),
     rioLine: Boolean(state.rioLine),
     composite: Boolean(state.composite),
-    showOfficial: Boolean(state.showOfficial),
   };
 }
 
@@ -296,7 +291,6 @@ export function restoreSettings(state, saved) {
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
   if (typeof saved.rioLine === "boolean") next = { ...next, rioLine: saved.rioLine };
   if (typeof saved.composite === "boolean") next = { ...next, composite: saved.composite };
-  if (typeof saved.showOfficial === "boolean") next = { ...next, showOfficial: saved.showOfficial };
   if (
     typeof saved.maxCloud === "number" &&
     Number.isFinite(saved.maxCloud) &&
@@ -351,7 +345,6 @@ export function serializeState(state) {
   params.set("properties", state.showProperties ? "1" : "0");
   params.set("rio", state.rioLine ? "1" : "0");
   params.set("comp", state.composite ? "1" : "0");
-  params.set("official", state.showOfficial ? "1" : "0");
   const groups = Object.entries(state.poiGroups)
     .filter(([, on]) => on)
     .map(([name]) => name)
@@ -406,7 +399,6 @@ export function parseState(search) {
     properties: params.get("properties") !== "0",
     rioLine: params.get("rio") !== "0",
     composite: params.get("comp") !== "0",
-    showOfficial: params.get("official") !== "0",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
     lang: lang ?? "es",
@@ -433,7 +425,6 @@ export const MESSAGES = {
     rio_line: "Línea Río General (inicio–fin)",
     radar_composite: "Base pre-obras (composición ene–may 2026)",
     composite_badge: "Composición",
-    official_label: "Perímetro oficial (SNITCR)",
     works_start: "Inicio de obras",
     about: "Acerca de",
     disclaimer:
@@ -529,7 +520,6 @@ export const MESSAGES = {
     rio_line: "Río General line (start–end)",
     radar_composite: "Pre-works baseline (Jan–May 2026 composite)",
     composite_badge: "Composite",
-    official_label: "Official perimeter (SNITCR)",
     works_start: "Works start",
     about: "About",
     disclaimer:

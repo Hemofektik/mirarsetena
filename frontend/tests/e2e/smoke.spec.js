@@ -304,9 +304,20 @@ test("property perimeter layer renders and toggles", async ({ page }) => {
       window.__mirarsetenaMap.getLayoutProperty("aoi-outline", "visibility"),
     );
 
-  // both 1991 plan parcels come from the API and the layer is drawn
-  const aoi = await page.request.get(`/p/${SLUG}/aoi.geojson`);
-  expect((await aoi.json()).features).toHaveLength(2);
+  // the perimeter layer draws the OFFICIAL cadastral geometry (SNITCR
+  // SIRI) — user 2026-10-12: 'replace our own by the official one'
+  const official = await page.request.get(`/p/${SLUG}/official.geojson`);
+  const officialPayload = await official.json();
+  expect(officialPayload.features).toHaveLength(2);
+  expect(
+    officialPayload.features.map((f) => f.properties.source),
+  ).toEqual(["snitcr-siri", "snitcr-siri"]);
+  const sourceData = await page.evaluate(() => {
+    const src = window.__mirarsetenaMap.getSource("aoi");
+    const data = src.serialize ? src.serialize().data : src._data;
+    return typeof data === "string" ? data : JSON.stringify(data);
+  });
+  expect(sourceData).toContain("snitcr-siri"); // aoi source = official
   await expect.poll(async () => await read(), { timeout: 10000 }).toBe("visible");
 
   // uncheck -> hidden, URL records it, share URL restores it
@@ -1171,41 +1182,3 @@ test("pre-works composite baseline is the radar default and can be switched off"
   await expect(page.locator("#radar-composite")).not.toBeChecked();
 });
 
-test("official SNITCR perimeter renders as its own toggleable layer", async ({ page }) => {
-  // The official cadastral perimeter (fetched from the SIRI API) must be
-  // VISIBLE on the map as its own outline — the user asked 'did you
-  // replace the old perimeter? it looks unchanged' — so it ships as a
-  // separate, toggleable layer alongside the reconstruction.
-  const official = await page.request.get(`/p/${SLUG}/official.geojson`);
-  expect(official.status()).toBe(200);
-  const payload = await official.json();
-  expect(payload.features).toHaveLength(2);
-
-  await page.goto(`/p/${SLUG}/`);
-  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
-    timeout: 30_000,
-  });
-  const officialVisible = () =>
-    page.evaluate(() =>
-      ["official-casing", "official-outline"].every((id) => {
-        const map = window.__mirarsetenaMap;
-        if (!map.getLayer(id)) return false;
-        return map.getLayoutProperty(id, "visibility") !== "none";
-      }),
-    );
-
-  await expect.poll(officialVisible).toBe(true); // default ON
-  await expect(page.locator("#show-official")).toBeChecked();
-
-  await page.locator("#show-official").uncheck();
-  await expect.poll(officialVisible).toBe(false);
-  await expect(page).toHaveURL(/official=0/);
-
-  await page.locator("#show-official").check();
-  await page.reload();
-  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
-    timeout: 30_000,
-  });
-  await expect.poll(officialVisible).toBe(true);
-  await expect(page.locator("#show-official")).toBeChecked();
-});
