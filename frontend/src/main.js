@@ -170,6 +170,17 @@ function updateAoiVisibility() {
   }
 }
 
+/** Drape the map over the elevation DEM (3D view toggle). */
+function applyTerrain() {
+  if (!map) return;
+  if (state.show3d) {
+    if (!map.getSource("terrain-dem")) return; // style not ready yet
+    map.setTerrain({ source: "terrain-dem", exaggeration: 1.3 });
+  } else {
+    map.setTerrain(null);
+  }
+}
+
 function updateBasemap() {
   if (!map || !map.getLayer("base")) return;
   const source = map.getSource("base");
@@ -365,6 +376,7 @@ function syncControlsFromState() {
   document.getElementById("max-cloud").value = String(state.maxCloud);
   document.getElementById("show-properties").checked = state.showProperties;
   document.getElementById("show-rio-line").checked = state.rioLine;
+  document.getElementById("show-3d").checked = state.show3d;
   document.getElementById("radar-composite").checked = state.composite;
   document.getElementById("basemap-select").value = state.basemap;
 }
@@ -462,6 +474,19 @@ function buildMap() {
           type: "geojson",
           data: rioData ?? { type: "FeatureCollection", features: [] },
         },
+        // elevation DEM (AWS elevation-tiles, terrarium encoding, SRTM-
+        // based; covers the AOI — centre ~1169 m). Only fetched when the
+        // 3D toggle engages setTerrain.
+        "terrain-dem": {
+          type: "raster-dem",
+          tiles: [
+            "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png",
+          ],
+          tileSize: 256,
+          maxzoom: 15,
+          encoding: "terrarium",
+          attribution: "Elevation: AWS Terrain Tiles (SRTM)",
+        },
       },
       layers: [
         { id: "base", type: "raster", source: "base" },
@@ -537,6 +562,9 @@ function buildMap() {
     // managed explicitly so it can follow basemap switches
     attributionControl: false,
   });
+  // terrain can only engage once the style (and its DEM source) exists;
+  // calling setTerrain synchronously here throws and aborts buildMap
+  map.on("load", applyTerrain);
   map.addControl(new maplibregl.NavigationControl(), "top-right");
   // Intentional retirements (drag retargets, layer switches) surface as
   // AbortErrors; with a listener MapLibre stops console.error-ing them.
@@ -623,6 +651,11 @@ function wireUi() {
   });
   document.getElementById("show-rio-line").addEventListener("change", (event) => {
     state = S.setShowRioLine(state, event.target.checked);
+    renderAll();
+  });
+  document.getElementById("show-3d").addEventListener("change", (event) => {
+    state = S.setShow3d(state, event.target.checked);
+    applyTerrain();
     renderAll();
   });
   document.getElementById("radar-composite").addEventListener("change", (event) => {
@@ -718,6 +751,7 @@ async function boot() {
     state.baseline = restored.baseline;
     state.showProperties = restored.properties;
     state.rioLine = restored.rioLine;
+    state.show3d = restored.show3d;
     state.composite = restored.composite;
     state = S.setBasemap(state, restored.basemap);
     const groups = restored.pois.split(",");

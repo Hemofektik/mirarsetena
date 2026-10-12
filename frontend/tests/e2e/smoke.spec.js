@@ -1182,3 +1182,50 @@ test("pre-works composite baseline is the radar default and can be switched off"
   await expect(page.locator("#radar-composite")).not.toBeChecked();
 });
 
+
+test("3D terrain toggle drapes the map over the elevation DEM", async ({ page }) => {
+  // User (2026-10-12): 'is it possible to get the elevation data for this
+  // region and show a 3d map based on that'. Yes: AWS elevation-tiles
+  // (terrarium, SRTM-based) covers the AOI (centre ~1169 m) and
+  // MapLibre v6 setTerrain drapes every layer over it.
+  const demRequests = [];
+  page.on("request", (request) => {
+    if (request.url().includes("elevation-tiles-prod")) demRequests.push(request.url());
+  });
+
+  await page.goto(`/p/${SLUG}/`);
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30_000,
+  });
+
+  const terrain = () =>
+    page.evaluate(() => window.__mirarsetenaMap.getTerrain());
+
+  // default: flat map, no DEM traffic
+  expect(await terrain()).toBeNull();
+  await expect(page.locator("#show-3d")).not.toBeChecked();
+
+  // enable -> terrain engages and DEM tiles are fetched
+  await page.locator("#show-3d").check();
+  await expect.poll(terrain, { timeout: 15_000 }).toEqual({
+    source: "terrain-dem",
+    exaggeration: 1.3,
+  });
+  await expect.poll(() => demRequests.length, { timeout: 15_000 }).toBeGreaterThan(0);
+  await expect(page).toHaveURL(/d3=1/);
+
+  // disable -> flat again
+  await page.locator("#show-3d").uncheck();
+  expect(await terrain()).toBeNull();
+
+  // the choice survives a reload
+  await page.locator("#show-3d").check();
+  await page.reload();
+  await page.waitForFunction(() => window.__mirarsetenaMap, null, {
+    timeout: 30_000,
+  });
+  await expect.poll(terrain, { timeout: 15_000 }).toEqual({
+    source: "terrain-dem",
+    exaggeration: 1.3,
+  });
+});

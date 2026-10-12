@@ -322,6 +322,12 @@ Depends: F. (G/H features plug in as they land.)
 - **Status:** [x] done
 - **Result:** Mobile layout at <=720 px (CSS) + Playwright 390x844 viewport smoke passed. **Follow-up (user 2026-10-09: "hide the cloudy days UI elements when sigma0 is selected"):** the cloud strip, cloud badge and the hide-cloudy / max-cloud rows are now hidden on radar layers (cloudiness does not affect Sentinel-1) — toggled at the top of `renderScrubber` so they vanish immediately even while dates load; a global `[hidden] { display: none !important }` rule makes `hidden` authoritative over author `display` styles (the strip's `display:flex` previously beat it). The strip still populates in the DOM (radar date readiness waits poll its children). TDD: `cloud controls disappear on radar layers and return on optical` (red → green); the obsolete "hide-cloudy never hides radar dates" block replaced.
 
+### I.8 3D terrain view (elevation DEM)
+- **Deliverable:** a "Vista 3D (relieve)" toggle draping every layer (imagery, overlay, perimeter, POIs) over real elevation data for the region.
+- **TDD:** Playwright `3D terrain toggle drapes the map over the elevation DEM` — default flat (`getTerrain()` null, zero DEM traffic), toggle on → terrain engages + `elevation-tiles-prod` requests + `d3=1` in the URL, toggle off → flat, reload persists; vitest settings goldens carry `show3d`.
+- **Status:** [x] done
+- **Result:** DEM source `terrain-dem` = **AWS elevation-tiles-prod (terrarium encoding, SRTM-based)** — verified to cover the AOI (centre sample ≈ 1169 m; MapTiler terrain-rgb needs a key → 403, so the free AWS tiles won). `map.setTerrain({source, exaggeration: 1.3})` from MapLibre v6 drapes the whole style; the toggle lives in the sidebar (`show3d` state, `d3=` URL param + memorized settings, default OFF). Boot-order lesson: `setTerrain` must run on the style's `load` event — calling it synchronously inside `buildMap()` throws (style not ready) and aborts before `window.__mirarsetenaMap` is assigned, which surfaced as a `waitForFunction` timeout in the very first e2e run. Visual check: mountain relief with imagery, Río valley and the official perimeter following the terrain.
+
 ---
 
 ## Phase J — CI (`ci-pipeline`) ✅

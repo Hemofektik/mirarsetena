@@ -44,6 +44,7 @@ export function makeState(config) {
     // aggregated as the median) — the default for radar change (user
     // 2026-10-12); the range start knob becomes an opt-out pair mode.
     composite: true,
+    show3d: false, // 3D terrain draped over the elevation DEM (off by default)
     poiGroups: { facilities: true, inspection: true },
     basemap: "osm",
     bbox: null,
@@ -247,6 +248,10 @@ export function setShowRioLine(state, on) {
   return { ...state, rioLine: Boolean(on) };
 }
 
+export function setShow3d(state, on) {
+  return { ...state, show3d: Boolean(on) };
+}
+
 export function setComposite(state, on) {
   return { ...state, composite: Boolean(on) };
 }
@@ -275,6 +280,7 @@ export function settingsFromState(state) {
     showProperties: Boolean(state.showProperties),
     rioLine: Boolean(state.rioLine),
     composite: Boolean(state.composite),
+    show3d: Boolean(state.show3d),
   };
 }
 
@@ -291,6 +297,7 @@ export function restoreSettings(state, saved) {
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
   if (typeof saved.rioLine === "boolean") next = { ...next, rioLine: saved.rioLine };
   if (typeof saved.composite === "boolean") next = { ...next, composite: saved.composite };
+  if (typeof saved.show3d === "boolean") next = { ...next, show3d: saved.show3d };
   if (
     typeof saved.maxCloud === "number" &&
     Number.isFinite(saved.maxCloud) &&
@@ -345,6 +352,7 @@ export function serializeState(state) {
   params.set("properties", state.showProperties ? "1" : "0");
   params.set("rio", state.rioLine ? "1" : "0");
   params.set("comp", state.composite ? "1" : "0");
+  params.set("d3", state.show3d ? "1" : "0");
   const groups = Object.entries(state.poiGroups)
     .filter(([, on]) => on)
     .map(([name]) => name)
@@ -399,6 +407,7 @@ export function parseState(search) {
     properties: params.get("properties") !== "0",
     rioLine: params.get("rio") !== "0",
     composite: params.get("comp") !== "0",
+    show3d: params.get("d3") === "1",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
     lang: lang ?? "es",
@@ -423,6 +432,7 @@ export const MESSAGES = {
     properties: "Propiedades",
     properties_label: "Perímetro de propiedades",
     rio_line: "Línea Río General (inicio–fin)",
+    view_3d: "Vista 3D (relieve)",
     radar_composite: "Base pre-obras (composición ene–may 2026)",
     composite_badge: "Composición",
     works_start: "Inicio de obras",
@@ -518,6 +528,7 @@ export const MESSAGES = {
     properties: "Properties",
     properties_label: "Property perimeter",
     rio_line: "Río General line (start–end)",
+    view_3d: "3D view (terrain)",
     radar_composite: "Pre-works baseline (Jan–May 2026 composite)",
     composite_badge: "Composite",
     works_start: "Works start",
