@@ -175,6 +175,10 @@ def create_app(
     def project_rio(slug: str) -> Response:
         return _geo_response(slug, "rio_path")
 
+    @app.get("/p/{slug}/official.geojson")
+    def project_official(slug: str) -> Response:
+        return _geo_response(slug, "official_path")
+
     def _geo_response(slug: str, attr: str) -> Response:
         try:
             config = registry.get(slug)

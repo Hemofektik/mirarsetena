@@ -245,3 +245,67 @@ def test_south_border_snaps_onto_the_forest_line(emitted):
     east_gaps = [dist(p, quebrada) for p in east]
     assert max(south_gaps) <= 2.0, f"south not on the forest line: {south_gaps}"
     assert max(east_gaps) <= 15.0, f"east adjacency regressed: {east_gaps}"
+
+
+# --- official perimeter via the SNITCR SIRI API (user 2026-10-12) ------
+
+
+def test_siri_fetch_builds_the_official_plano_request():
+    """Seam: tools.siri — the documented generic recipe for pulling any
+    SETENA project's official cadastral perimeter.
+
+    GET https://www.snitcr.go.cr/Visor/services/siri
+        ?tipoquery=plano&plano=<plano id>
+    -> JSON {result, data: {zona_1: FeatureCollection, zona_2: ...}}
+    with geometries in CRTM05 (EPSG:5367)."""
+    import json as _json
+
+    from tools.siri import SIRI_URL, extract_feature, fetch_plano, to_wgs84_feature
+
+    fixture = _json.loads(
+        (REPO_ROOT / "tests" / "fixtures" / "siri_plano_109808601991.json")
+        .read_text(encoding="utf-8")
+    )
+    seen = {}
+
+    def fake_opener(url, bbox=None):
+        seen["url"] = url
+        return _json.dumps(fixture).encode("utf-8")
+
+    payload = fetch_plano("109808601991", opener=fake_opener)
+    assert seen["url"] == f"{SIRI_URL}?tipoquery=plano&plano=109808601991"
+    assert payload["result"] is True
+
+    feature = extract_feature(payload, "109808601991")
+    assert feature["geometry"]["type"] == "MultiPolygon"
+    assert feature["properties"]["finca"] == "0386536"  # derrotero 1-386536-000
+    assert feature["properties"]["plano"] == "109808601991"
+    # official cadastral area corroborates the plan's stated area (0.02%)
+    assert feature["properties"]["shape_area"] == pytest.approx(111842.87, abs=0.1)
+
+    wgs = to_wgs84_feature(feature)
+    ring = wgs["geometry"]["coordinates"][0][0]
+    assert wgs["geometry"]["type"] == "MultiPolygon"
+    assert ring[0] == ring[-1]  # closed
+    lons = [p[0] for p in ring]
+    lats = [p[1] for p in ring]
+    assert all(-83.68 < lon < -83.66 for lon in lons)
+    assert all(9.37 < lat < 9.40 for lat in lats)
+    # round-trip: back to CRTM05 the ring must match the source within 1 m
+    from pyproj import Transformer
+
+    back = Transformer.from_crs("EPSG:4326", "EPSG:5367", always_xy=True)
+    src = feature["geometry"]["coordinates"][0][0]
+    for (lon, lat), (ex, ey) in zip(ring, src):
+        bx, by = back.transform(lon, lat)
+        assert math.hypot(bx - ex, by - ey) < 1.0
+
+
+def test_siri_rejects_failed_results():
+    from tools.siri import SiriError, fetch_plano
+
+    def opener(url, bbox=None):
+        return b'{"result": false, "data": null}'
+
+    with pytest.raises(SiriError):
+        fetch_plano("109808601991", opener=opener)

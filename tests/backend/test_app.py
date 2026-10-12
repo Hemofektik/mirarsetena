@@ -77,3 +77,18 @@ def test_rio_route_serves_the_work_area_line(client):
     assert len(coords) >= 2
     # ends near the project-start / project-end POIs (the POIs sit on the river)
     assert feature["properties"]["name"] == "Río General"
+
+
+def test_official_perimeter_route_serves_the_siri_geometry(client):
+    """Official cadastral perimeter fetched from the SNITCR SIRI API
+    (tools/siri.py documents the generic recipe for other projects)."""
+    response = client.get("/p/cdp-rio-general/official.geojson")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["type"] == "FeatureCollection"
+    assert len(payload["features"]) == 2
+    fincas = {f["properties"]["finca"] for f in payload["features"]}
+    assert fincas == {"0386536", "0101880"}  # derrotero 1-386536 / 1-101880
+    assert all(
+        f["properties"]["source"] == "snitcr-siri" for f in payload["features"]
+    )

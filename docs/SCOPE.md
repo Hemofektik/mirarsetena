@@ -22,7 +22,7 @@ Web GIS app that shows the **CDP Río General** project (authorized by SETENA Re
 | AOI extent | ~1.7 × 1.2 km; WGS84 ≈ 9.3797–9.3953 °N, −83.6734 … −83.6621 ° |
 | Known doc discrepancy | Resolution cites plan SJ-**0980661**-1991; the actual registration (per scan stamp) is **980861** — resolution typo |
 
-Geometry sources: the **derrotero (bearing/distance) tables on the two 1991 plan scans** (Appendix A) + the CRTM05 registry coordinates (Appendix B). No polygon exists in any digital form → it must be reconstructed.
+Geometry sources: the **derrotero (bearing/distance) tables on the two 1991 plan scans** (Appendix A) + the CRTM05 registry coordinates (Appendix B). No polygon exists in any digital form → it must be reconstructed. *Update 2026-10-12:* the **official cadastral perimeter is now also fetched directly** from the SNITCR SIRI API (`https://www.snitcr.go.cr/Visor/services/siri?tipoquery=plano&plano=<10+plan digits>`, CRTM05 GeoJSON → `official.geojson`, served at `/p/<slug>/official.geojson`; recipe in IMPLEMENTATION B.4, tool `tools/siri.py`) — fincas and areas corroborate the reconstruction (≤ 0.02 %), while the official polygons sit 41–84 m from it and are kept as an independent reference layer.
 
 ---
 

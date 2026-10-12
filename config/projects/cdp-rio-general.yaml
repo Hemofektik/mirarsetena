@@ -14,6 +14,7 @@ location:
 aoi_path: data/projects/cdp-rio-general/aoi.geojson
 pois_path: data/projects/cdp-rio-general/pois.geojson
 rio_path: data/projects/cdp-rio-general/rio-general.geojson  # Río General between start/end POIs (OSM, ODbL)
+official_path: data/projects/cdp-rio-general/official.geojson  # official cadastral perimeter (SNITCR SIRI, tools/siri.py)
 
 # WGS84 [west, south, east, north], padded AOI used for satellite queries.
 bbox: [-83.675, 9.378, -83.660, 9.397]
