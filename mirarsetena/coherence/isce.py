@@ -83,39 +83,47 @@ def build_topsapp_config(
 ) -> str:
     """topsApp XML runconfig for one Sentinel-1 interferogram pair.
 
-    Pure string builder: no filesystem, no ISCE2. Reference = first SAFE,
-    Secondary = second SAFE; `dounwrap` + snaphu produce unwrapped phase;
-    the geocode step writes phase + coherence to the two output paths.
-    `dem` (when given) pins the topographic-phase-removal DEM over the
-    ~1169 m relief (omitting it lets topsApp fetch one, which needs network).
+    Pure string builder: no filesystem, no ISCE2. Follows the canonical
+    ISCE2 format (examples/input_files/topsApp.xml): EVERYTHING nests under
+    `<component name="topsinsar">` — without that wrapper topsApp parses
+    nothing and runPreprocessor dies on `frame.output = None` (caught by the
+    first real spike run). Reference/Secondary are sub-components with
+    SEPARATE output directories (sharing one overwrites the unpack metadata),
+    and there is deliberately no "do geocode" property (it aborts configure).
+
+    `dem` pins the topographic-phase-removal DEM over the ~1169 m relief
+    (omitting it makes topsApp fetch one, which needs network access we do
+    not have). Outputs land in `workdir` (topsApp naming);
+    `phase_out`/`coherence_out` document where the post-processing step
+    writes the bands `build_los_product` consumes.
     """
     west, south, east, north = bbox
-    dem_line = f'    <property name="DEM filename">{dem}</property>\n' if dem else ""
+    dem_line = (
+        f'    <property name="DEM filename">{dem}</property>\n' if dem else ""
+    )
     return f"""\
 <?xml version="1.0" encoding="UTF-8"?>
 <topsApp>
-  <property name="sensor name">SENTINEL1</property>
-{dem_line}    <property name="do unwrap">True</property>
+  <component name="topsinsar">
+{dem_line}    <property name="swaths">[{swath}]</property>  <!-- list form: a bare int has no len() in getInputSwathList -->
+    <property name="do unwrap">True</property>
     <property name="unwrapper name">snaphu</property>
-    <property name="do geocode">True</property>
     <property name="geocode bounding box">{north} {south} {east} {west}</property>
-    <property name=" azimuth looks">2</property>
-    <property name="range looks">8</property>
-  <component name="Reference">
-    <factory-module>isceobj.Sensor.TOPS</factory-module>
-    <property name="safe">{safe1}</property>
-    <property name="swath number">{swath}</property>
-    <property name="polarization">{polarization}</property>
-    <property name="output directory">{workdir}</property>
-  </component>
-  <component name="Secondary">
-    <factory-module>isceobj.Sensor.TOPS</factory-module>
-    <property name="safe">{safe2}</property>
-    <property name="swath number">{swath}</property>
-    <property name="polarization">{polarization}</property>
-    <property name="output directory">{workdir}</property>
+    <component name="reference">
+      <property name="safe">{safe1}</property>
+      <property name="swath number">{swath}</property>
+      <property name="polarization">{polarization}</property>
+      <property name="output directory">{workdir}/reference</property>
+    </component>
+    <component name="secondary">
+      <property name="safe">{safe2}</property>
+      <property name="swath number">{swath}</property>
+      <property name="polarization">{polarization}</property>
+      <property name="output directory">{workdir}/secondary</property>
+    </component>
   </component>
 </topsApp>
+<!-- phase -> {phase_out} ; coherence -> {coherence_out} (post-processing) -->
 """
 
 

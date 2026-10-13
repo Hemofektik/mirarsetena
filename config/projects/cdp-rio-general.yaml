@@ -35,6 +35,7 @@ cache:
   max_zoom: 18               # hard zoom cap (SCOPE R3-Q6)
   tile_budget_bytes: 10737418240  # 10 GB LRU over rendered tiles (raised from 2 GB 2026-10-08)
   scene_budget_bytes: 10737418240 # 10 GB LRU over scenes/ + layers/ + coherence/ sources
+  slc_budget_bytes: 32212254720   # 30 GB LRU over the SLC download cache (≈2 shared scenes + headroom)
 
 satellite:
   s2_repeat_days: 5          # observed constellation cadence over this AOI

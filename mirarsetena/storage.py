@@ -56,6 +56,11 @@ class LocalStore:
     def __init__(self, root: str | Path):
         self._root = Path(root)
 
+    @property
+    def root(self) -> Path:
+        """The store's root directory (for sibling caches like slc/)."""
+        return self._root
+
     def _path(self, key: str) -> Path:
         return self._root.joinpath(*_components(key))
 

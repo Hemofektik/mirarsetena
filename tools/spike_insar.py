@@ -94,7 +94,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-dir", default="data/projects/cdp-rio-general")
     parser.add_argument("--config-dir", default="config/projects")
-    parser.add_argument("--workdir", default="/tmp/spike-insar")
+    # persistent by default: /tmp is wiped on reboot and the pair download
+    # is 14 GB (survived the 2026-10-12 restart under data/spike/)
+    parser.add_argument("--workdir", default="data/spike/spike-insar")
     parser.add_argument("--pairs", type=int, default=1, help="pairs to process")
     parser.add_argument(
         "--polarization", default="VV", help="SLC polarization (VV/VH)"
@@ -106,7 +108,9 @@ def main() -> int:
     config = registry.get(slug)
     bbox = tuple(config.bbox)
     storage = LocalStore(REPO / "data" / "cache")
-    work = Path(args.workdir)
+    # absolute: topsApp runs with cwd=pair_dir, so relative paths inside the
+    # runconfig (DEM, SAFE, output dirs) would otherwise resolve wrongly
+    work = Path(args.workdir).resolve()
     work.mkdir(parents=True, exist_ok=True)
 
     # 1. plan pairs from the GRD catalog (same passes as the SLCs)
@@ -131,6 +135,12 @@ def main() -> int:
     if not dem_path.exists():
         print("building DEM from AWS terrarium tiles ...")
         build_dem(bbox, dem_path, zoom=13)
+    if not Path(f"{dem_path}.xml").exists():
+        # topsApp loads the DEM through an ISCE image sidecar, not bare GeoTIFF
+        print("writing ISCE DEM sidecar (gdal2isce_xml) ...")
+        from isce.applications.gdal2isce_xml import gdal2isce_xml
+
+        gdal2isce_xml(str(dem_path))
 
     topsapp = find_topsapp()
     if topsapp is None:
@@ -140,24 +150,36 @@ def main() -> int:
     for i, pair in enumerate(pairs, 1):
         pair_dir = work / f"pair{i}"
         pair_dir.mkdir(exist_ok=True)
-        print(f"[{i}/{len(pairs)}] downloading SLC pair ...")
-        t0 = time.time()
-        paths = downloader(pair, pair_dir)
-        dl_bytes = sum(p.stat().st_size for p in paths)
-        print(f"  downloaded {dl_bytes / 1e9:.2f} GB in {time.time() - t0:.0f}s")
+        # reuse an earlier run's download (14 GB takes ~1 h; never redo it)
+        existing = sorted(pair_dir.glob("*.zip"))
+        if len(existing) >= 2:
+            paths = existing
+            print(f"[{i}/{len(pairs)}] reusing {len(existing)} downloaded zips")
+        else:
+            print(f"[{i}/{len(pairs)}] downloading SLC pair ...")
+            t0 = time.time()
+            paths = downloader(pair, pair_dir)
+            dl_bytes = sum(p.stat().st_size for p in paths)
+            print(f"  downloaded {dl_bytes / 1e9:.2f} GB in {time.time() - t0:.0f}s")
 
-        # unzip the SAFEs (CDSE delivers .zip; topsApp wants directories)
+        # unzip the SAFEs (CDSE delivers .zip; topsApp wants directories).
+        # Each zip is resolved on its own so Reference/Secondary never share
+        # the first-found SAFE (first-run bug: both pointed at scene A).
         safe_dirs = []
         for zipped in paths:
-            safe_dir = pair_dir / zipped.stem
-            if not safe_dir.exists():
-                shutil.unpack_archive(str(zipped), pair_dir)
-            # unpack_archive may nest; find the .SAFE dir
-            found = next(pair_dir.rglob("*.SAFE"), None)
-            if found is None:
-                raise SystemExit(f"no .SAFE after unpacking {zipped.name}")
-            safe_dirs.append(found)
+            target = pair_dir / zipped.stem  # zip name mirrors the SAFE name
+            if not target.exists():
+                dest = pair_dir / f"{zipped.stem}.unpack"
+                dest.mkdir(exist_ok=True)
+                shutil.unpack_archive(str(zipped), dest)
+                found = next(dest.rglob("*.SAFE"), None)
+                if found is None:
+                    raise SystemExit(f"no .SAFE inside {zipped.name}")
+                target = found
+            safe_dirs.append(target)
         safe1, safe2 = safe_dirs[0], safe_dirs[1]
+        if safe1 == safe2:
+            raise SystemExit("Reference and Secondary resolved to the same SAFE")
 
         swath = _swath_covering(safe1, bbox)
         print(f"  swath covering AOI: IW{swath}")

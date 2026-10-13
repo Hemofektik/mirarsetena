@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 
 from mirarsetena.coherence.pairs import plan_pairs
 from mirarsetena.pipeline.catalog import CatalogError
@@ -27,11 +28,14 @@ def make_catalog_poll_handler(registry, storage, *, search_fn):
     return handler
 
 
-def _slc_downloader(storage, slug):
-    """Download an SLC pair from CDSE into the workdir (INSAR-PLAN L.2).
+def _slc_downloader(storage, slug, *, registry):
+    """Download an SLC pair from CDSE into the workdir (INSAR-PLAN L.2),
+    through the scene cache when the store exposes a root directory.
 
-    Degrades to CoherenceUnavailable when CDSE credentials are absent — the
-    job fails honestly instead of fabricating a product (SCOPE R4-Q1).
+    Chained pairs [(A,B), (B,C)] share scene B: without the cache B would
+    be downloaded twice (~7 GB each). Disk stays LRU-bounded by the
+    project's cache.slc_budget_bytes. Degrades to CoherenceUnavailable when
+    CDSE credentials are absent — the job fails honestly (SCOPE R4-Q1).
     """
     from mirarsetena.coherence.cdse import CoherenceUnavailable, auth_from_env
     from mirarsetena.coherence.download import make_slc_downloader
@@ -41,7 +45,15 @@ def _slc_downloader(storage, slug):
         raise CoherenceUnavailable(
             "CDSE credentials not configured — set CDSE_CLIENT_ID/SECRET"
         )
-    return make_slc_downloader(auth)
+    root = getattr(storage, "root", None)
+    if root is None:
+        return make_slc_downloader(auth)
+    budget = registry.get(slug).cache.slc_budget_bytes
+    return make_slc_downloader(
+        auth,
+        cache_dir=Path(root) / "slc" / slug,
+        budget_bytes=budget,
+    )
 
 
 def insar_handlers(registry, storage, *, search_fn, processor=None):
@@ -80,7 +92,7 @@ def insar_handlers(registry, storage, *, search_fn, processor=None):
         chosen = _require_processor()
         run_insar_pair_job(
             storage, slug, pair, bbox=_bbox(slug),
-            downloader=_slc_downloader(storage, slug),
+            downloader=_slc_downloader(storage, slug, registry=registry),
             processor=chosen, workdir=_workdir(slug),
         )
 
@@ -88,7 +100,7 @@ def insar_handlers(registry, storage, *, search_fn, processor=None):
         slug = payload["slug"]
         config = registry.get(slug)
         chosen = _require_processor()
-        downloader = _slc_downloader(storage, slug)
+        downloader = _slc_downloader(storage, slug, registry=registry)
         try:
             scenes = search_fn(
                 "sentinel-1-grd", config.bbox,

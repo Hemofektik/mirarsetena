@@ -31,18 +31,30 @@ def test_config_declares_reference_and_secondary_safe():
         bbox=BBOX, phase_out="/out/phase.tif", coherence_out="/out/coh.tif",
         workdir="/work", dem="/data/srtm.dem",
     )
-    # both SAFE directories feed the Reference/Secondary TOPS sensors
+    # the ISCE2 runconfig wraps everything in the application component —
+    # without it topsApp parses NOTHING (frame.output stays None; caught by
+    # the first real spike run)
+    assert '<component name="topsinsar">' in xml
+    # both SAFE directories feed the reference/secondary TOPS sensors
     assert xml.count("/data/S1A_1.SAFE") == 1
     assert xml.count("/data/S1A_2.SAFE") == 1
-    assert "Reference" in xml and "Secondary" in xml
+    assert '<component name="reference">' in xml
+    assert '<component name="secondary">' in xml
+    # separate output dirs: sharing one overwrites the unpack metadata
+    assert "/work/reference" in xml
+    assert "/work/secondary" in xml
     # swath + polarization reach the sensor config
     assert '<property name="swath number">7</property>' in xml
-    assert "VV" in xml
+    assert '<property name="polarization">VV</property>' in xml
     # a DEM is wired (topographic phase removal over ~1169 m relief)
     assert "DEM" in xml and "/data/srtm.dem" in xml
     assert "-83.675" in xml and "9.397" in xml
     # snaphu unwrapping is requested
     assert "snaphu" in xml
+    # swaths must be list-parsed: a bare int breaks getInputSwathList
+    assert '<property name="swaths">[7]</property>' in xml
+    # topsApp has no "do geocode" property — configuring it aborts the run
+    assert "do geocode" not in xml
 
 
 def test_config_omits_dem_property_when_not_given():

@@ -58,6 +58,10 @@ class CacheSettings(BaseModel):
     tile_budget_bytes: int = Field(gt=0)
     # LRU cap over the source prefixes (scenes/ + layers/ + coherence/).
     scene_budget_bytes: int = Field(gt=0)
+    # LRU cap for the SLC scene download cache: chained interferogram pairs
+    # share scenes, so one download serves every pair that needs it; this
+    # bounds how many of those ~7 GB zips stay on disk (INSAR-PLAN cadence).
+    slc_budget_bytes: int = Field(gt=0, default=30 * 1024**3)
 
 
 class SatelliteSettings(BaseModel):

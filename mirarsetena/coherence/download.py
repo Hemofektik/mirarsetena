@@ -12,6 +12,8 @@ the network/quota fails — jobs fail honestly instead of fabricating data
 """
 from __future__ import annotations
 
+import os
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -19,6 +21,7 @@ import httpx
 
 from mirarsetena.coherence.cdse import CdseAuth, CoherenceUnavailable
 from mirarsetena.coherence.pairs import InterferometricPair
+from mirarsetena.coherence.pipeline import safe_name
 
 ODATA_CATALOGUE_URL = "https://catalogue.dataspace.copernicus.eu/odata/v1"
 ODATA_DOWNLOAD_URL = "https://download.dataspace.copernicus.eu/odata/v1"
@@ -139,15 +142,84 @@ def download_product(auth: CdseAuth, product_id: str, dest: Path) -> Path:
     return dest
 
 
-def make_slc_downloader(auth: CdseAuth):
-    """Downloader(pair, workdir) -> [zip paths], matching Phase H's contract."""
+def _link_into(src: Path, dst: Path) -> None:
+    """Hardlink src at dst; fall back to a copy across filesystems."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.exists():
+        dst.unlink()
+    try:
+        os.link(src, dst)
+    except OSError:  # cross-device or unsupported: plain copy
+        shutil.copy2(src, dst)
+
+
+def _evict_lru(cache: Path, budget_bytes: int, keep: set[str]) -> None:
+    """Delete least-recently-used zips until within budget, never `keep`."""
+    files = sorted(
+        (p for p in cache.glob("*.zip") if p.name not in keep),
+        key=lambda p: p.stat().st_mtime,
+    )
+    total = sum(p.stat().st_size for p in cache.glob("*.zip"))
+    for path in files:
+        if total <= budget_bytes:
+            break
+        total -= path.stat().st_size
+        path.unlink(missing_ok=True)
+
+
+def make_slc_downloader(
+    auth: CdseAuth,
+    *,
+    cache_dir: str | Path | None = None,
+    budget_bytes: int | None = None,
+):
+    """Downloader(pair, workdir) -> [zip paths], matching Phase H's contract.
+
+    With `cache_dir` the scene zips live there keyed by scene id and the
+    workdir paths are hardlinks into the cache: chained pairs [(A,B), (B,C)]
+    reuse scene B's bytes instead of re-downloading ~7 GB — plan_pairs pairs
+    consecutively so no temporal delta is missed, and the cache removes the
+    duplicate download that chaining would otherwise cost (user 2026-10-13).
+    After each call the cache is evicted LRU to `budget_bytes`, never touching
+    the running pair's scenes; the job's `finally: rmtree(workdir)` removes
+    only the links, so cached bytes survive for the next pair.
+    """
+    cache = Path(cache_dir) if cache_dir else None
 
     def download(pair: InterferometricPair, workdir: Path) -> list[Path]:
-        paths = []
+        keep: set[str] = set()
+        results: list[Path] = []
         for scene in (pair.first, pair.second):
+            if cache is None:
+                product = find_slc_product(auth, scene.id)
+                dest = Path(workdir) / f"{product['name'] or scene.id}.zip"
+                results.append(download_product(auth, product["id"], dest))
+                continue
+
+            cached = cache / f"{safe_name(scene.id)}.zip"
+            keep.add(cached.name)
+            if cached.is_file():
+                cached.touch()  # LRU: this scene is wanted right now
+                link = Path(workdir) / cached.name
+                _link_into(cached, link)
+                results.append(link)
+                continue
+
             product = find_slc_product(auth, scene.id)
-            dest = Path(workdir) / f"{product['name'] or scene.id}.zip"
-            paths.append(download_product(auth, product["id"], dest))
-        return paths
+            cache.mkdir(parents=True, exist_ok=True)
+            staging = cache / f"{cached.name}.part"  # atomic: no partial zips
+            try:
+                download_product(auth, product["id"], staging)
+            except BaseException:
+                staging.unlink(missing_ok=True)
+                raise
+            os.replace(staging, cached)
+            link = Path(workdir) / cached.name
+            _link_into(cached, link)
+            results.append(link)
+
+        if cache is not None and budget_bytes:
+            _evict_lru(cache, budget_bytes, keep)
+        return results
 
     return download
