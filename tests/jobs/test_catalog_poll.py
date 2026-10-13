@@ -90,3 +90,45 @@ def test_poller_registers_insar_pair_handler(tmp_path):
 
 def fake_search_stub(collection, bbox, start, end):
     return []
+
+
+def test_poll_cycle_appends_new_insar_pairs_after_first_view(tmp_path, fake_search):
+    """INSAR-PLAN cadence: after the first view's eager job, each poll cycle
+    discovers newly published SLC scenes (via GRD metadata) and appends one
+    insar_pair job per not-yet-queued pair. Before the first view nothing is
+    appended (the eager job owns the backlog)."""
+    from mirarsetena.coherence.trigger import insar_viewed_flag_key
+    from mirarsetena.jobs.poller import cycle
+
+    storage = LocalStore(tmp_path / "cache")
+    registry = ProjectRegistry(CONFIG_DIR)
+    queue = JobQueue(tmp_path / "jobs.db")
+
+    class _App:
+        state = type("S", (), {})()
+
+    app = _App()
+    app.state.registry = registry
+    app.state.storage = storage
+    app.state.queue = queue
+    app.state.search_fn = fake_search
+
+    # before the first view: no insar_pair jobs (eager hasn't fired yet)
+    cycle(app)
+    assert queue.last_job("insar_pair") is None
+
+    # first view marks the project as viewed (as /api/dates does)
+    storage.put(
+        insar_viewed_flag_key("cdp-rio-general"),
+        b'{"viewed_at": "2026-10-12T00:00:00+00:00"}',
+    )
+    cycle(app)
+    # 6 pairs from the GRD fixture, one job each — drained in the same cycle
+    # and failed honestly (no processor/CDSE in the test env), never parked
+    counts = queue.counts()
+    assert counts.get("failed", 0) == 6
+    assert queue.last_job("insar_pair") is not None
+
+    # a second cycle adds nothing (dedupe: the pairs are already queued)
+    cycle(app)
+    assert queue.counts().get("failed", 0) == 6

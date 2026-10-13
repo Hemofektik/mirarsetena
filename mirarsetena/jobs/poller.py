@@ -125,6 +125,37 @@ def drain(queue, handlers, *, limit: int = MAX_DRAIN_PER_CYCLE) -> int:
     return ran
 
 
+def _append_insar_pairs(app) -> None:
+    """After the first view, each cycle appends one insar_pair job per
+    not-yet-queued pair (INSAR-PLAN cadence: new SLC scenes publish every
+    12 days; GRD metadata shares the passes, so pairs are planned from it).
+    Before the first view nothing is appended — the eager job owns the backlog.
+    """
+    from mirarsetena.coherence.trigger import (
+        enqueue_new_pairs,
+        insar_viewed_flag_key,
+    )
+
+    registry = app.state.registry
+    storage = app.state.storage
+    queue = app.state.queue
+    for slug in registry.all():
+        if storage.get(insar_viewed_flag_key(slug)) is None:
+            continue
+        config = registry.get(slug)
+        try:
+            scenes = app.state.search_fn(
+                "sentinel-1-grd", config.bbox,
+                config.timeline.start.isoformat(),
+                datetime.now(timezone.utc).date().isoformat(),
+            )
+        except CatalogError:
+            continue
+        enqueue_new_pairs(
+            slug, plan_pairs(scenes), queue, job_type="insar_pair"
+        )
+
+
 def cycle(app) -> int:
     """One poll cycle: enqueue for all projects, then drain the queue."""
     registry = app.state.registry
@@ -135,12 +166,13 @@ def cycle(app) -> int:
         )
     }
     # InSAR pair jobs (INSAR-PLAN L.5): registered so the queue drains them
-    # instead of parking them forever (gap #3). Without a SNAP processor or
-    # CDSE creds they raise CoherenceUnavailable and fail honestly.
+    # instead of parking them forever (gap #3). Without a SNAP/ISCE2 processor
+    # or CDSE creds they raise CoherenceUnavailable and fail honestly.
     handlers.update(
         insar_handlers(registry, app.state.storage, search_fn=app.state.search_fn)
     )
     poll_once(registry, queue)
+    _append_insar_pairs(app)
     return drain(queue, handlers)
 
 

@@ -41,23 +41,32 @@ def find_isce() -> str | None:
 
 
 def find_topsapp() -> str | None:
-    """Path to the real `topsApp.py` launcher inside the isce2 package, or None."""
+    """Path to the real `topsApp.py` launcher inside the isce2 package, or None.
+
+    Probes the CURRENT interpreter first (sys.executable) — when the job runs
+    inside the conda `insar` env that interpreter has isce2 importable, while
+    `shutil.which("python")` may resolve to a system Python without it.
+    """
+    import sys
+
     override = os.environ.get("MIRAR_TOPSAPP")
     if override and Path(override).exists():
         return override
-    here = shutil.which("python")
-    if here is None:
-        return None
-    # isce2 conda package ships topsApp.py under site-packages/isce/applications
-    try:
-        out = subprocess.run(
-            [here, "-c", "import isce, os; print(os.path.join(os.path.dirname(isce.__file__), 'applications', 'topsApp.py'))"],
-            capture_output=True, text=True, check=True,
-        )
-        candidate = out.stdout.strip().splitlines()[-1]
-        return candidate if Path(candidate).exists() else None
-    except (subprocess.CalledProcessError, IndexError):
-        return None
+    for interpreter in (sys.executable, shutil.which("python")):
+        if not interpreter:
+            continue
+        # isce2 conda package ships topsApp.py under site-packages/isce/applications
+        try:
+            out = subprocess.run(
+                [interpreter, "-c", "import isce, os; print(os.path.join(os.path.dirname(isce.__file__), 'applications', 'topsApp.py'))"],
+                capture_output=True, text=True, check=True,
+            )
+            candidate = out.stdout.strip().splitlines()[-1]
+            if Path(candidate).exists():
+                return candidate
+        except (subprocess.CalledProcessError, IndexError):
+            continue
+    return None
 
 
 def build_topsapp_config(
