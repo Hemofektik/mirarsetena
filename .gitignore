@@ -43,3 +43,4 @@ data/cache-e2e/
 symbology-style.db
 frontend/.audit/
 data/spike/
+*.log
