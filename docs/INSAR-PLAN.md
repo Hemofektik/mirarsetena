@@ -13,25 +13,25 @@ every post-works acquisition here is S1D. The CDSE SLC downloader works
 full-swath snaphu is pathological (>55 min), so **AOI-crop unwrap
 (`tools/unwrap_crop.py`) in seconds is the production architecture**.
 
-**Honest finding (SCOPE K.1), ROOT-CAUSED:** the earlier note claimed the AOI
-(quarry/river pit) has "zero coherence" — deeper probing showed that was
-**void, not measurement**: `lat.rdr` geometry is NaN over the AOI and the
-interferogram amplitude is exactly 0 at every POI (offices/roads don't
-decorrelate either). The SLC itself is fine — amplitude in the void matches
-the valid region (median 35.2 vs 34.2).
+**Measured result (SCOPE K.1) — the pit IS measurable:** with the ENVI DEM
+fix, the October S1D pair (12-day) gives **100% valid geometry** (was 28%)
+and real coherence at every project POI:
 
-**Root cause (fixed):** the DEM was written as a **deflate-compressed
-GeoTIFF**, but ISCE's `Image` class never decodes GeoTIFF — it memmaps the
-file as raw BSQ float32 using the sidecar `gdal2isce_xml` writes, and
-`Image.createImage` hard-exits unless the file is exactly
-`width*length*4` bytes. The 15 MB compressed file "covered" only the first
-**1047 of 5376 rows** (lat 9.709 → 9.354), which is exactly the measured
-void boundary (9.3535–9.3542) — the AOI at 9.3845–9.3867 fell in the unread
-band, so topo solved garbage heights (median −500 m, max 250,623 m) and
-NaN geometry. Fixed in `coherence/dem.py::build_dem` by writing **ENVI**
-raw float32 (77,070,336 bytes for 3584×5376), with a regression test that
-asserts the on-disk size equals `width*height*4`. The AOI's coherence was
-therefore **never measured** — it must be re-measured with the fixed DEM.
+| POI | phsig | | POI | phsig |
+|---|---|---|---|---|
+| quarry (pit) | **0.869** | | breaker | 0.920 |
+| office | 0.800 | | storage | 0.920 |
+| road-start | 0.896 | | channel | 0.929 |
+| project-start | 0.827 | | dumper-ramp | 0.929 |
+| project-end | 0.343 | | road-end | 0.281 |
+
+POI median **0.882** vs scene-wide median 0.292 — the site is far *more*
+coherent than the surrounding tropical terrain. The earlier "zero coherence"
+claim was a measurement of a void, not of the pit: offices and access roads
+are stable scatterers and cannot read 0.000. **InSAR displacement over the
+pit is viable** with this data; the two low values (project-end 0.343,
+road-end 0.281) sit on the active-work edge and are the plausible
+decorrelation signal to watch over time.
 Links: SCOPE Q3, research tier §5.7, IMPLEMENTATION H.3 (spike result).
 
 ## 1. Goal & user deliverables
