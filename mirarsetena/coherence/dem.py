@@ -16,8 +16,8 @@ import io
 import math
 from pathlib import Path
 
+import httpx
 import numpy as np
-import requests
 from PIL import Image
 from rasterio.transform import from_bounds
 
@@ -65,7 +65,7 @@ def aoi_tiles(bbox: Bbox, *, zoom: int) -> list[tuple[int, int, int]]:
 
 
 def _default_fetch(z: int, x: int, y: int) -> np.ndarray:
-    response = requests.get(terrarium_url(z, x, y), timeout=60)
+    response = httpx.get(terrarium_url(z, x, y), timeout=60)
     response.raise_for_status()
     image = Image.open(io.BytesIO(response.content))
     return np.asarray(image.convert("RGB"), dtype=np.uint8)
