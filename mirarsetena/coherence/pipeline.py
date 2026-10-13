@@ -36,28 +36,48 @@ def safe_name(value: str) -> str:
 def find_processor() -> Processor | None:
     """Locate an installed interferometric processor, if any (spike).
 
-    Returns a SNAP-backed processor when `gpt` is on PATH (INSAR-PLAN L.1);
-    None otherwise (the handlers then raise CoherenceUnavailable).
+    Prefers SNAP (`gpt`) and falls back to ISCE2 (conda-forge) — INSAR-PLAN
+    L.1. On this network SNAP's installer CDN has no reachable DNS record, so
+    ISCE2 is the processor that actually runs (H.3 spike note). Returns None
+    when neither is installed (handlers then raise CoherenceUnavailable).
     """
+    from mirarsetena.coherence.isce import find_isce, make_isce_processor
     from mirarsetena.coherence.snap import find_gpt, make_snap_processor
 
-    gpt = find_gpt()
-    if gpt is None:
-        return None
     # The real output paths are chosen per-pair by the job; here we only pin
-    # that SNAP is available, so return a factory-compatible shim.
-    def _processor(paths, bbox, _gpt=gpt):
-        import tempfile
+    # that a processor is available, so return a factory-compatible shim.
+    gpt = find_gpt()
+    if gpt is not None:
+        def _snap(paths, bbox, _gpt=gpt):
+            import tempfile
 
-        with tempfile.TemporaryDirectory() as tmp:
-            proc = make_snap_processor(
-                gpt_bin=_gpt,
-                phase_out=Path(tmp) / "phase.tif",
-                coherence_out=Path(tmp) / "coherence.tif",
-            )
-            return proc(paths, bbox)
+            with tempfile.TemporaryDirectory() as tmp:
+                proc = make_snap_processor(
+                    gpt_bin=_gpt,
+                    phase_out=Path(tmp) / "phase.tif",
+                    coherence_out=Path(tmp) / "coherence.tif",
+                )
+                return proc(paths, bbox)
 
-    return _processor
+        return _snap
+
+    interp = find_isce()
+    if interp is not None:
+        def _isce(paths, bbox, _py=interp):
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmp:
+                proc = make_isce_processor(
+                    python_bin=_py,
+                    phase_out=Path(tmp) / "phase.tif",
+                    coherence_out=Path(tmp) / "coherence.tif",
+                    workdir=Path(tmp) / "work",
+                )
+                return proc(paths, bbox)
+
+        return _isce
+
+    return None
 
 
 def scene_to_dict(scene: Scene) -> dict:

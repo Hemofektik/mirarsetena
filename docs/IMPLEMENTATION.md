@@ -265,7 +265,7 @@ Depends: E, G.
 - **TDD:** `tests/coherence/test_pipeline.py` — fake downloader + fake processor: result cached, sources absent after success *and* after failure, accounting numbers correct.
 - **Status:** [x] done
 - **Result:** compute-and-purge run_pair_job purges sources in finally (success AND failure) with byte accounting; spike: no SNAP gpt / ISCE2 / snaphu on this host -> processor injectable, handlers raise CoherenceUnavailable rather than fabricating results.
-- **Spike result:** _pending_ — scheduled as L.1 of [INSAR-PLAN.md](./INSAR-PLAN.md) (SNAP `gpt` + snaphu vs ISCE2, one measured AOI pair run).
+- **Spike result:** _in progress_ (L.1 of [INSAR-PLAN.md](./INSAR-PLAN.md)). **Processor decision driven by network, not preference:** SNAP's installer CDN (`download.step.esa.int` / `oad.step.esa.int`) has **no reachable DNS record** on this host — verified against two public resolvers (1.1.1.1, 8.8.8.8), while general egress (GitHub, conda-forge, CDSE) works. No public SNAP Docker image is pullable without auth. So **ISCE2 (conda-forge) is the processor that runs here**; SNAP stays supported in code (`find_processor()` prefers `gpt`, falls back to ISCE2) and can be pinned later on a network that can reach the STEP CDN. Credentials are live (CDSE token + OData catalogue validated against real data); the measured pair run follows once ISCE2 finishes installing.
 
 ### H.4 Trigger policy (first-view → eager, then append)
 - **Deliverable:** project "viewed" flag set on first plain-data request → enqueue one eager full-window coherence job (no duplicates); afterwards each new SLC scene enqueues exactly one new-pair job (SCOPE R2-Q1).
