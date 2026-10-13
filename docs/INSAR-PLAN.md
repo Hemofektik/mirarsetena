@@ -1,16 +1,24 @@
 # InSAR visualization plan — LOS displacement as a colorized map overlay
 
-Status: **partially implemented** (2026-10-12). The testable vertical slice is
-live: phase→cm conversion, coherence mask, LOS accumulation, the `insar`
-layer (colourized diverging overlay + legend + pair-derived dates), the pair
-job, and the poller/trigger wiring — all TDD'd (16 new pytest, 34 vitest, 28
-e2e green). Still gated on external dependencies: the **SNAP/ISCE2 processor**
-(L.1 spike — not installed) and **CDSE SLC download** (L.2 — needs
-credentials). Until those land, the layer shows its 20 pair end-dates and the
-colour legend but tiles 404 honestly (no product to draw). Links: SCOPE Q3
-(supersession note), research tier §5.7, IMPLEMENTATION H.3 (pending processor
-spike). This document becomes a Phase L in IMPLEMENTATION when the spike and
-download land.
+Status: **spike complete, pipeline validated; site coherence is the limiter**
+(2026-10-13). The testable vertical slice is live: phase→cm conversion,
+coherence mask, LOS accumulation, the `insar` layer (colourized diverging
+overlay + legend + pair-derived dates), the pair job, and the poller/trigger
+wiring — all TDD'd (16+ new pytest, 34 vitest, 28 e2e green). **L.1 + L.2
+resolved:** ISCE2 (conda-forge) is the processor (SNAP's CDN is DNS-blocked
+here; `find_processor()` prefers gpt, falls back to ISCE2), with the
+Sentinel-1C/1D patch (`tools/patch_isce_s1d.py`) — ISCE 2.6.3 predates S1D and
+every post-works acquisition here is S1D. The CDSE SLC downloader works
+(12 GB pair, live-validated). A real pair ran end-to-end through filter;
+full-swath snaphu is pathological (>55 min), so **AOI-crop unwrap
+(`tools/unwrap_crop.py`) in seconds is the production architecture**.
+
+**Honest finding (SCOPE K.1):** the AOI (quarry/river pit) has **zero
+interferometric coherence** on a 12-day C-band pair (phsig = 0.000), so
+InSAR displacement *over the pit* is not measurable — only stable surrounding
+terrain (roads, buildings, bare ground) correlates (~0.28). The pipeline is
+correct; the site's coherence is the limiter the spike existed to establish.
+Links: SCOPE Q3, research tier §5.7, IMPLEMENTATION H.3 (spike result).
 
 ## 1. Goal & user deliverables
 

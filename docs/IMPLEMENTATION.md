@@ -265,7 +265,15 @@ Depends: E, G.
 - **TDD:** `tests/coherence/test_pipeline.py` — fake downloader + fake processor: result cached, sources absent after success *and* after failure, accounting numbers correct.
 - **Status:** [x] done
 - **Result:** compute-and-purge run_pair_job purges sources in finally (success AND failure) with byte accounting; spike: no SNAP gpt / ISCE2 / snaphu on this host -> processor injectable, handlers raise CoherenceUnavailable rather than fabricating results.
-- **Spike result:** _in progress_ (L.1 of [INSAR-PLAN.md](./INSAR-PLAN.md)). **Processor decision driven by network, not preference:** SNAP's installer CDN (`download.step.esa.int` / `oad.step.esa.int`) has **no reachable DNS record** on this host — verified against two public resolvers (1.1.1.1, 8.8.8.8), while general egress (GitHub, conda-forge, CDSE) works. No public SNAP Docker image is pullable without auth. So **ISCE2 (conda-forge) is the processor that runs here**; SNAP stays supported in code (`find_processor()` prefers `gpt`, falls back to ISCE2) and can be pinned later on a network that can reach the STEP CDN. Credentials are live (CDSE token + OData catalogue validated against real data); the measured pair run follows once ISCE2 finishes installing.
+- **Spike result:** ✅ **complete** (L.1 of [INSAR-PLAN.md](./INSAR-PLAN.md)). **Processor: ISCE2 2.6.3** (conda-forge), with the Sentinel-1C/1D patch (`tools/patch_isce_s1d.py`). SNAP was ruled out by **network, not preference**: its installer CDN (`download.step.esa.int` / `oad.step.esa.int`) has **no reachable DNS record** on this host (verified against two public resolvers), while general egress works — so `find_processor()` prefers `gpt` where available and falls back to ISCE2 here.
+
+  **Measured (real S1D pair 2026-09-21 / 2026-10-03, IW2, 9 bursts each):**
+  - **Download:** 2 SLC SAFE ≈ **12 GB** (7.2 + 5.0 GB), ~60 min at ~3.5 MB/s via CDSE OData.
+  - **Full-swath processing** (preprocess→computeBaselines→verifyDEM→topo→…→filter): **~12 min**, ~48 GB peak disk. All steps complete on real S1D data.
+  - **Full-swath snaphu unwrap: pathological** — >55 min, no output (the bottleneck; the fragmented tropical scene gives snaphu's MST thousands of tiny connected components).
+  - **AOI-crop unwrap: seconds** (`tools/unwrap_crop.py`) — the production architecture (crop the filtered ifg to the AOI, unwrap, then geocode).
+
+  **Honest scientific finding (SCOPE K.1):** the **AOI itself (the quarry/river pit) has ZERO interferometric coherence** — `phsig.cor` = 0.000 over the pit, and snaphu assigns it to no-data component 0 — while stable surrounding terrain reads ~0.28. Active excavation + water + tropical surface fully decorrelate C-band at a 12-day repeat, so **InSAR displacement over the pit is not measurable** with this data; it is viable only on stable ground (roads, buildings, bare terrain outside the pit). The **pipeline is validated** (phase→cm, coherence mask, colourized overlay, pair cadence all work); the site's coherence is the limiting factor, which is itself the decision the spike existed to establish.
 
 ### H.4 Trigger policy (first-view → eager, then append)
 - **Deliverable:** project "viewed" flag set on first plain-data request → enqueue one eager full-window coherence job (no duplicates); afterwards each new SLC scene enqueues exactly one new-pair job (SCOPE R2-Q1).
