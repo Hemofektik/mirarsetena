@@ -43,9 +43,10 @@ def test_config_declares_reference_and_secondary_safe():
     # separate output dirs: sharing one overwrites the unpack metadata
     assert "/work/reference" in xml
     assert "/work/secondary" in xml
-    # swath + polarization reach the sensor config
+    # swath + polarization reach the sensor config (lowercase: the annotation
+    # glob is case-sensitive — filenames are s1a-iw2-slc-vv-*.xml)
     assert '<property name="swath number">7</property>' in xml
-    assert '<property name="polarization">VV</property>' in xml
+    assert '<property name="polarization">vv</property>' in xml
     # a DEM is wired (topographic phase removal over ~1169 m relief)
     assert "DEM" in xml and "/data/srtm.dem" in xml
     assert "-83.675" in xml and "9.397" in xml

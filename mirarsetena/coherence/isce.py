@@ -98,6 +98,8 @@ def build_topsapp_config(
     writes the bands `build_los_product` consumes.
     """
     west, south, east, north = bbox
+    # lowercase: Sentinel1 globs annotations as `-slc-vv-*` (case-sensitive)
+    polarization = polarization.lower()
     dem_line = (
         f'    <property name="DEM filename">{dem}</property>\n' if dem else ""
     )

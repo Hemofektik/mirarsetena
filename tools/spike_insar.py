@@ -194,6 +194,9 @@ def main() -> int:
         )
         runconfig = pair_dir / "topsapp_runconfig.xml"
         runconfig.write_text(config_xml, encoding="utf-8")
+        # step state from a previous attempt would silently SKIP steps
+        # (a failed preprocess still dumps its pickle) — measure from scratch
+        shutil.rmtree(pair_dir / "PICKLE", ignore_errors=True)
 
         print("  running topsApp (this is the spike measurement) ...")
         t1 = time.time()
