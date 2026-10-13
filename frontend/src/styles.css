@@ -749,7 +749,8 @@ dialog form button {
 #insar-legend-bar {
   height: 12px;
   border-radius: 3px;
-  /* blue (−5, toward satellite) → white (0) → red (+5, sinking) */
+  /* negative end (toward satellite) → white (0) → positive end (sinking);
+     the ±cm labels carry the adaptive limit, the gradient is normalized */
   background: linear-gradient(
     to right,
     rgb(33, 102, 172) 0%,

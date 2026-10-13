@@ -257,7 +257,20 @@ function renderScrubber() {
   const section = document.getElementById("date-section");
   section.hidden = !state.layer;
   // The InSAR colour legend shows only while the insar layer is active.
-  document.getElementById("insar-legend").hidden = state.layer !== "insar";
+  // Its ±cm labels follow the SELECTED date's adaptive ramp limit (the
+  // fixed ±5 cm MVP range rendered the real product all-white); dates
+  // without a product fall back to the ±5 default.
+  const legend = document.getElementById("insar-legend");
+  legend.hidden = state.layer !== "insar";
+  if (!legend.hidden) {
+    const entry = state.dates.find((d) => d.date === state.date);
+    const limit = entry?.los_range ?? 5;
+    const label = limit >= 10 ? String(Math.round(limit)) : limit.toFixed(1);
+    document.getElementById("insar-legend-neg").textContent =
+      S.t(state.lang, "legend_los_negative", { limit: label });
+    document.getElementById("insar-legend-pos").textContent =
+      S.t(state.lang, "legend_los_positive", { limit: label });
+  }
   if (!state.layer) return;
 
 

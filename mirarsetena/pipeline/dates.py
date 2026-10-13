@@ -205,16 +205,27 @@ def _list_insar_dates(
         if list(geometry) not in entry["orbits"]:
             entry["orbits"].append(list(geometry))
 
-    # processed=True when the job already cached a product for this pair
+    # processed=True when the job already cached a product for this pair;
+    # each processed entry carries its own adaptive ramp limit so the legend
+    # matches the tile actually on screen (INSAR-PLAN decision 5 gate: the
+    # fixed +-5 cm MVP ramp rendered the real product all-white).
+    from mirarsetena.pipeline.insar import los_range
+
+    limits = []
     for entry in by_end.values():
         product_key = layer_key(slug, "sentinel-1-slc", entry["date"], "insar")
-        entry["processed"] = storage.get(product_key) is not None
+        product = storage.get(product_key)
+        entry["processed"] = product is not None
+        entry["los_range"] = los_range(product) if product is not None else None
+        if entry["los_range"] is not None:
+            limits.append(entry["los_range"])
 
     dates = [by_end[key] for key in sorted(by_end)]
     return {
         "layer": "insar",
         "mission": "sentinel-1-slc",
         "dates": dates,
+        "los_range": max(limits) if limits else None,
         "timeline": {
             "start": config.timeline.start.isoformat(),
             "works_start": config.timeline.works_start.isoformat(),

@@ -6,6 +6,7 @@ the XYZ route (SCOPE R2-Q4), so parity is structural, not incidental.
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 from collections.abc import Callable
 from concurrent.futures import Future
@@ -319,13 +320,35 @@ class TileService:
         else:
             product = scene
             style = style_for(layer)
+            if layer == "insar":
+                # Adaptive ramp (INSAR-PLAN decision 5 gate): the fixed
+                # +-5 cm MVP range rendered the real referenced product
+                # (spans +-0.56 cm) all-white. The ramp limit comes from
+                # THIS product's data so small displacements still colour.
+                from mirarsetena.pipeline.insar import los_range
+
+                limit = los_range(product)
+                if limit is not None:
+                    style = {
+                        "kind": "ramp",
+                        "stops": [
+                            (-limit, (33, 102, 172)),
+                            (0.0, (247, 247, 247)),
+                            (limit, (178, 24, 43)),
+                        ],
+                    }
 
         # change tiles carry the preprocessing version so old renders are
-        # never served after the classification changes
+        # never served after the classification changes; the style fingerprint
+        # does the same for style-driven renders (the adaptive insar range
+        # changes the ramp, so a cached PNG must not survive it)
         pp_tag = fingerprint
+        style_fp = hashlib.sha1(
+            json.dumps(style, sort_keys=True).encode()
+        ).hexdigest()[:8]
         cache_parts = (
             layer, date, str(z), str(x), str(y),
-            f"{mode}-{baseline or ''}{pp_tag}.png",
+            f"{mode}-{baseline or ''}{pp_tag}-{style_fp}.png",
         )
         return self._cache.get_or_render(
             cache_parts,

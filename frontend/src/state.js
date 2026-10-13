@@ -344,8 +344,8 @@ export const MESSAGES = {
       "alejándose (hundimiento); azul = acercándose. Gris/máscara = baja " +
       "coherencia (zonas muy cambiadas o con vegetación, sin medición fiable).",
     legend_los_title: "Desplazamiento LOS (cm)",
-    legend_los_negative: "−5 (hacia el satélite)",
-    legend_los_positive: "+5 (alejándose / hundimiento)",
+    legend_los_negative: "−{limit} (hacia el satélite)",
+    legend_los_positive: "+{limit} (alejándose / hundimiento)",
     legend_los_mask: "máscara: baja coherencia",
   },
   en: {
@@ -432,8 +432,8 @@ export const MESSAGES = {
       "= moving toward the satellite. Grey/masked = low coherence (very " +
       "changed or vegetated areas, no reliable measurement).",
     legend_los_title: "LOS displacement (cm)",
-    legend_los_negative: "−5 (toward satellite)",
-    legend_los_positive: "+5 (away / sinking)",
+    legend_los_negative: "−{limit} (toward satellite)",
+    legend_los_positive: "+{limit} (away / sinking)",
     legend_los_mask: "mask: low coherence",
   },
 };

@@ -52,6 +52,15 @@ reference → `storage.put` at the servable key). Verified in-browser: switch
 to `insar` → 15/15 tiles 200, overlay paints the AOI footprint (9,300
 near-white px vs the RGB basemap underneath), legend visible.
 
+**Adaptive ramp (decision 5 gate triggered):** the fixed ±5 cm MVP range
+rendered this product all-white (±0.56 cm data on a ±5 cm ramp). The limit
+is now per-product (p99 of |valid|, floor 0.5 cm — measured 0.578 cm for
+2026-10-03): `los_range()` → per-date in `/api/dates` (legend labels read
+"−0.6 / +0.6") → style in `get_tile`, with the style fingerprinted into the
+tile cache key (a range change must re-render, not serve the stale white
+PNG). Result: 82.7% of overlay pixels now differ from the white centre by
+>10/255, 22,873 bluish vs 5,711 reddish px — real diverging structure.
+
 **Measured result (SCOPE K.1) — the pit IS measurable:** with the ENVI DEM
 fix, the October S1D pair (12-day) gives **100% valid geometry** (was 28%)
 and real coherence at every project POI:
@@ -284,8 +293,14 @@ scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
    positive = **increasing range (away from satellite ⇒ sinking for vertical
    motion)**; red end of ramp = sinking; nodata where coherence < 0.35
    (threshold configurable later).
-5. **Ramp:** fixed ±5 cm for MVP (predictable legend); adaptive percentile
-   range only after real data says ±5 is wrong.
+5. **Ramp:** ~~fixed ±5 cm for MVP~~ → **adaptive** (gate triggered
+   2026-10-13: the referenced real product spans ±0.56 cm, so the fixed
+   ±5 cm ramp rendered it all-white). The limit is now the 99th percentile
+   of |valid values| per product (floor 0.5 cm): `los_range()` in
+   `pipeline/insar.py`, carried per-date in `/api/dates` for the legend
+   labels, applied in `TileService.get_tile` (style fingerprinted into the
+   tile cache key so a range change re-renders). The legend bar gradient
+   stays normalized blue→white→red with the ±limit labels.
 6. **Reference epoch:** first pre-works pair ≤ 2026-05-31 (composite-baseline
    parity).
 7. **Job latency:** register handlers + short poll while layer active (L.5).

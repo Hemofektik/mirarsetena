@@ -210,3 +210,97 @@ def test_first_dates_fetch_triggers_the_eager_coherence_job(tmp_path, fake_searc
 
     client.get("/p/cdp-rio-general/api/dates", params={"layer": "ndvi"})
     assert app.state.queue.counts() == {"pending": 2}  # still exactly one each
+
+
+def test_insar_dates_carry_los_range_from_stored_products(storage, registry):
+    # The legend labels and the tile ramp must agree, so the dates response
+    # carries the adaptive +-cm limit computed from the stored products
+    # (INSAR-PLAN decision 5 gate: the fixed +-5 cm ramp rendered the real
+    # product all-white).
+    import numpy as np
+    from rasterio.transform import from_origin
+
+    from mirarsetena.pipeline.indices import layer_key
+
+    config = _with_radar(registry.get("cdp-rio-general"), ["ndvi", "insar"])
+
+    def encode(values):
+        from rasterio.io import MemoryFile
+
+        h, w = values.shape
+        profile = {
+            "driver": "GTiff", "dtype": "float32", "count": 1,
+            "height": h, "width": w, "crs": "EPSG:4326",
+            "transform": from_origin(-83.675, 9.397, 0.00375, 0.00475),
+            "nodata": -9999.0, "compress": "deflate",
+        }
+        with MemoryFile() as mem:
+            with mem.open(**profile) as dst:
+                dst.write(values.astype(np.float32), 1)
+            return mem.read()
+
+    # one product with a known spread: -1 .. +3 cm
+    values = np.full((6, 6), 1.0, dtype=np.float32)
+    values[0, :] = -1.0
+    values[1, :] = 3.0
+    key = layer_key("cdp-rio-general", "sentinel-1-slc", "2026-10-03", "insar")
+    storage.put(key, encode(values))
+
+    result = list_dates(
+        storage, "cdp-rio-general", config,
+        "insar", search_fn=fake_search, now=NOW,
+    )
+    limit = result.get("los_range")
+    assert limit is not None, "insar dates must carry the adaptive ramp limit"
+    assert limit >= 3.0          # covers the +3 cm pixels
+    assert limit <= 6.0          # symmetric-ish, not absurdly wide
+
+
+def test_insar_date_entries_carry_their_own_los_range(storage, registry):
+    # The legend follows the SELECTED date, so each processed entry carries
+    # its own limit (a layer-wide max would mislabel a smaller product).
+    import numpy as np
+    from rasterio.transform import from_origin
+
+    from mirarsetena.pipeline.indices import layer_key
+
+    config = _with_radar(registry.get("cdp-rio-general"), ["ndvi", "insar"])
+
+    def encode(values):
+        from rasterio.io import MemoryFile
+
+        h, w = values.shape
+        profile = {
+            "driver": "GTiff", "dtype": "float32", "count": 1,
+            "height": h, "width": w, "crs": "EPSG:4326",
+            "transform": from_origin(-83.675, 9.397, 0.00375, 0.00475),
+            "nodata": -9999.0, "compress": "deflate",
+        }
+        with MemoryFile() as mem:
+            with mem.open(**profile) as dst:
+                dst.write(values.astype(np.float32), 1)
+            return mem.read()
+
+    # two products with DIFFERENT spreads: +-1 cm and +-3 cm
+    small = np.full((6, 6), 1.0, dtype=np.float32)
+    big = np.full((6, 6), 3.0, dtype=np.float32)
+    storage.put(
+        layer_key("cdp-rio-general", "sentinel-1-slc", "2026-08-16", "insar"),
+        encode(small),
+    )
+    storage.put(
+        layer_key("cdp-rio-general", "sentinel-1-slc", "2026-10-03", "insar"),
+        encode(big),
+    )
+
+    result = list_dates(
+        storage, "cdp-rio-general", config,
+        "insar", search_fn=fake_search, now=NOW,
+    )
+    by_date = {d["date"]: d for d in result["dates"]}
+    assert by_date["2026-08-16"]["los_range"] == pytest.approx(1.0, abs=1e-3)
+    assert by_date["2026-10-03"]["los_range"] == pytest.approx(3.0, abs=1e-3)
+    # unprocessed dates carry no range (nothing rendered yet)
+    assert by_date["2026-07-23"]["los_range"] is None
+    # layer-wide summary = max over processed products
+    assert result["los_range"] == pytest.approx(3.0, abs=1e-3)

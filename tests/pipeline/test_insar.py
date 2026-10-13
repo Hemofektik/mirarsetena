@@ -16,6 +16,7 @@ from mirarsetena.pipeline.insar import (
     C_BAND_WAVELENGTH_M,
     accumulate_los,
     build_los_product,
+    los_range,
     mask_by_coherence,
     phase_to_los_cm,
     reference_los,
@@ -208,3 +209,53 @@ def test_reference_los_without_coherent_reference_is_unchanged():
     with rasterio.io.MemoryFile(out) as mem, mem.open() as src:
         after = src.read(1)
     np.testing.assert_array_equal(after, before)
+
+
+def test_los_range_is_symmetric_around_zero_from_valid_percentiles():
+    # The fixed +-5 cm ramp rendered the real product all-white: the
+    # referenced product spans only +-0.56 cm, so every pixel landed on the
+    # ramp's white centre. The range must come from the DATA (plan decision
+    # 5 gate: "adaptive only after real data says +-5 is wrong").
+    like = _geo()
+    phase = np.full((like["height"], like["width"]), 0.0, dtype=np.float32)
+    coherence = np.full((like["height"], like["width"]), 0.9, dtype=np.float32)
+    # a spread of real values: -2 .. +4 cm worth of phase
+    phase[0, :] = -2 * 4 * np.pi / 0.055465763 * 0.01   # ~ -2 cm
+    phase[1, :] = 4 * 4 * np.pi / 0.055465763 * 0.01    # ~ +4 cm
+    product = build_los_product(
+        _encode(phase, like, nodata=None),
+        _encode(coherence, like, nodata=None),
+        threshold=0.35,
+    )
+    limit = los_range(product)
+    # symmetric around 0 (the diverging ramp is centred on 0)
+    assert limit > 0
+    # covers the data: the +4 cm pixels must not clip at the top
+    # (float32 product values -> tiny tolerance)
+    assert limit >= 4.0 - 1e-4
+    # but is not absurdly wider than the data (p99-based, not max-based)
+    assert limit <= 8.0
+
+
+def test_los_range_ignores_nodata_and_handles_empty():
+    like = _geo()
+    coherence = np.full((like["height"], like["width"]), 0.9, dtype=np.float32)
+    coherence[0, 0] = 0.05  # -> nodata
+    phase = np.full((like["height"], like["width"]), np.pi, dtype=np.float32)
+    product = build_los_product(
+        _encode(phase, like, nodata=None),
+        _encode(coherence, like, nodata=None),
+        threshold=0.35,
+    )
+    limit = los_range(product)
+    # nodata (-9999) must not drag the range: a lone masked pixel would
+    # otherwise blow the ramp to -9999
+    assert 0 < limit < 10
+
+    # fully-masked product -> no valid pixels -> no range to report
+    masked = build_los_product(
+        _encode(phase, like, nodata=None),
+        _encode(np.full_like(coherence, 0.01), like, nodata=None),
+        threshold=0.35,
+    )
+    assert los_range(masked) is None

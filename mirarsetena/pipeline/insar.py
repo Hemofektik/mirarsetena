@@ -92,6 +92,25 @@ def _read_band1(band_bytes: bytes) -> tuple[np.ndarray, dict]:
         }
 
 
+def los_range(product_bytes: bytes) -> float | None:
+    """Symmetric ±cm limit for the diverging ramp, from the product's data.
+
+    The fixed ±5 cm MVP ramp rendered the real product all-white (the
+    referenced product spans only ±0.56 cm, so every pixel landed on the
+    ramp's white centre) — INSAR-PLAN decision 5's gate: "adaptive percentile
+    range only after real data says ±5 is wrong". The limit is the 99th
+    percentile of |valid values|, floored at 0.5 cm so a near-zero product
+    still shows structure, and None when no pixel is valid (nothing to map).
+    """
+    with MemoryFile(product_bytes) as memfile, memfile.open() as src:
+        data = src.read(1)
+    valid = data[data != NODATA]
+    if valid.size == 0:
+        return None
+    limit = float(np.percentile(np.abs(valid), 99))
+    return max(limit, 0.5)
+
+
 def reference_los(product_bytes: bytes, reference: np.ndarray) -> bytes:
     """Re-zero an LOS product against a stable reference area.
 
