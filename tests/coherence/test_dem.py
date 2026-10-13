@@ -53,7 +53,6 @@ def test_aoi_tiles_covers_bbox():
 def test_build_dem_writes_geographic_geotiff(tmp_path):
     """A single-tile DEM assembles into a north-up EPSG:4326 GeoTIFF whose
     bounds cover the requested bbox (what topsApp's verifyDEM checks)."""
-    z, x, y = 13, 2191, 3881  # the AOI's tile at z13
     # one 256x256 terrarium tile of constant 1169 m (AOI centre elevation)
     elev = 1169.0
     raw = np.full((256, 256, 3), 0, dtype=np.uint8)
@@ -61,6 +60,7 @@ def test_build_dem_writes_geographic_geotiff(tmp_path):
     raw[..., 0] = int(value) // 256
     raw[..., 1] = int(value) % 256
     raw[..., 2] = 0
+    z, x, y = 13, 2191, 3881  # the AOI's tile at z13
 
     def fetch(tile_z, tile_x, tile_y):
         assert tile_z == z and tile_y == y
@@ -83,3 +83,26 @@ def test_build_dem_writes_geographic_geotiff(tmp_path):
         data = src.read(1)
         assert data.dtype == np.float32
         assert float(np.median(data)) == pytest.approx(elev, abs=1.0)
+
+def test_build_dem_sanitizes_ocean_bathymetry(tmp_path):
+    """Terrarium decodes ocean floors as bathymetry (down to -14 km here),
+    but ISCE's geoid corrector turns out-of-range heights into FLT_MAX
+    garbage (3.4e38), which overflows topo into the NaNs that abort snaphu
+    (spike run 2026-10-13). The radar sees the SEA SURFACE over water, so
+    sea-floor depths are clamped to 0 m — SRTM-like land values only."""
+
+    def fetch(tz, tx, ty):
+        raw = np.full((256, 256, 3), 0, dtype=np.uint8)
+        # encode -14651 m: value + 32768 = 18117 -> R=70, G=197, B=85
+        v = -14651 + 32768
+        raw[..., 0] = v // 256
+        raw[..., 1] = v % 256
+        raw[..., 2] = 85
+        return raw
+
+    out = tmp_path / "ocean.dem.tif"
+    build_dem(BBOX, out, zoom=13, fetch=fetch)
+    with rasterio.open(out) as src:
+        data = src.read(1)
+    assert float(data.min()) >= 0.0  # bathymetry clamped to sea surface
+    assert not np.isnan(data).any()

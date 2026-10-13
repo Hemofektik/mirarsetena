@@ -26,6 +26,12 @@ TERRARIUM_URL = (
 )
 TILE_SIZE = 256
 
+# Sea-floor depths below this are treated as water: terrarium decodes ocean
+# as bathymetry (down to -14 km across the IW2 swath), which ISCE's geoid
+# corrector turns into FLT_MAX garbage (3.4e38) — topo then overflows into
+# the NaNs that abort snaphu. The radar sees the SEA SURFACE over water.
+SEA_FLOOR_BELOW_M = -50.0
+
 Bbox = tuple[float, float, float, float]
 
 
@@ -112,6 +118,9 @@ def build_dem(
     north = lat(ys[0])
     south = lat(ys[-1] + 1)
     transform = from_bounds(west, south, east, north, mosaic.shape[1], mosaic.shape[0])
+
+    # keep only SRTM-like land heights (see SEA_FLOOR_BELOW_M)
+    mosaic = np.where(mosaic < SEA_FLOOR_BELOW_M, 0.0, mosaic)
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)

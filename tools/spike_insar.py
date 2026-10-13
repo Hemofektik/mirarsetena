@@ -195,6 +195,10 @@ def main() -> int:
         print(f"building DEM over the full IW{swath} footprint ...")
         for stale in work.glob(f"{dem_path.stem}*"):
             stale.unlink()  # old tif + sidecar + .wgs84 geoid derivatives
+        # topsApp writes the geoid-corrected .wgs84 next to cwd (pair_dir)
+        # and REUSES it if present — stale garbage there would be picked up
+        for stale in pair_dir.glob(f"{dem_path.stem}*"):
+            stale.unlink()
         build_dem(swath_bbox, dem_path, zoom=12)
         # topsApp loads the DEM through an ISCE image sidecar, not bare GeoTIFF
         from isce.applications.gdal2isce_xml import gdal2isce_xml
