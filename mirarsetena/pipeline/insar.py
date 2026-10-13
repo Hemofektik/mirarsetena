@@ -92,6 +92,34 @@ def _read_band1(band_bytes: bytes) -> tuple[np.ndarray, dict]:
         }
 
 
+def reference_los(product_bytes: bytes, reference: np.ndarray) -> bytes:
+    """Re-zero an LOS product against a stable reference area.
+
+    An unwrap's absolute offset is arbitrary (the spike's raw product sat at
+    −6.20 cm median — 100% saturated at the ±5 cm ramp), so the median of the
+    COHERENT pixels inside `reference` is subtracted from every valid pixel.
+    Nodata pixels stay nodata; a reference area with no coherent pixel leaves
+    the product untouched (honestly unreferenced rather than shifted by a
+    fabricated offset). `reference` is a boolean mask on the product grid.
+    """
+    with MemoryFile(product_bytes) as memfile, memfile.open() as src:
+        data = src.read(1)
+        profile = src.profile.copy()
+
+    valid = data != NODATA
+    in_ref = np.asarray(reference, dtype=bool) & valid
+    if not in_ref.any():
+        return product_bytes
+    offset = float(np.median(data[in_ref]))
+    out = np.where(valid, data - offset, NODATA).astype(np.float32)
+
+    profile.update(dtype="float32", count=1, nodata=NODATA, compress="deflate")
+    with MemoryFile() as mem:
+        with mem.open(**profile) as dst:
+            dst.write(out, 1)
+        return mem.read()
+
+
 def build_los_product(
     phase_bytes: bytes, coherence_bytes: bytes, *, threshold: float
 ) -> bytes:

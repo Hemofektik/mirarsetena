@@ -30,20 +30,6 @@ ALTITUDE_M = 693000.0
 RANGE_LOOKS, AZIMUTH_LOOKS = 19, 7  # full->looks ratio for IW2 at this AOI
 
 
-def _dims(xml_path: Path) -> tuple[int, int]:
-    """(width, length) from an ISCE image sidecar."""
-    import xml.etree.ElementTree as ET
-
-    root = ET.parse(xml_path).getroot()
-    out: dict[str, int] = {}
-    for prop in root.iter("property"):
-        name = (prop.get("name") or "").lower()
-        value = prop.findtext("value")
-        if name in ("width", "length") and value:
-            out[name] = int(value)
-    return out["width"], out["length"]
-
-
 def _radar_window(merged: Path, bbox: tuple[float, float, float, float],
                   width: int, length: int) -> tuple[int, int, int, int]:
     """(row0, row1, col0, col1) crop covering the WGS84 bbox, with margin."""
@@ -74,19 +60,23 @@ def unwrap_crop(merged: Path, bbox, workdir: Path) -> dict:
     import isce  # noqa: F401  # registers isce's component paths (contrib.*)
     from contrib.Snaphu.Snaphu import Snaphu  # isce2 env only
 
-    width, length = _dims(merged / "filt_topophase.flat.xml")
+    from mirarsetena.coherence.isce_products import read_isce_image
+
+    flat_img = read_isce_image(merged / "filt_topophase.flat")  # (L, W) cfloat
+    length, width = flat_img.shape
     r0, r1, c0, c1 = _radar_window(merged, bbox, width, length)
     ch, cw = r1 - r0, c1 - c0
 
-    flat = np.fromfile(merged / "filt_topophase.flat", dtype=np.complex64)
-    flat = flat[: width * length].reshape(length, width)[r0:r1, c0:c1].copy()
+    flat = flat_img[r0:r1, c0:c1].copy()
     # zero any residual NaN: snaphu aborts on ANY NaN
     bad = ~(np.isfinite(flat.real) & np.isfinite(flat.imag))
     flat[bad] = 0
 
-    cor = np.fromfile(merged / "topophase.cor", dtype=np.float32)
-    cor = cor[: 2 * width * length].reshape(2, length, width)
-    cor = cor[0, r0:r1, c0:c1].astype(np.float32).copy()  # coherence band
+    # phsig.cor is ISCE's coherence file (TopsProc/runFilter writes it and
+    # runUnwrapSnaphu passes it as snaphu's corrfile) — NOT topophase.cor,
+    # whose band 0 is magnitude and band 1 is pre-filter coherence.
+    cor = read_isce_image(merged / "phsig.cor")
+    cor = cor[r0:r1, c0:c1].astype(np.float32).copy()
     cor[bad] = 0
 
     workdir.mkdir(parents=True, exist_ok=True)
@@ -116,13 +106,15 @@ def unwrap_crop(merged: Path, bbox, workdir: Path) -> dict:
     snp.prepare()
     snp.unwrap()
 
-    unw = np.fromfile(unw_path, dtype=np.float32)[: ch * cw * 2].reshape(ch, cw, 2)
-    phase, amp = unw[:, :, 0], unw[:, :, 1]
+    from mirarsetena.coherence.isce_products import read_snaphu_unw
+
+    phase, amp = read_snaphu_unw(unw_path, (ch, cw))
     los_cm = C_BAND_WAVELENGTH_M * phase / (4 * np.pi) * 100.0
     valid = amp > 0
     v = los_cm[valid]
     return {
         "crop_shape": [ch, cw],
+        "crop_window": [r0, r1, c0, c1],
         "nan_masked": int(bad.sum()),
         "valid_px": int(valid.sum()),
         "los_cm_median": float(np.median(v)) if v.size else None,

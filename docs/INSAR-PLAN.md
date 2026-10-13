@@ -13,6 +13,45 @@ every post-works acquisition here is S1D. The CDSE SLC downloader works
 full-swath snaphu is pathological (>55 min), so **AOI-crop unwrap
 (`tools/unwrap_crop.py`) in seconds is the production architecture**.
 
+**Crop-chain product build is live (2026-10-13): the `insar` layer serves a
+real product for 2026-10-03.** Three reader/geometry bugs were found and
+fixed on the way (each with a regression test):
+
+1. **`topophase.cor` is BIL/2-band** (sidecar-declared), but the old reader
+   took BSQ band 0 — the *magnitude* band, not coherence. snaphu saw ~49%
+   illegal correlation values ("49075 illegal correlation values clipped").
+   Fix: `coherence/isce_products.py::read_isce_image` reads layout from the
+   `.xml` sidecar, never a hardcoded guess. The corrfile is now **`phsig.cor`**
+   — ISCE's own `TopsProc/runFilter.py` writes phsig as *the* coherence file
+   that `runUnwrapSnaphu` passes to snaphu.
+2. **snaphu output is BIL with band 1 = phase, band 0 = amplitude** (pinned
+   by the mod-2π invariant: band 1 reproduces the input wrapped phase at
+   frac 1.0000 on two real unwraps + a synthetic ramp; band 0 correlates
+   1.0000 with the interferogram magnitude). The old reader used BIP →
+   reported p2p 197,805 cm instead of the true **8.86 cm**.
+3. **GDAL geolocation arrays are pixel CORNERS, ISCE hands out CENTRES** —
+   feeding centres in shifts every sample by exactly 0.5 source px
+   (measured on an axis-aligned grid); converting first removes it (7e-7 deg).
+   Geocoding goes through `coherence/geocode.py::geocode_radar_band`
+   (`src_geoloc_array`, sub-pixel: max 0.48 px on the real curvilinear grid;
+   a global affine fit would leave 17.7 px).
+
+**Referencing is mandatory, not polish:** the raw product sat at −6.20 cm
+median — **100% saturated** at the fixed ±5 cm ramp (an unwrap's absolute
+offset is arbitrary). Re-zeroing on the coherent median *outside the official
+perimeter* (`pipeline/insar.py::reference_los`) gives median 0.00,
+p1 −0.40, p99 +0.56, **0% saturation**; the coherence mask correctly drops
+the two low-coherence POIs (project-end, road-end) to nodata.
+
+**Measured product (2026-10-03, 51×64 grid @ 0.0003°):** 3138/3264 valid
+px; POIs read −0.35 … +0.15 cm (quarry +0.05 cm) — sub-cm, i.e. the pit is
+*stable* over this 12-day pair, which is the honest answer for a pair with
+no excavation event between acquisitions. Local data-prep path:
+`tools/unwrap_crop.py` → `tools/insar_product.py` (geocode → height delta →
+reference → `storage.put` at the servable key). Verified in-browser: switch
+to `insar` → 15/15 tiles 200, overlay paints the AOI footprint (9,300
+near-white px vs the RGB basemap underneath), legend visible.
+
 **Measured result (SCOPE K.1) — the pit IS measurable:** with the ENVI DEM
 fix, the October S1D pair (12-day) gives **100% valid geometry** (was 28%)
 and real coherence at every project POI:

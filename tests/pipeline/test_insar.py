@@ -18,6 +18,7 @@ from mirarsetena.pipeline.insar import (
     build_los_product,
     mask_by_coherence,
     phase_to_los_cm,
+    reference_los,
 )
 
 # C-band Sentinel-1 carrier wavelength; one full fringe = λ/2 = 2.77 cm.
@@ -139,3 +140,71 @@ def test_build_los_product_converts_and_masks(tmp_path):
     assert data[3, 3] == pytest.approx(1.3866441, abs=1e-5)
     # the incoherent pixel is masked to nodata
     assert data[0, 0] == NODATA
+
+
+def test_reference_los_subtracts_median_of_reference_area():
+    # An unwrap's absolute offset is arbitrary (measured: the spike's raw
+    # product sat at -6.20 cm median, 100% saturated at the +-5 cm ramp).
+    # Referencing to a stable area re-zeroes it: median of the coherent
+    # reference pixels is subtracted from every valid pixel.
+    like = _geo()
+    phase = np.full((like["height"], like["width"]), 2 * np.pi, dtype=np.float32)
+    coherence = np.full((like["height"], like["width"]), 0.9, dtype=np.float32)
+    product = build_los_product(
+        _encode(phase, like, nodata=None),
+        _encode(coherence, like, nodata=None),
+        threshold=0.35,
+    )
+    # reference = the first ROW (all coherent, all +2.773 cm)
+    reference = np.zeros((like["height"], like["width"]), dtype=bool)
+    reference[0, :] = True
+
+    out = reference_los(product, reference)
+    with rasterio.io.MemoryFile(out) as mem, mem.open() as src:
+        data = src.read(1)
+    # the reference median (+2.773) is removed -> everything reads 0
+    assert data[3, 3] == pytest.approx(0.0, abs=1e-5)
+    assert data[1, 1] == pytest.approx(0.0, abs=1e-5)
+
+
+def test_reference_los_keeps_nodata_and_ignores_nodata_reference():
+    like = _geo()
+    phase = np.full((like["height"], like["width"]), np.pi, dtype=np.float32)
+    coherence = np.full((like["height"], like["width"]), 0.9, dtype=np.float32)
+    coherence[0, 0] = 0.05  # masked -> nodata, and it sits IN the reference
+    product = build_los_product(
+        _encode(phase, like, nodata=None),
+        _encode(coherence, like, nodata=None),
+        threshold=0.35,
+    )
+    reference = np.zeros((like["height"], like["width"]), dtype=bool)
+    reference[0, :] = True  # includes the nodata pixel at [0, 0]
+
+    out = reference_los(product, reference)
+    with rasterio.io.MemoryFile(out) as mem, mem.open() as src:
+        data = src.read(1)
+    # nodata reference pixels must not drag the median: the coherent
+    # reference pixels are all +1.3866 -> subtracted exactly
+    assert data[3, 3] == pytest.approx(0.0, abs=1e-5)
+    # the masked pixel stays nodata (never fabricated into a value)
+    assert data[0, 0] == NODATA
+
+
+def test_reference_los_without_coherent_reference_is_unchanged():
+    like = _geo()
+    phase = np.full((like["height"], like["width"]), np.pi, dtype=np.float32)
+    coherence = np.full((like["height"], like["width"]), 0.9, dtype=np.float32)
+    product = build_los_product(
+        _encode(phase, like, nodata=None),
+        _encode(coherence, like, nodata=None),
+        threshold=0.35,
+    )
+    reference = np.zeros((like["height"], like["width"]), dtype=bool)
+    # reference area is entirely nodata (e.g. all water) -> nothing to
+    # re-zero against; the product must come back untouched, honestly.
+    with rasterio.io.MemoryFile(product) as mem, mem.open() as src:
+        before = src.read(1)
+    out = reference_los(product, reference)
+    with rasterio.io.MemoryFile(out) as mem, mem.open() as src:
+        after = src.read(1)
+    np.testing.assert_array_equal(after, before)
