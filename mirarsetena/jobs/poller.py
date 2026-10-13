@@ -34,15 +34,14 @@ def _slc_downloader(storage, slug):
     job fails honestly instead of fabricating a product (SCOPE R4-Q1).
     """
     from mirarsetena.coherence.cdse import CoherenceUnavailable, auth_from_env
+    from mirarsetena.coherence.download import make_slc_downloader
 
     auth = auth_from_env(storage)
     if not auth.enabled:
         raise CoherenceUnavailable(
             "CDSE credentials not configured — set CDSE_CLIENT_ID/SECRET"
         )
-    raise CoherenceUnavailable(
-        "SLC download not yet wired to CDSE OData (INSAR-PLAN L.2)"
-    )
+    return make_slc_downloader(auth)
 
 
 def insar_handlers(registry, storage, *, search_fn, processor=None):
@@ -81,7 +80,7 @@ def insar_handlers(registry, storage, *, search_fn, processor=None):
         chosen = _require_processor()
         run_insar_pair_job(
             storage, slug, pair, bbox=_bbox(slug),
-            downloader=lambda p, w: _slc_downloader(storage, slug),
+            downloader=_slc_downloader(storage, slug),
             processor=chosen, workdir=_workdir(slug),
         )
 
@@ -89,6 +88,7 @@ def insar_handlers(registry, storage, *, search_fn, processor=None):
         slug = payload["slug"]
         config = registry.get(slug)
         chosen = _require_processor()
+        downloader = _slc_downloader(storage, slug)
         try:
             scenes = search_fn(
                 "sentinel-1-grd", config.bbox,
@@ -100,7 +100,7 @@ def insar_handlers(registry, storage, *, search_fn, processor=None):
         for pair in plan_pairs(scenes):
             run_insar_pair_job(
                 storage, slug, pair, bbox=_bbox(slug),
-                downloader=lambda p, w: _slc_downloader(storage, slug),
+                downloader=downloader,
                 processor=chosen, workdir=_workdir(slug),
             )
 

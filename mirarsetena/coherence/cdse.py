@@ -47,6 +47,11 @@ class CdseAuth:
     def enabled(self) -> bool:
         return bool(self._client_id and self._client_secret)
 
+    @property
+    def client(self) -> httpx.Client:
+        """The HTTP client for CDSE requests (token + catalogue + download)."""
+        return self._client
+
     def token(self) -> str:
         if not self.enabled:
             raise CoherenceUnavailable("CDSE credentials not configured")

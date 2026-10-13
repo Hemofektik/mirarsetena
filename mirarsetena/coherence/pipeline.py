@@ -34,11 +34,30 @@ def safe_name(value: str) -> str:
 
 
 def find_processor() -> Processor | None:
-    """Locate an installed interferometric processor, if any (spike)."""
-    if shutil.which("gpt") or shutil.which("isce2") or shutil.which("snaphu"):
-        # Integration lands when the spike pins one (see IMPLEMENTATION H.3).
+    """Locate an installed interferometric processor, if any (spike).
+
+    Returns a SNAP-backed processor when `gpt` is on PATH (INSAR-PLAN L.1);
+    None otherwise (the handlers then raise CoherenceUnavailable).
+    """
+    from mirarsetena.coherence.snap import find_gpt, make_snap_processor
+
+    gpt = find_gpt()
+    if gpt is None:
         return None
-    return None
+    # The real output paths are chosen per-pair by the job; here we only pin
+    # that SNAP is available, so return a factory-compatible shim.
+    def _processor(paths, bbox, _gpt=gpt):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = make_snap_processor(
+                gpt_bin=_gpt,
+                phase_out=Path(tmp) / "phase.tif",
+                coherence_out=Path(tmp) / "coherence.tif",
+            )
+            return proc(paths, bbox)
+
+    return _processor
 
 
 def scene_to_dict(scene: Scene) -> dict:
