@@ -138,3 +138,39 @@ def test_make_isce_processor_without_topsapp_raises(tmp_path):
             phase_out=tmp_path / "phase.tif",
             coherence_out=tmp_path / "coh.tif", workdir=tmp_path / "work",
         )
+
+
+ANNOTATION_FIXTURE = """<?xml version="1.0"?>
+<product>
+  <adsHeader><swath>2</swath></adsHeader>
+  <geolocationGrid>
+    <geolocationGridPoint><latitude>9.6092</latitude><longitude>-83.3244</longitude></geolocationGridPoint>
+    <geolocationGridPoint><latitude>7.9262</latitude><longitude>-84.4063</longitude></geolocationGridPoint>
+    <geolocationGridPoint><latitude>9.5500</latitude><longitude>-83.4000</longitude></geolocationGridPoint>
+  </geolocationGrid>
+</product>
+"""
+
+
+def test_annotation_corners_yields_swath_bbox(tmp_path):
+    """The DEM must cover the FULL swath footprint, not just the AOI —
+    snaphu aborts on the NaNs that an under-sized DEM leaves behind
+    (first real spike run: 180x120 km swath vs 5x5 km DEM)."""
+    from mirarsetena.coherence.isce import annotation_corners
+
+    ann = tmp_path / "s1a-iw2-slc-vv-fixture.xml"
+    ann.write_text(ANNOTATION_FIXTURE, encoding="utf-8")
+    assert annotation_corners(ann) == (
+        -84.4063,  # west
+        7.9262,    # south
+        -83.3244,  # east
+        9.6092,    # north
+    )
+
+
+def test_annotation_corners_missing_points_returns_none(tmp_path):
+    from mirarsetena.coherence.isce import annotation_corners
+
+    empty = tmp_path / "empty.xml"
+    empty.write_text("<product></product>", encoding="utf-8")
+    assert annotation_corners(empty) is None

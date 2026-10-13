@@ -21,11 +21,40 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 from mirarsetena.coherence.cdse import CoherenceUnavailable
 
 Bbox = tuple[float, float, float, float]
+
+
+def annotation_corners(
+    annotation_xml: str | Path,
+) -> tuple[float, float, float, float] | None:
+    """(west, south, east, north) from a SAFE annotation's geolocation grid.
+
+    The DEM for topsApp must cover the FULL swath footprint — processing runs
+    over the whole swath, and an under-sized DEM leaves NaN heights that abort
+    snaphu ("NaN or infinity found in input float data"; first spike run:
+    180x120 km IW2 swath vs a 5x5 km AOI DEM). None when the annotation has
+    no corner points.
+    """
+    try:
+        root = ET.parse(annotation_xml).getroot()
+    except (ET.ParseError, OSError):
+        return None
+    lats: list[float] = []
+    lons: list[float] = []
+    for point in root.iter("geolocationGridPoint"):
+        lat = point.findtext("latitude")
+        lon = point.findtext("longitude")
+        if lat is not None and lon is not None:
+            lats.append(float(lat))
+            lons.append(float(lon))
+    if not lats:
+        return None
+    return (min(lons), min(lats), max(lons), max(lats))
 
 
 def find_isce() -> str | None:

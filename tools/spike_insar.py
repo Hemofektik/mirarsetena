@@ -26,7 +26,11 @@ from pathlib import Path
 from mirarsetena.coherence.cdse import auth_from_env
 from mirarsetena.coherence.dem import build_dem
 from mirarsetena.coherence.download import make_slc_downloader
-from mirarsetena.coherence.isce import build_topsapp_config, find_topsapp
+from mirarsetena.coherence.isce import (
+    annotation_corners,
+    build_topsapp_config,
+    find_topsapp,
+)
 from mirarsetena.coherence.pairs import plan_pairs
 from mirarsetena.pipeline.catalog import search
 from mirarsetena.projects.registry import ProjectRegistry
@@ -130,18 +134,6 @@ def main() -> int:
         raise SystemExit("CDSE_CLIENT_ID/CDSE_CLIENT_SECRET not set in .env")
     downloader = make_slc_downloader(auth)
 
-    # 3. local DEM from AWS terrarium (USGS source is unreachable here)
-    dem_path = work / "aoi.dem.tif"
-    if not dem_path.exists():
-        print("building DEM from AWS terrarium tiles ...")
-        build_dem(bbox, dem_path, zoom=13)
-    if not Path(f"{dem_path}.xml").exists():
-        # topsApp loads the DEM through an ISCE image sidecar, not bare GeoTIFF
-        print("writing ISCE DEM sidecar (gdal2isce_xml) ...")
-        from isce.applications.gdal2isce_xml import gdal2isce_xml
-
-        gdal2isce_xml(str(dem_path))
-
     topsapp = find_topsapp()
     if topsapp is None:
         raise SystemExit("topsApp.py not found — isce2 not installed?")
@@ -183,6 +175,31 @@ def main() -> int:
 
         swath = _swath_covering(safe1, bbox)
         print(f"  swath covering AOI: IW{swath}")
+
+        # DEM over the FULL swath footprint (+2 km margin): processing runs
+        # over the whole swath, and an AOI-sized DEM leaves NaN heights that
+        # abort snaphu (first spike run: 180x120 km swath vs 5x5 km DEM).
+        # z12 ≈ SRTM's native 30 m — ~250 tiles instead of ~1000 at z13.
+        ann = next(
+            iter(Path(safe1, "annotation").glob(f"s1*-iw{swath}-slc-*.xml")),
+            None,
+        )
+        corners = annotation_corners(ann) if ann is not None else None
+        if corners is None:
+            raise SystemExit(f"no annotation corners for IW{swath} in {safe1}")
+        swath_bbox = (
+            corners[0] - 0.02, corners[1] - 0.02,
+            corners[2] + 0.02, corners[3] + 0.02,
+        )
+        dem_path = work / f"dem_iw{swath}.tif"
+        print(f"building DEM over the full IW{swath} footprint ...")
+        for stale in work.glob(f"{dem_path.stem}*"):
+            stale.unlink()  # old tif + sidecar + .wgs84 geoid derivatives
+        build_dem(swath_bbox, dem_path, zoom=12)
+        # topsApp loads the DEM through an ISCE image sidecar, not bare GeoTIFF
+        from isce.applications.gdal2isce_xml import gdal2isce_xml
+
+        gdal2isce_xml(str(dem_path))
 
         phase_out = pair_dir / "phase.tif"
         coh_out = pair_dir / "coherence.tif"
