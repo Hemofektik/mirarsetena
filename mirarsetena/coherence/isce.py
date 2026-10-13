@@ -1,22 +1,24 @@
 """ISCE2 topsApp interferometric processor (INSAR-PLAN L.1 fallback).
 
-SNAP's installer CDN (download.step.esa.int) has no reachable DNS record on
-this network — verified against two public resolvers — so ISCE2 (conda-forge)
-is the processor that actually runs here (H.3 spike note records the decision).
+SNAP's installer CDN (download.step.esa.int) and the precise-orbit server
+(qc.assist.copernicus.eu) have no reachable DNS record on this host — verified
+against public resolvers — so ISCE2 (conda-forge) is the processor that runs
+here (H.3 spike note records the decision).
 
-Turns a downloaded SLC pair into an unwrapped-phase + coherence GeoTIFF by
-generating a topsApp Python driver and running it under an ISCE2-enabled
-interpreter. The chain:
+The real ISCE2 interface is the `topsApp.py` CLI driven by an XML runconfig
+whose Reference/Secondary components are TOPS sensors over SAFE directories.
+This module generates that runconfig (pure builder) and invokes the CLI:
 
-    SLCs → topsApp (topographic phase removal ON — mandatory over the
-    ~1169 m relief) → geocoded unwrapped phase + coherence → GeoTIFF
+    topsApp.py <runconfig.xml>
 
-The driver is a pure string builder (testable golden); the interpreter
-invocation is exercised against a fake binary in CI — the real spike fills
-H.3 with one measured AOI run (runtime + RAM + size).
+`dounwrap` + `unwrappername=snaphu` produce the unwrapped phase; the geocode
+step writes phase + coherence GeoTIFFs that `build_los_product` consumes.
+The interpreter + CLI path are injectable; CI exercises the runner against a
+fake `topsApp.py`.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -29,66 +31,103 @@ Bbox = tuple[float, float, float, float]
 def find_isce() -> str | None:
     """Path to an ISCE2-capable Python interpreter, or None.
 
-    Conda envs put `python` with isce2 on PATH; also honour the explicit
-    MIRAR_ISCE_PYTHON override for non-PATH installs.
+    Conda envs put a `python` with isce2 importable on PATH; honour the
+    explicit MIRAR_ISCE_PYTHON override for non-PATH installs.
     """
-    import os
-
     override = os.environ.get("MIRAR_ISCE_PYTHON")
     if override and Path(override).exists():
         return override
     return shutil.which("python")
 
 
-def build_topsapp_driver(
+def find_topsapp() -> str | None:
+    """Path to the real `topsApp.py` launcher inside the isce2 package, or None."""
+    override = os.environ.get("MIRAR_TOPSAPP")
+    if override and Path(override).exists():
+        return override
+    here = shutil.which("python")
+    if here is None:
+        return None
+    # isce2 conda package ships topsApp.py under site-packages/isce/applications
+    try:
+        out = subprocess.run(
+            [here, "-c", "import isce, os; print(os.path.join(os.path.dirname(isce.__file__), 'applications', 'topsApp.py'))"],
+            capture_output=True, text=True, check=True,
+        )
+        candidate = out.stdout.strip().splitlines()[-1]
+        return candidate if Path(candidate).exists() else None
+    except (subprocess.CalledProcessError, IndexError):
+        return None
+
+
+def build_topsapp_config(
     *,
-    slc1: str,
-    slc2: str,
+    safe1: str,
+    safe2: str,
+    swath: int,
+    polarization: str,
     bbox: Bbox,
     phase_out: str,
     coherence_out: str,
     workdir: str,
+    dem: str | None = None,
 ) -> str:
-    """Python driver that runs ISCE2 topsApp for one interferogram pair.
+    """topsApp XML runconfig for one Sentinel-1 interferogram pair.
 
-    Pure string builder: no filesystem, no ISCE2. `do_topo=True` strips the
-    DEM phase (mandatory over this relief); the outputs are geocoded to
-    EPSG:4326 GeoTIFFs so `build_los_product` consumes them directly.
+    Pure string builder: no filesystem, no ISCE2. Reference = first SAFE,
+    Secondary = second SAFE; `dounwrap` + snaphu produce unwrapped phase;
+    the geocode step writes phase + coherence to the two output paths.
+    `dem` (when given) pins the topographic-phase-removal DEM over the
+    ~1169 m relief (omitting it lets topsApp fetch one, which needs network).
     """
     west, south, east, north = bbox
-    return f'''\
-"""Auto-generated topsApp interferogram driver (INSAR-PLAN L.1)."""
-import isce
-from isce.app.TopsProc import TopsProc
-
-cfg = {{
-    "slave_slc": [{slc1!r}, {slc2!r}],
-    "master_slc": [{slc1!r}],
-    "do_topo": True,          # strip DEM phase — mandatory over ~1169 m relief
-    "do_geocode": True,
-    "geocode_bbox": [{west}, {south}, {east}, {north}],
-    "output_dir": {workdir!r},
-    "phase_output": {phase_out!r},
-    "coherence_output": {coherence_out!r},
-    "snaphu_flag": True,       # unwrap the filtered interferogram
-}}
-TopsProc(user_config=cfg).run()
-'''
+    dem_line = f'    <property name="DEM filename">{dem}</property>\n' if dem else ""
+    return f"""\
+<?xml version="1.0" encoding="UTF-8"?>
+<topsApp>
+  <property name="sensor name">SENTINEL1</property>
+{dem_line}    <property name="do unwrap">True</property>
+    <property name="unwrapper name">snaphu</property>
+    <property name="do geocode">True</property>
+    <property name="geocode bounding box">{north} {south} {east} {west}</property>
+    <property name=" azimuth looks">2</property>
+    <property name="range looks">8</property>
+  <component name="Reference">
+    <factory-module>isceobj.Sensor.TOPS</factory-module>
+    <property name="safe">{safe1}</property>
+    <property name="swath number">{swath}</property>
+    <property name="polarization">{polarization}</property>
+    <property name="output directory">{workdir}</property>
+  </component>
+  <component name="Secondary">
+    <factory-module>isceobj.Sensor.TOPS</factory-module>
+    <property name="safe">{safe2}</property>
+    <property name="swath number">{swath}</property>
+    <property name="polarization">{polarization}</property>
+    <property name="output directory">{workdir}</property>
+  </component>
+</topsApp>
+"""
 
 
 def make_isce_processor(
     *,
     python_bin: str | None,
+    topsapp_bin: str | None,
     phase_out: str | Path,
     coherence_out: str | Path,
     workdir: str | Path,
+    swath: int = 7,
+    polarization: str = "VV",
+    dem: str | None = None,
 ):
     """Processor(paths, bbox) -> {"phase": bytes, "coherence": bytes}.
 
-    Raises CoherenceUnavailable when ISCE2 is absent. Runs the generated
-    topsApp driver under the ISCE2 interpreter, then reads the two rasters.
+    Raises CoherenceUnavailable when ISCE2/topsApp is absent. Runs the real
+    `topsApp.py` CLI on a generated runconfig for the two SAFE paths + bbox,
+    then reads the two output rasters.
     """
-    if not python_bin:
+    if not python_bin or not topsapp_bin:
         raise CoherenceUnavailable(
             "ISCE2 not installed — see INSAR-PLAN L.1 spike"
         )
@@ -98,22 +137,23 @@ def make_isce_processor(
 
     def processor(paths: list[Path], bbox: Bbox) -> dict:
         if len(paths) < 2:
-            raise CoherenceUnavailable("interferogram needs two SLC paths")
-        driver = build_topsapp_driver(
-            slc1=str(paths[0]), slc2=str(paths[1]), bbox=bbox,
+            raise CoherenceUnavailable("interferogram needs two SAFE paths")
+        config = build_topsapp_config(
+            safe1=str(paths[0]), safe2=str(paths[1]), swath=swath,
+            polarization=polarization, bbox=bbox,
             phase_out=str(phase_path), coherence_out=str(coherence_path),
-            workdir=str(work),
+            workdir=str(work), dem=dem,
         )
         work.mkdir(parents=True, exist_ok=True)
-        driver_path = work / "topsapp_driver.py"
-        driver_path.write_text(driver, encoding="utf-8")
+        config_path = work / "topsapp_runconfig.xml"
+        config_path.write_text(config, encoding="utf-8")
         try:
             subprocess.run(
-                [python_bin, str(driver_path)],
+                [python_bin, topsapp_bin, str(config_path)],
                 check=True, capture_output=True, text=True, cwd=str(work),
             )
         except subprocess.CalledProcessError as exc:
-            raise RuntimeError(f"topsapp failed: {exc.stderr[-500:]}") from exc
+            raise RuntimeError(f"topsApp failed: {exc.stderr[-500:]}") from exc
         return {
             "phase": phase_path.read_bytes(),
             "coherence": coherence_path.read_bytes(),
