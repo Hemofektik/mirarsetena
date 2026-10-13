@@ -204,6 +204,22 @@ def main() -> int:
         from isce.applications.gdal2isce_xml import gdal2isce_xml
 
         gdal2isce_xml(str(dem_path))
+        # Declare the DEM as WGS84 so verifyDEM SKIPS ISCE's geoid corrector:
+        # it emits scattered FLT_MAX garbage (6% of a hard-bounded chunk) on
+        # non-SRTM-shaped DEMs, which overflows topo into the NaNs that abort
+        # snaphu (H.3 spike note). Heights stay EGM96-orthometric (<=~30 m
+        # vertical offset -> smooth residual fringes, unwrap-able; a proper
+        # production fix pre-converts with a geoid grid).
+        sidecar = Path(f"{dem_path}.xml")
+        text = sidecar.read_text(encoding="utf-8")
+        if "REFERENCE" not in text:
+            text = text.replace(
+                "</imageFile>",
+                '    <property name="REFERENCE">\n'
+                "        <value>WGS84</value>\n"
+                "    </property>\n</imageFile>",
+            )
+            sidecar.write_text(text, encoding="utf-8")
 
         phase_out = pair_dir / "phase.tif"
         coh_out = pair_dir / "coherence.tif"
