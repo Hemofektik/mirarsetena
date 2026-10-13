@@ -13,11 +13,17 @@ every post-works acquisition here is S1D. The CDSE SLC downloader works
 full-swath snaphu is pathological (>55 min), so **AOI-crop unwrap
 (`tools/unwrap_crop.py`) in seconds is the production architecture**.
 
-**Honest finding (SCOPE K.1):** the AOI (quarry/river pit) has **zero
-interferometric coherence** on a 12-day C-band pair (phsig = 0.000), so
-InSAR displacement *over the pit* is not measurable — only stable surrounding
-terrain (roads, buildings, bare ground) correlates (~0.28). The pipeline is
-correct; the site's coherence is the limiter the spike existed to establish.
+**Honest finding (SCOPE K.1), CORRECTED:** the earlier note claimed the AOI
+(quarry/river pit) has "zero coherence" — deeper probing showed that was
+**void, not measurement**: `lat.rdr` geometry is NaN over the AOI and the
+interferogram amplitude is exactly 0 at every POI (offices/roads don't
+decorrelate either). The real defect: **burst 1 of IW2 carries 72% void
+geometry**, deterministically identical across S1A/S1D pairs, DEMs and runs;
+valid data (phsig ~0.28 on stable land) exists only in bursts 3+. The pit's
+coherence is therefore **still unknown — never measured**. Next step: compare
+the burst-1 measurement TIFF layout against the annotation
+(linesPerBurst/samplesPerBurst), A/B `use virtual files False`, consider a
+topsApp newer than 2.6.3 (pre-dates several S1 burst fixes).
 Links: SCOPE Q3, research tier §5.7, IMPLEMENTATION H.3 (spike result).
 
 ## 1. Goal & user deliverables
