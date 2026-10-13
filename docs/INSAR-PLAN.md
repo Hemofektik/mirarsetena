@@ -13,17 +13,25 @@ every post-works acquisition here is S1D. The CDSE SLC downloader works
 full-swath snaphu is pathological (>55 min), so **AOI-crop unwrap
 (`tools/unwrap_crop.py`) in seconds is the production architecture**.
 
-**Honest finding (SCOPE K.1), CORRECTED:** the earlier note claimed the AOI
+**Honest finding (SCOPE K.1), ROOT-CAUSED:** the earlier note claimed the AOI
 (quarry/river pit) has "zero coherence" — deeper probing showed that was
 **void, not measurement**: `lat.rdr` geometry is NaN over the AOI and the
 interferogram amplitude is exactly 0 at every POI (offices/roads don't
-decorrelate either). The real defect: **burst 1 of IW2 carries 72% void
-geometry**, deterministically identical across S1A/S1D pairs, DEMs and runs;
-valid data (phsig ~0.28 on stable land) exists only in bursts 3+. The pit's
-coherence is therefore **still unknown — never measured**. Next step: compare
-the burst-1 measurement TIFF layout against the annotation
-(linesPerBurst/samplesPerBurst), A/B `use virtual files False`, consider a
-topsApp newer than 2.6.3 (pre-dates several S1 burst fixes).
+decorrelate either). The SLC itself is fine — amplitude in the void matches
+the valid region (median 35.2 vs 34.2).
+
+**Root cause (fixed):** the DEM was written as a **deflate-compressed
+GeoTIFF**, but ISCE's `Image` class never decodes GeoTIFF — it memmaps the
+file as raw BSQ float32 using the sidecar `gdal2isce_xml` writes, and
+`Image.createImage` hard-exits unless the file is exactly
+`width*length*4` bytes. The 15 MB compressed file "covered" only the first
+**1047 of 5376 rows** (lat 9.709 → 9.354), which is exactly the measured
+void boundary (9.3535–9.3542) — the AOI at 9.3845–9.3867 fell in the unread
+band, so topo solved garbage heights (median −500 m, max 250,623 m) and
+NaN geometry. Fixed in `coherence/dem.py::build_dem` by writing **ENVI**
+raw float32 (77,070,336 bytes for 3584×5376), with a regression test that
+asserts the on-disk size equals `width*height*4`. The AOI's coherence was
+therefore **never measured** — it must be re-measured with the fixed DEM.
 Links: SCOPE Q3, research tier §5.7, IMPLEMENTATION H.3 (spike result).
 
 ## 1. Goal & user deliverables

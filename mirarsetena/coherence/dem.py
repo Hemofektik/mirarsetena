@@ -124,8 +124,15 @@ def build_dem(
 
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    # ENVI, not GeoTIFF: ISCE's Image class memmaps this file as raw BSQ
+    # float32 using the sidecar gdal2isce_xml writes — it never decodes
+    # GeoTIFF, and Image.createImage hard-exits unless the file is exactly
+    # width*length*4 bytes. A deflate GeoTIFF is 15 MB where 77 MB of raw
+    # floats are expected, so ISCE silently read only the first 1047 rows
+    # (lat 9.709 -> 9.354) and produced NaN geometry north of that — exactly
+    # the burst-1 void that blanked the AOI (spike run 2026-10-13).
     profile = {
-        "driver": "GTiff",
+        "driver": "ENVI",
         "dtype": "float32",
         "count": 1,
         "height": mosaic.shape[0],
@@ -133,7 +140,6 @@ def build_dem(
         "crs": "EPSG:4326",
         "transform": transform,
         "nodata": -9999.0,
-        "compress": "deflate",
     }
     import rasterio
 

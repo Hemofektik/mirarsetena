@@ -84,6 +84,33 @@ def test_build_dem_writes_geographic_geotiff(tmp_path):
         assert data.dtype == np.float32
         assert float(np.median(data)) == pytest.approx(elev, abs=1.0)
 
+def test_build_dem_is_raw_binary_isce_can_memmap(tmp_path):
+    """ISCE reads the DEM through its Image class, which memmaps the file as
+    raw BSQ float32 using the .xml sidecar's width/length — it never decodes
+    GeoTIFF (gdal2isce_xml only writes the sidecar; it does not re-encode).
+    Image.createImage hard-checks `os.path.getsize(file) == width*length*4`
+    and sys.exit(1s otherwise, so a deflate-compressed GeoTIFF is unreadable:
+    the 15 MB compressed file only "covers" 1047 of 5376 rows, which is why
+    burst-1 geometry was void north of lat 9.3542 (spike run 2026-10-13).
+
+    So the DEM must be stored as uncompressed raw float32 whose byte size
+    matches its declared raster dimensions exactly."""
+    raw = np.full((256, 256, 3), 0, dtype=np.uint8)
+    v = 1169.0 + 32768
+    raw[..., 0] = int(v) // 256
+    raw[..., 1] = int(v) % 256
+
+    out = tmp_path / "aoi.dem.tif"
+    build_dem(BBOX, out, zoom=13, fetch=lambda z, x, y: raw)
+
+    with rasterio.open(out) as src:
+        expected = src.width * src.height * 4  # single-band float32
+    assert out.stat().st_size == expected, (
+        f"DEM must be raw float32 for ISCE's memmap: {out.stat().st_size} "
+        f"on disk vs {expected} expected for the declared raster"
+    )
+
+
 def test_build_dem_sanitizes_ocean_bathymetry(tmp_path):
     """Terrarium decodes ocean floors as bathymetry (down to -14 km here),
     but ISCE's geoid corrector turns out-of-range heights into FLT_MAX
