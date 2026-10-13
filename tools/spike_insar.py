@@ -94,6 +94,51 @@ def _dir_size(path: Path) -> int:
     return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
 
 
+def _image_dims(xml_path: Path) -> tuple[int, int]:
+    """(width, length) from an ISCE image sidecar."""
+    root = ET.parse(xml_path).getroot()
+    out: dict[str, int] = {}
+    for prop in root.iter("property"):
+        name = (prop.get("name") or "").lower()
+        value = prop.findtext("value")
+        if name in ("width", "length") and value:
+            out[name] = int(value)
+    return out["width"], out["length"]
+
+
+def _mask_ifg_nan(pair_dir: Path) -> int:
+    """Zero NaN interferogram pixels (phase + both coherence bands).
+
+    12-day tropical decorrelation fails the fine-coreg windows over forest
+    and ocean; mergebursts fills those pixels with NaN and snaphu aborts on
+    ANY NaN ("NaN or infinity found in input float data"). Zero phase +
+    zero coherence excludes them: snaphu skips zero-magnitude pixels and
+    its MST isolates the masked regions into noise connected components,
+    while every COHERENT pixel (roads, buildings, bare quarry ground)
+    keeps its real measurement — the standard over-vegetation pattern.
+    """
+    import numpy as np
+
+    merged = pair_dir / "merged"
+    flat = merged / "filt_topophase.flat"
+    width, length = _image_dims(Path(f"{flat}.xml"))
+    a = np.fromfile(flat, dtype=np.complex64)
+    a = a[: width * length].reshape(length, width)
+    bad = ~(np.isfinite(a.real) & np.isfinite(a.imag))
+    n = int(bad.sum())
+    if n:
+        a[bad] = 0
+        a.tofile(flat)
+    cor = merged / "topophase.cor"
+    c = np.fromfile(cor, dtype=np.float32)
+    if c.size >= 2 * width * length:
+        c = c[: 2 * width * length].reshape(2 * length, width)
+        c[~np.isfinite(c)] = 0
+        c[:length][bad] = 0
+        c.tofile(cor)
+    return n
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-dir", default="data/projects/cdp-rio-general")
@@ -101,7 +146,12 @@ def main() -> int:
     # persistent by default: /tmp is wiped on reboot and the pair download
     # is 14 GB (survived the 2026-10-12 restart under data/spike/)
     parser.add_argument("--workdir", default="data/spike/spike-insar")
-    parser.add_argument("--pairs", type=int, default=1, help="pairs to process")
+    parser.add_argument(
+        "--pair-index", type=int, default=-1,
+        help="which planned pair to process (default -1 = most recent, "
+        "i.e. post-works: the active quarry's bare ground correlates far "
+        "better than January forest)",
+    )
     parser.add_argument(
         "--polarization", default="VV", help="SLC polarization (VV/VH)"
     )
@@ -125,7 +175,7 @@ def main() -> int:
     pairs = plan_pairs(scenes)
     if not pairs:
         raise SystemExit("no interferometric pairs in the catalog window")
-    pairs = pairs[: args.pairs]
+    pairs = [pairs[args.pair_index % len(pairs)]]
     print(f"planned {len(pairs)} pair(s); first: {pairs[0].id}")
 
     # 2. download the SLCs from CDSE
@@ -140,12 +190,15 @@ def main() -> int:
 
     results = []
     for i, pair in enumerate(pairs, 1):
-        pair_dir = work / f"pair{i}"
+        # pair-specific dir: reusing "pair1" would grab the WRONG zips
+        # when the selected pair changes between runs
+        pair_dir = work / pair.second.date
         pair_dir.mkdir(exist_ok=True)
         # reuse an earlier run's download (14 GB takes ~1 h; never redo it)
         existing = sorted(pair_dir.glob("*.zip"))
         if len(existing) >= 2:
             paths = existing
+            dl_bytes = sum(p.stat().st_size for p in paths)
             print(f"[{i}/{len(pairs)}] reusing {len(existing)} downloaded zips")
         else:
             print(f"[{i}/{len(pairs)}] downloading SLC pair ...")
@@ -240,10 +293,11 @@ def main() -> int:
         # (a failed preprocess still dumps its pickle) — measure from scratch
         shutil.rmtree(pair_dir / "PICKLE", ignore_errors=True)
 
-        print("  running topsApp (this is the spike measurement) ...")
+        print("  running topsApp preprocess->filter (the spike measurement) ...")
         t1 = time.time()
         proc = subprocess.run(
-            [sys.executable, topsapp, str(runconfig)],
+            [sys.executable, topsapp, str(runconfig),
+             "--steps", "--start=preprocess", "--end=filter"],
             cwd=str(pair_dir), capture_output=True, text=True, check=False,
         )
         runtime = time.time() - t1
@@ -257,6 +311,29 @@ def main() -> int:
             )
             continue
 
+        masked = _mask_ifg_nan(pair_dir)
+        print(f"  masked {masked} NaN ifg pixels (zero phase + zero coherence)")
+
+        print("  running topsApp unwrap->geocode ...")
+        t2 = time.time()
+        proc2 = subprocess.run(
+            [sys.executable, topsapp, str(runconfig),
+             "--steps", "--start=unwrap", "--end=geocode"],
+            cwd=str(pair_dir), capture_output=True, text=True, check=False,
+        )
+        runtime += time.time() - t2
+        peak_rss_mb = max(
+            peak_rss_mb, resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024
+        )
+        if proc2.returncode != 0:
+            print(f"  topsApp FAILED after {runtime:.0f}s (rc={proc2.returncode})")
+            print(proc2.stderr[-2000:])
+            results.append(
+                {"pair": pair.id, "ok": False, "runtime_s": runtime,
+                 "masked": masked, "stderr_tail": proc2.stderr[-500:]}
+            )
+            continue
+
         disk_mb = _dir_size(pair_dir) / 1e6
         print(
             f"  OK in {runtime:.0f}s; workdir {disk_mb:.0f} MB; "
@@ -267,6 +344,7 @@ def main() -> int:
                 "pair": pair.id, "ok": True, "runtime_s": runtime,
                 "workdir_mb": disk_mb, "peak_rss_mb": peak_rss_mb,
                 "downloaded_gb": dl_bytes / 1e9, "swath": swath,
+                "masked": masked,
                 "phase": str(phase_out), "coherence": str(coh_out),
             }
         )
