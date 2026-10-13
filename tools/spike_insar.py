@@ -213,12 +213,17 @@ def main() -> int:
         sidecar = Path(f"{dem_path}.xml")
         text = sidecar.read_text(encoding="utf-8")
         if "REFERENCE" not in text:
-            text = text.replace(
-                "</imageFile>",
+            prop = (
                 '    <property name="REFERENCE">\n'
                 "        <value>WGS84</value>\n"
-                "    </property>\n</imageFile>",
+                "    </property>\n"
             )
+            # gdal2isce_xml closes with <image_name>; other ISCE dumps
+            # use <imageFile> — inject before whichever is present
+            for closing in ("</image_name>", "</imageFile>"):
+                if closing in text:
+                    text = text.replace(closing, prop + closing, 1)
+                    break
             sidecar.write_text(text, encoding="utf-8")
 
         phase_out = pair_dir / "phase.tif"
