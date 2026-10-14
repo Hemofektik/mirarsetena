@@ -897,3 +897,11 @@ dialog form button {
   text-align: right;
   font-size: 0.68rem;
 }
+
+/* Which acquisitions the selected InSAR product's delta spans */
+#insar-legend-delta {
+  font-size: 0.7rem;
+  color: #4b6152;
+  margin-bottom: 0.3rem;
+  font-variant-numeric: tabular-nums;
+}

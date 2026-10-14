@@ -81,7 +81,10 @@ def build_and_store(
     slug: str,
     date: str,
     storage_root: Path,
-    resolution: float = 0.0003,
+    # ~10 m/px: matches the S2 optical display grid (user 2026-10-14: the
+    # old 0.0003° (33 m) default looked "much more coarse than the raw
+    # Sentinel-1 data", whose source grid measures 2.9 x 13.9 m/px)
+    resolution: float = 0.00009,
 ) -> str:
     """Build the product and store it at the servable key; returns the key."""
     from mirarsetena.storage import LocalStore
@@ -155,7 +158,7 @@ def main() -> int:
     p.add_argument("--slug", required=True)
     p.add_argument("--date", required=True, help="pair END date (YYYY-MM-DD)")
     p.add_argument("--storage-root", default="data/cache")
-    p.add_argument("--resolution", type=float, default=0.0003)
+    p.add_argument("--resolution", type=float, default=0.00009)
     args = p.parse_args()
     bbox = tuple(float(x) for x in args.bbox.split(","))
     build_and_store(

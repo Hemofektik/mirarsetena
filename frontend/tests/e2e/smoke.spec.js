@@ -1070,7 +1070,7 @@ test("plan vs realidad chart follows the insar layer (L.9)", async ({ page }) =>
 test("cloud filter controls hide on the radar/insar layer", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
   // optical layer: the cloud controls belong to dates that carry scores
-  await expect(page.locator("#hide-cloudy-row")).toBeVisible();
+  await expect(page.locator("#hide-cloudy-row")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#max-cloud-row")).toBeVisible();
 
   // insar: radar dates have no cloud score -> controls hidden, not disabled.
@@ -1084,7 +1084,7 @@ test("cloud filter controls hide on the radar/insar layer", async ({ page }) => 
 
   // back to optical: they return
   await page.locator('#layer-buttons [data-layer="ndvi"]').click();
-  await expect(page.locator("#hide-cloudy-row")).toBeVisible();
+  await expect(page.locator("#hide-cloudy-row")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#max-cloud-row")).toBeVisible();
 });
 
@@ -1092,7 +1092,7 @@ test("clicking the date slider track jumps straight to that date", async ({
   page,
 }) => {
   await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible();
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
   const newest = await page.locator("#date-value").textContent();
   expect(newest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -1125,7 +1125,7 @@ test("double-clicking a cloud-strip tick disables that date for scrubbing", asyn
   page,
 }) => {
   await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible();
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#cloud-strip span").first()).toBeVisible({
     timeout: 30_000,
   });
@@ -1238,7 +1238,7 @@ test("loading tiles show only a spinner, never a darkening veil", async ({
 
 test("arrow keys step the date slider from anywhere", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible();
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
   const newest = await page.locator("#date-value").textContent();
 
   // focus something neutral (NOT the slider): the step must still work
@@ -1274,7 +1274,7 @@ test("opacity slider in the layer section drives the overlay paint", async ({
   page,
 }) => {
   await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible();
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
   const opacityRow = page.locator("#opacity-row");
   // visible with a layer active, showing the shipped default (85%)
   await expect(opacityRow).toBeVisible();
@@ -1300,4 +1300,41 @@ test("opacity slider in the layer section drives the overlay paint", async ({
   // no layer -> nothing to be transparent: the row hides
   await page.locator('#layer-buttons [data-layer="rgb"]').click(); // disable
   await expect(opacityRow).toBeHidden();
+});
+
+test("insar legend shows which acquisition dates the delta spans", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
+  await page.locator('#layer-buttons [data-layer="insar"]').click();
+  await expect(page.locator("#insar-legend")).toBeVisible({ timeout: 30_000 });
+
+  // the selected date is a PAIR's end: the legend states the span, e.g.
+  // "Δ 2026-09-21 → 2026-10-03" (11-13 day same-track baseline)
+  const delta = page.locator("#insar-legend-delta");
+  // the legend shows instantly; the SPAN waits for the (cold, live STAC)
+  // insar dates fetch that carries pair_with
+  await expect(delta).toBeVisible({ timeout: 30_000 });
+  await expect(delta).toHaveText(
+    /^Δ \d{4}-\d{2}-\d{2} → \d{4}-\d{2}-\d{2}$/,
+  );
+
+  const parse = async () => {
+    const text = await delta.textContent();
+    const [from, to] = text.replace("Δ ", "").split(" → ");
+    return { from, to };
+  };
+  let span = await parse();
+  expect(span.to).toBe(await page.locator("#date-value").textContent());
+  const days = (Date.parse(span.to) - Date.parse(span.from)) / 86_400_000;
+  expect(days).toBeGreaterThanOrEqual(11);
+  expect(days).toBeLessThanOrEqual(13);
+
+  // scrub to another pair: the span follows the selection
+  await page.locator("#app-title").click();
+  await page.keyboard.press("ArrowLeft");
+  span = await parse();
+  expect(span.to).toBe(await page.locator("#date-value").textContent());
+  expect(span.to).not.toBe(span.from);
 });

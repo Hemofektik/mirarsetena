@@ -281,6 +281,11 @@ function renderScrubber() {
       S.t(state.lang, "legend_los_negative", { limit: label });
     document.getElementById("insar-legend-pos").textContent =
       S.t(state.lang, "legend_los_positive", { limit: label });
+    // which acquisitions this product's delta spans (pair start → end)
+    const delta = document.getElementById("insar-legend-delta");
+    const span = S.deltaSpan(entry);
+    delta.hidden = !span;
+    delta.textContent = span ? `Δ ${span}` : "";
   }
   if (!state.layer) return;
 

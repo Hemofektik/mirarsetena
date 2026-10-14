@@ -304,3 +304,27 @@ def test_insar_date_entries_carry_their_own_los_range(storage, registry):
     assert by_date["2026-07-23"]["los_range"] is None
     # layer-wide summary = max over processed products
     assert result["los_range"] == pytest.approx(3.0, abs=1e-3)
+
+
+def test_insar_dates_carry_pair_with_start_dates(storage, registry):
+    # An insar date is a PAIR's end date: the product shows the DELTA from
+    # the previous same-track acquisition, and the UI must be able to say
+    # which dates that delta spans (user 2026-10-14).
+    config = _with_radar(
+        registry.get("cdp-rio-general"), ["ndvi", "insar"]
+    )
+    result = list_dates(
+        storage, "cdp-rio-general", config,
+        "insar", search_fn=fake_search, now=NOW,
+    )
+    pair_with = {d["date"]: d["pair_with"] for d in result["dates"]}
+    # golden values from the 8-scene GRD fixture (5 asc + 1 desc pairs,
+    # each 12 days): end date -> start dates of the delta
+    assert pair_with == {
+        "2026-07-23": ["2026-07-11"],
+        "2026-08-04": ["2026-07-23"],
+        "2026-08-16": ["2026-08-04"],
+        "2026-08-28": ["2026-08-16"],
+        "2026-09-09": ["2026-08-28"],
+        "2026-10-03": ["2026-09-21"],
+    }

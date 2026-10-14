@@ -18,6 +18,7 @@ import {
   setBasemap,
   setDatesLoading,
   setDate,
+  deltaSpan,
   disabledDatesFor,
   stepDate,
   stripDates,
@@ -593,5 +594,20 @@ describe("overlay opacity (map layer transparency)", () => {
     // type-strict: garbage falls back to the default
     const dirty = restoreSettings(makeState(config), { overlayOpacity: "loud" });
     expect(dirty.overlayOpacity).toBeCloseTo(0.85, 5);
+  });
+});
+
+describe("deltaSpan (which dates an InSAR product's delta spans)", () => {
+  it("renders the pair start -> end dates", () => {
+    expect(
+      deltaSpan({ date: "2026-10-03", pair_with: ["2026-09-21"] }),
+    ).toBe("2026-09-21 → 2026-10-03");
+  });
+  it("joins multi-track starts and is null when unknown", () => {
+    expect(
+      deltaSpan({ date: "2026-10-03", pair_with: ["2026-09-09", "2026-09-21"] }),
+    ).toBe("2026-09-09, 2026-09-21 → 2026-10-03");
+    expect(deltaSpan({ date: "2026-10-03" })).toBeNull();
+    expect(deltaSpan(null)).toBeNull();
   });
 });

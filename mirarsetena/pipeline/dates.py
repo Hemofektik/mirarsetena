@@ -189,7 +189,9 @@ def _list_insar_dates(
     pairs = plan_pairs(scenes)
 
     # The end date of each pair is the product date; track the geometry so
-    # the frontend can label ASC/DESC like the old radar scrubber did.
+    # the frontend can label ASC/DESC like the old radar scrubber did, and
+    # remember the START date(s) — a product is the delta between two
+    # acquisitions and the UI must show which dates that delta spans.
     by_end: dict[str, dict] = {}
     for pair in pairs:
         entry = by_end.setdefault(
@@ -199,11 +201,16 @@ def _list_insar_dates(
                 "cloud": None,       # radar: no SCL, always cloudless
                 "processed": False,  # becomes True when a job stores the product
                 "orbits": [],
+                "pair_with": [],     # start date(s) of this delta
             },
         )
         geometry = (pair.second.orbit_state, pair.second.relative_orbit)
         if list(geometry) not in entry["orbits"]:
             entry["orbits"].append(list(geometry))
+        if pair.first.date not in entry["pair_with"]:
+            entry["pair_with"].append(pair.first.date)
+    for entry in by_end.values():
+        entry["pair_with"].sort()
 
     # processed=True when the job already cached a product for this pair;
     # each processed entry carries its own adaptive ramp limit so the legend

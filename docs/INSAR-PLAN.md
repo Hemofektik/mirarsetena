@@ -43,14 +43,31 @@ perimeter* (`pipeline/insar.py::reference_los`) gives median 0.00,
 p1 −0.40, p99 +0.56, **0% saturation**; the coherence mask correctly drops
 the two low-coherence POIs (project-end, road-end) to nodata.
 
-**Measured product (2026-10-03, 51×64 grid @ 0.0003°):** 3138/3264 valid
-px; POIs read −0.35 … +0.15 cm (quarry +0.05 cm) — sub-cm, i.e. the pit is
-*stable* over this 12-day pair, which is the honest answer for a pair with
-no excavation event between acquisitions. Local data-prep path:
+**Measured product (2026-10-03):** first built as a 51×64 grid @ 0.0003°
+(33 m/px — user feedback 2026-10-14: visibly coarser than the optical
+layers), then **rebuilt at 167×212 @ 0.00009° (≈10 m/px)** to match the S2
+native display grid. Ground-truth resolutions measured from the actual
+data: source radar grid (lat/lon.rdr at the AOI) **2.9 × 13.9 m/px**
+(single-look SLC), optical S2 native **10.0 m/px**; the old 33 m product
+grid was an arbitrary default, not a data limit. Rebuild statistics
+unchanged (geography, not sampling, drives them): 34035/35404 valid px,
+median 0.00, p99 +0.57 cm, 0% saturation; POIs read −0.35 … +0.15 cm
+(quarry +0.05 cm) — sub-cm, i.e. the pit is *stable* over this 12-day
+pair, which is the honest answer for a pair with no measurable coherent
+change between acquisitions (an active dig would DECORRELATE, not report
+large motion — see the chart's honesty note). Local data-prep path:
 `tools/unwrap_crop.py` → `tools/insar_product.py` (geocode → height delta →
-reference → `storage.put` at the servable key). Verified in-browser: switch
-to `insar` → 15/15 tiles 200, overlay paints the AOI footprint (9,300
-near-white px vs the RGB basemap underneath), legend visible.
+reference → `storage.put` at the servable key; **product changes must clear
+`tiles/<layer>/<date>/` — the tile cache key carries no product identity**).
+Verified in-browser: switch to `insar` → tiles 200, overlay paints the AOI
+footprint, legend visible.
+
+**Pair span in the UI (2026-10-14):** a product date is the pair END — the
+delta from the previous same-track acquisition (11–13 d, `pairs.py`).
+`/api/dates` now carries `pair_with` (start dates, fixture-golden:
+2026-10-03 ← 2026-09-21) and the legend renders `Δ <start> → <end>` for
+the selected date (`state.js::deltaSpan`), so the map always states which
+acquisitions its delta spans.
 
 **Adaptive ramp (decision 5 gate triggered):** the fixed ±5 cm MVP range
 rendered this product all-white (±0.56 cm data on a ±5 cm ramp). The limit

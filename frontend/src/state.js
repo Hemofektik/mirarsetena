@@ -266,6 +266,18 @@ export function stepDate(state, delta) {
   return dates[target].date;
 }
 
+/**
+ * "2026-09-21 → 2026-10-03": which acquisitions an InSAR product's delta
+ * spans (a product is the pair END date; pair_with holds the start
+ * date(s)). Null when the pair info is unknown — never invent a span.
+ */
+export function deltaSpan(entry) {
+  if (!entry || !Array.isArray(entry.pair_with) || !entry.pair_with.length) {
+    return null;
+  }
+  return `${entry.pair_with.join(", ")} → ${entry.date}`;
+}
+
 /** Double-click toggle: exclude a date from the scrubber (or bring it back). */
 export function toggleDisabledDate(state, date) {
   const layer = state.layer;
