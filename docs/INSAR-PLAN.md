@@ -76,14 +76,29 @@ pairs BEFORE it (`--pair-indexes -5,-4,-3,-2` → ends 08-04, 08-16, 08-28,
 `spike_insar --stop-after filter` (the full-swath unwrap stage is skipped —
 pathological; only merged/ is needed) → `unwrap_crop` → `insar_product`
 (10 m) → deploy (tiles cleared, product+series copied into the container)
-→ **purge** (SAFEs + heavy ISCE dirs ≈ 50 GB/pair; `merged/` + `unwrap2/`
-are the re-derivation inputs and are NEVER purged — pinned by
+→ **purge** (SAFEs + heavy ISCE dirs ≈ 40 GB/pair; `merged/`, `unwrap2/`
+AND `geom_reference/` are the re-derivation inputs and are NEVER purged —
+`merged/lat.rdr.full.vrt` stitches `../geom_reference/*.vrt` (purging it
+broke the 10-03 pair's rebuild path, measured 2026-10-14) — pinned by
 `test_purge_candidates_keep_the_rebuild_inputs`). Resumable: a pair with
-stored product+series is skipped after a restart, and a shared `--slc-cache`
-hardlinks scenes so the 4 pairs' 5 unique SLCs are downloaded once
-(`make_slc_downloader`'s chained-pair cache, budget = `slc_budget_bytes`).
+stored product+series is skipped after a restart (and a pair built into
+the e2e store but not deployed is deployed alone), and a shared
+`--slc-cache` hardlinks scenes so the 4 pairs' 5 unique SLCs are downloaded
+once (`make_slc_downloader`'s chained-pair cache, budget =
+`slc_budget_bytes`).
 Not in CI — needs CDSE + isce2 env + hours; `batch-report.json` tracks
 progress.
+
+**Batch run 2026-10-14 — COMPLETE, all four pairs deployed:** topsApp
+21/44/74/53 min per pair; live state = 5 processed pairs (08-04, 08-16,
+08-28, 09-09, 10-03) with adaptive ramps ±0.58–0.81 cm and 8–10/10 valid
+POIs each; the Plan-vs-Realidad chart carries 5 quarry points
+(+0.049, +0.066, +0.240, −0.148, +0.043 cm — sub-cm throughout: no
+coherent excavation signal in any 12-day window, the honest answer).
+Three production bugs were found and regression-pinned BY this run:
+sparse-node swath selection, the deploy destination typo, and the
+edge-touching radar window that made GDAL's geoloc warp return zero
+coverage (`radar_window()`'s ≥1 inset, `isce_products.py`).
 
 **Adaptive ramp (decision 5 gate triggered):** the fixed ±5 cm MVP range
 rendered this product all-white (±0.56 cm data on a ±5 cm ramp). The limit
