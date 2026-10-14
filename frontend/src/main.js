@@ -123,6 +123,11 @@ function commitOverlayTemplate(template) {
   lastOverlayTemplate = template;
 }
 
+function applyOverlayOpacity() {
+  if (!map || !map.getLayer("overlay")) return;
+  map.setPaintProperty("overlay", "raster-opacity", state.overlayOpacity);
+}
+
 function updateOverlay() {
   if (!map || !map.getLayer("overlay")) return;
   const source = map.getSource("overlay");
@@ -406,6 +411,7 @@ function renderAll() {
   renderLayerButtons();
   renderScrubber();
   renderPlanSection();
+  applyOverlayOpacity();
   updateOverlay();
   updatePoiVisibility();
   updateAoiVisibility();
@@ -425,6 +431,12 @@ function syncControlsFromState() {
   document.getElementById("max-cloud").value = String(state.maxCloud);
   document.getElementById("show-properties").checked = state.showProperties;
   document.getElementById("show-rio-line").checked = state.rioLine;
+  // overlay opacity: slider position, % readout, and (like the scrubber)
+  // the row only exists while a layer is active
+  const opacity = Math.round(state.overlayOpacity * 100);
+  document.getElementById("overlay-opacity").value = String(opacity);
+  document.getElementById("opacity-value").textContent = `${opacity}%`;
+  document.getElementById("opacity-row").hidden = !state.layer;
 }
 
 // Sequence tokens: a layer switch must never be undone by a slower response
@@ -654,7 +666,10 @@ function buildMap() {
           layout: {
             visibility: state.date && state.layer ? "visible" : "none",
           },
-          paint: { "raster-opacity": 0.85, "raster-fade-duration": 150 },
+          paint: {
+            "raster-opacity": state.overlayOpacity,
+            "raster-fade-duration": 150,
+          },
         },
         // the two 1991 plan parcels: fill + white casing + colored outline
         {
@@ -817,6 +832,10 @@ function wireUi() {
     planPoi = event.target.value;
     renderAll();
   });
+  document.getElementById("overlay-opacity").addEventListener("input", (event) => {
+    state = S.setOverlayOpacity(state, Number(event.target.value) / 100);
+    renderAll();
+  });
   document.getElementById("share-btn").addEventListener("click", async () => {
     pushUrl();
     await navigator.clipboard?.writeText(location.href);
@@ -932,6 +951,9 @@ async function boot() {
     state.showProperties = restored.properties;
     state.rioLine = restored.rioLine;
     state.show3d = restored.show3d;
+    if (restored.opacity != null) {
+      state = S.setOverlayOpacity(state, restored.opacity);
+    }
     state = S.setBasemap(state, restored.basemap);
     const groups = restored.pois.split(",");
     state.poiGroups = {

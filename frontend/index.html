@@ -28,6 +28,18 @@
         <section>
           <h2 data-i18n="layer">Capa</h2>
           <div id="layer-buttons" role="radiogroup"></div>
+          <label class="row" id="opacity-row" hidden>
+            <span data-i18n="opacity">Opacidad</span>
+            <input
+              id="overlay-opacity"
+              type="range"
+              min="0"
+              max="100"
+              value="85"
+              data-i18n-label="opacity"
+            />
+            <span id="opacity-value" class="muted">85%</span>
+          </label>
         </section>
 
         <section id="date-section">

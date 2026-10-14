@@ -29,6 +29,9 @@ export function makeState(config) {
     cloudByDate: {},
     date: null,
     worksStart: config.timeline?.works_start ?? null,
+    // Satellite overlay transparency (the raster layer's paint opacity);
+    // 0.85 is the look the app has shipped with, kept as the default.
+    overlayOpacity: 0.85,
     // Dates the user double-clicked out of the scrubber, per layer:
     // { insar: ["2026-09-09"], ... } — skipped by the slider, still shown
     // in the cloud strip so they can be toggled back.
@@ -116,6 +119,13 @@ export function setShow3d(state, on) {
   return { ...state, show3d: Boolean(on) };
 }
 
+/** Overlay opacity in 0..1; NaN and out-of-range input never corrupt it. */
+export function setOverlayOpacity(state, opacity) {
+  const value = Number(opacity);
+  if (!Number.isFinite(value)) return state;
+  return { ...state, overlayOpacity: Math.min(Math.max(value, 0), 1) };
+}
+
 export function setBasemap(state, name) {
   if (!BASEMAPS.includes(name)) return state;
   return { ...state, basemap: name };
@@ -139,6 +149,7 @@ export function settingsFromState(state) {
     showProperties: Boolean(state.showProperties),
     rioLine: Boolean(state.rioLine),
     show3d: Boolean(state.show3d),
+    overlayOpacity: state.overlayOpacity,
     disabledDates: Object.fromEntries(
       Object.entries(state.disabledDates ?? {}).map(([layer, list]) => [
         layer,
@@ -161,6 +172,12 @@ export function restoreSettings(state, saved) {
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
   if (typeof saved.rioLine === "boolean") next = { ...next, rioLine: saved.rioLine };
   if (typeof saved.show3d === "boolean") next = { ...next, show3d: saved.show3d };
+  if (
+    typeof saved.overlayOpacity === "number" &&
+    Number.isFinite(saved.overlayOpacity)
+  ) {
+    next = setOverlayOpacity(next, saved.overlayOpacity);
+  }
   if (
     typeof saved.maxCloud === "number" &&
     Number.isFinite(saved.maxCloud) &&
@@ -211,7 +228,6 @@ export function stripDates(state) {
   );
 }
 
-/** Dates double-clicked out of the scrubber for the ACTIVE layer. */
 /**
  * Disabled dates are keyed per DATA SOURCE (mission): all Sentinel-2
  * layers share one tick state, radar has its own (user 2026-10-14).
@@ -295,6 +311,7 @@ export function serializeState(state) {
   if (!state.layer) params.set("layer", "off"); // disabled layer travels as "off"
   params.set("hideCloudy", state.hideCloudy ? "1" : "0");
   params.set("maxCloud", String(state.maxCloud));
+  params.set("opacity", String(state.overlayOpacity));
   params.set("properties", state.showProperties ? "1" : "0");
   params.set("rio", state.rioLine ? "1" : "0");
   params.set("d3", state.show3d ? "1" : "0");
@@ -339,6 +356,8 @@ export function parseState(search) {
 
   const maxCloud = Number(params.get("maxCloud") ?? "20");
   if (Number.isNaN(maxCloud)) return null;
+  const opacity = Number(params.get("opacity") ?? "0.85");
+  if (Number.isNaN(opacity)) return null;
 
   const on = new Set(
     (params.get("pois") ?? "facilities,inspection").split(",").filter(Boolean)
@@ -348,6 +367,7 @@ export function parseState(search) {
     date: params.get("date"),
     hideCloudy: params.get("hideCloudy") === "1",
     maxCloud,
+    opacity: Math.min(Math.max(opacity, 0), 1),
     properties: params.get("properties") !== "0",
     rioLine: params.get("rio") !== "0",
     show3d: params.get("d3") === "1",
@@ -376,6 +396,7 @@ export const MESSAGES = {
     pois_inspection: "Puntos de inspección",
     properties: "Propiedades",
     properties_label: "Perímetro de propiedades",
+    opacity: "Opacidad",
     rio_line: "Línea Río General (inicio–fin)",
     works_start: "Inicio de obras",
     about: "Acerca de",
@@ -470,6 +491,7 @@ export const MESSAGES = {
     pois_inspection: "Inspection points",
     properties: "Properties",
     properties_label: "Property perimeter",
+    opacity: "Opacity",
     rio_line: "Río General line (start–end)",
     works_start: "Works start",
     about: "About",

@@ -27,6 +27,7 @@ import {
   setLayer,
   setLang,
   setShowProperties,
+  setOverlayOpacity,
   tileUrl,
   URL_KEYS,
   togglePoiGroup,
@@ -132,6 +133,7 @@ describe("tile URLs and URL state (I.5)", () => {
       date: "2026-07-10",
       hideCloudy: true,
       maxCloud: 15,
+      opacity: 0.85,
       properties: true,
       rioLine: true,
       show3d: false,
@@ -377,7 +379,7 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
     // settings payload never carries transient view state (dates, viewport)
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "disabledDates", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "show3d", "showProperties"],
+      ["basemap", "disabledDates", "hideCloudy", "maxCloud", "overlayOpacity", "poiGroups", "rioLine", "show3d", "showProperties"],
     );
   });
 });
@@ -561,5 +563,35 @@ describe("stepDate (arrow-key stepping over the scrubber dates)", () => {
     expect(stepDate(setDate(base, null), -1)).toBe("2026-07-10");
     // nothing loaded -> nothing to step to
     expect(stepDate(makeState(config), 1)).toBeNull();
+  });
+});
+
+describe("overlay opacity (map layer transparency)", () => {
+  const config = {
+    slug: "x",
+    layers: ["rgb"],
+    timeline: { start: "2026-01-01", works_start: "2026-06-01" },
+  };
+
+  it("defaults to the current painted opacity and clamps input", () => {
+    const state = makeState(config);
+    expect(state.overlayOpacity).toBeCloseTo(0.85, 5);
+    expect(setOverlayOpacity(state, 0.4).overlayOpacity).toBeCloseTo(0.4, 5);
+    expect(setOverlayOpacity(state, -3).overlayOpacity).toBe(0);
+    expect(setOverlayOpacity(state, 7).overlayOpacity).toBe(1);
+    expect(setOverlayOpacity(state, NaN).overlayOpacity).toBeCloseTo(0.85, 5);
+  });
+
+  it("travels through the share URL and the stored settings", () => {
+    const state = setOverlayOpacity(makeState(config), 0.4);
+    const parsed = parseState(serializeState(state));
+    expect(parsed.opacity).toBeCloseTo(0.4, 5);
+    // old URLs without the param keep the default (no NaN, no null state)
+    expect(parseState("layer=rgb&date=2026-01-01").opacity).toBeCloseTo(0.85, 5);
+    const restored = restoreSettings(makeState(config), settingsFromState(state));
+    expect(restored.overlayOpacity).toBeCloseTo(0.4, 5);
+    // type-strict: garbage falls back to the default
+    const dirty = restoreSettings(makeState(config), { overlayOpacity: "loud" });
+    expect(dirty.overlayOpacity).toBeCloseTo(0.85, 5);
   });
 });

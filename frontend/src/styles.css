@@ -879,3 +879,21 @@ dialog form button {
 #cloud-strip span.current {
   box-shadow: 0 0 0 1.5px #0f172a;
 }
+
+/* Overlay opacity slider (layer section) */
+#opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.35rem;
+  font-size: 0.74rem;
+}
+#opacity-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--green-700);
+}
+#opacity-value {
+  min-width: 2.5rem;
+  text-align: right;
+  font-size: 0.68rem;
+}

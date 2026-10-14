@@ -1269,3 +1269,35 @@ test("arrow keys step the date slider from anywhere", async ({ page }) => {
   await page.waitForTimeout(150);
   expect(await page.locator("#date-value").textContent()).toBe(before);
 });
+
+test("opacity slider in the layer section drives the overlay paint", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible();
+  const opacityRow = page.locator("#opacity-row");
+  // visible with a layer active, showing the shipped default (85%)
+  await expect(opacityRow).toBeVisible();
+  await expect(page.locator("#opacity-value")).toHaveText("85%");
+
+  // moving the slider updates the readout AND the map's raster-opacity
+  await page.locator("#overlay-opacity").fill("45");
+  await expect(page.locator("#opacity-value")).toHaveText("45%");
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.__mirarsetenaMap?.getPaintProperty("overlay", "raster-opacity"),
+      ),
+    )
+    .toBeCloseTo(0.45, 5);
+
+  // the setting travels through the share URL
+  await page.reload();
+  await expect(page.locator("#opacity-value")).toHaveText("45%", {
+    timeout: 30_000,
+  });
+
+  // no layer -> nothing to be transparent: the row hides
+  await page.locator('#layer-buttons [data-layer="rgb"]').click(); // disable
+  await expect(opacityRow).toBeHidden();
+});
