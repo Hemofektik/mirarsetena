@@ -29,6 +29,10 @@ export function makeState(config) {
     cloudByDate: {},
     date: null,
     worksStart: config.timeline?.works_start ?? null,
+    // Dates the user double-clicked out of the scrubber, per layer:
+    // { insar: ["2026-09-09"], ... } — skipped by the slider, still shown
+    // in the cloud strip so they can be toggled back.
+    disabledDates: {},
     hideCloudy: false,
     maxCloud: 20,
     showProperties: true, // two 1991 plan parcels drawn as outlines
@@ -48,13 +52,17 @@ export function setDatesLoading(state, loading) {
 export function setLayer(state, layer, dates) {
   const list = dates ?? [];
   const remembered = state.date;
-  const stillValid = list.some((entry) => entry.date === remembered);
+  // Disabled dates (double-clicked out of the scrubber, per layer) are
+  // never picked, not even as the remembered/fallback date.
+  const off = state.disabledDates?.[layer] ?? [];
+  const pool = list.filter((entry) => !off.includes(entry.date));
+  const stillValid = pool.some((entry) => entry.date === remembered);
   // The slider opens on the NEWEST date the user can actually pick:
   // newest of the cloud-filtered list, else newest overall (API is ascending).
   const visible = state.hideCloudy
-    ? list.filter((entry) => entry.cloud == null || entry.cloud <= state.maxCloud)
-    : list;
-  const fallback = (visible.length ? visible : list).at(-1)?.date ?? null;
+    ? pool.filter((entry) => entry.cloud == null || entry.cloud <= state.maxCloud)
+    : pool;
+  const fallback = (visible.length ? visible : pool).at(-1)?.date ?? null;
   return {
     ...state,
     layer,
@@ -131,6 +139,12 @@ export function settingsFromState(state) {
     showProperties: Boolean(state.showProperties),
     rioLine: Boolean(state.rioLine),
     show3d: Boolean(state.show3d),
+    disabledDates: Object.fromEntries(
+      Object.entries(state.disabledDates ?? {}).map(([layer, list]) => [
+        layer,
+        [...list],
+      ])
+    ),
   };
 }
 
@@ -162,6 +176,20 @@ export function restoreSettings(state, saved) {
     }
     next = { ...next, poiGroups: groups };
   }
+  if (
+    saved.disabledDates &&
+    typeof saved.disabledDates === "object" &&
+    !Array.isArray(saved.disabledDates)
+  ) {
+    // per-layer arrays of date strings; anything else in the map is dropped
+    const map = {};
+    for (const [layer, list] of Object.entries(saved.disabledDates)) {
+      if (Array.isArray(list) && list.every((d) => typeof d === "string")) {
+        map[layer] = [...list];
+      }
+    }
+    next = { ...next, disabledDates: map };
+  }
   return next;
 }
 
@@ -169,13 +197,48 @@ export function setViewport(state, bbox, zoom) {
   return { ...state, bbox: bbox ?? null, zoom: zoom ?? null };
 }
 
-export function visibleDates(state) {
+export function stripDates(state) {
+  // What the cloud strip draws: cloud filter only — disabled dates stay
+  // VISIBLE here so a double-click can toggle them back on.
   if (!state.hideCloudy) return state.dates;
   // Cloudless dates (Sentinel-1 radar, missing scores) are NOT cloudy —
   // hiding them would empty the whole radar scrubber.
   return state.dates.filter(
     (entry) => entry.cloud == null || entry.cloud <= state.maxCloud
   );
+}
+
+/** Dates double-clicked out of the scrubber for the ACTIVE layer. */
+export function disabledDatesFor(state) {
+  return state.disabledDates?.[state.layer] ?? [];
+}
+
+export function visibleDates(state) {
+  // What the SLIDER scrubs: the strip list minus the user-disabled dates.
+  const off = disabledDatesFor(state);
+  const shown = stripDates(state);
+  return off.length
+    ? shown.filter((entry) => !off.includes(entry.date))
+    : shown;
+}
+
+/** Double-click toggle: exclude a date from the scrubber (or bring it back). */
+export function toggleDisabledDate(state, date) {
+  const layer = state.layer;
+  if (!layer) return state;
+  const current = state.disabledDates?.[layer] ?? [];
+  const nextList = current.includes(date)
+    ? current.filter((d) => d !== date)
+    : [...current, date];
+  const next = {
+    ...state,
+    disabledDates: { ...state.disabledDates, [layer]: nextList },
+  };
+  if (next.date !== date) return next;
+  // The selected date just left the scrubber: move to the newest remaining
+  // date (or no selection when nothing is left — the honest empty state).
+  const remaining = visibleDates(next);
+  return { ...next, date: remaining.length ? remaining.at(-1).date : null };
 }
 
 /**

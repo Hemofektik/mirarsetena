@@ -1120,3 +1120,43 @@ test("clicking the date slider track jumps straight to that date", async ({
   await expect(page.locator("#date-end")).toHaveValue(String(dates.length - 1));
   await expect(page.locator("#date-value")).toHaveText(dates.at(-1));
 });
+
+test("double-clicking a cloud-strip tick disables that date for scrubbing", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible();
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  const dotCount = await page.locator("#cloud-strip span").count();
+  const maxBefore = await page.locator("#date-end").getAttribute("max");
+
+  // double-click a MIDDLE tick (thumb starts at the newest date at the right)
+  const mid = page.locator("#cloud-strip span").nth(Math.floor(dotCount / 2));
+  const midDate = await mid.getAttribute("data-date");
+  expect(midDate).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  await mid.dblclick();
+
+  // the tick stays visible but marked disabled; the slider skips it
+  await expect(
+    page.locator(`#cloud-strip span[data-date="${midDate}"]`),
+  ).toHaveClass(/disabled/);
+  expect(await page.locator("#cloud-strip span").count()).toBe(dotCount);
+  expect(await page.locator("#date-end").getAttribute("max")).toBe(
+    String(Number(maxBefore) - 1),
+  );
+
+  // disabled dates are remembered between visits (settings)
+  await page.reload();
+  await expect(
+    page.locator(`#cloud-strip span[data-date="${midDate}"]`),
+  ).toHaveClass(/disabled/, { timeout: 30_000 });
+
+  // double-click again re-enables: max restored, class gone
+  await page.locator(`#cloud-strip span[data-date="${midDate}"]`).dblclick();
+  await expect(
+    page.locator(`#cloud-strip span[data-date="${midDate}"]`),
+  ).not.toHaveClass(/disabled/);
+  expect(await page.locator("#date-end").getAttribute("max")).toBe(maxBefore);
+});

@@ -287,8 +287,11 @@ function renderScrubber() {
 
 
   const loading = state.datesLoading;
-  const dates = S.visibleDates(state);
-  const empty = !loading && dates.length === 0;
+  const dates = S.visibleDates(state); // slider list: skips disabled dates
+  const shown = S.stripDates(state); // strip list: keeps them (re-enable)
+  // "empty" only when NOTHING is strippable: a fully-disabled list keeps
+  // the crossed-out strip visible so double-clicks can bring dates back
+  const empty = !loading && shown.length === 0;
   document.getElementById("date-loading").hidden = !loading;
   document.getElementById("date-empty").hidden = !empty;
   document.getElementById("date-controls").hidden = loading || empty;
@@ -310,13 +313,30 @@ function renderScrubber() {
     cloud == null ? "" : `${S.t(state.lang, "cloud")}: ${cloud}%`;
 
   const strip = document.getElementById("cloud-strip");
-  strip.innerHTML = "";
-  for (const entry of dates) {
-    const dot = document.createElement("span");
-    dot.dataset.cloud = cloudClass(entry.cloud);
+  const disabled = new Set(S.disabledDatesFor(state));
+  // Rebuild the strip ONLY when its content changes. Stable nodes are what
+  // makes a double-click possible at all: the single click re-renders the
+  // panel, and if the dots were recreated in between, the browser retargets
+  // the dblclick to the common ancestor and the toggle never fires.
+  const signature = [
+    shown.map((entry) => `${entry.date}:${entry.cloud}`).join(","),
+    [...disabled].sort().join(","),
+  ].join("|");
+  if (strip.dataset.signature !== signature) {
+    strip.dataset.signature = signature;
+    strip.innerHTML = "";
+    for (const entry of shown) {
+      const dot = document.createElement("span");
+      dot.dataset.cloud = cloudClass(entry.cloud);
+      dot.dataset.date = entry.date;
+      if (disabled.has(entry.date)) dot.classList.add("disabled");
 
-    dot.addEventListener("click", () => applyDate(entry.date));
-    strip.appendChild(dot);
+      dot.addEventListener("click", () => {
+        if (disabled.has(entry.date)) return; // only a double-click toggles
+        applyDate(entry.date);
+      });
+      strip.appendChild(dot);
+    }
   }
   document.getElementById("works-marker").textContent =
     `${S.t(state.lang, "works_start")}: ${config.timeline.works_start}`;
@@ -750,6 +770,17 @@ function wireUi() {
     const entry = dates[Number(event.target.value)];
     if (entry) applyDate(entry.date);
   });
+  // Delegated: the single click above re-renders the strip, REPLACING the
+  // dot nodes between the two clicks — a per-dot dblclick listener would
+  // never fire (the browser retargets to the common ancestor).
+  document
+    .getElementById("cloud-strip")
+    .addEventListener("dblclick", (event) => {
+      const dot = event.target.closest("span[data-date]");
+      if (!dot) return;
+      state = S.toggleDisabledDate(state, dot.dataset.date);
+      renderAll();
+    });
   document.getElementById("hide-cloudy").addEventListener("change", (event) => {
     state = S.setHideCloudy(
       state,
@@ -878,7 +909,10 @@ async function boot() {
   wireUi();
 
   if (state.layer) await fetchDates(state.layer);
-  if (restored?.date && state.dates.some((d) => d.date === restored.date)) {
+  if (
+    restored?.date &&
+    S.visibleDates(state).some((d) => d.date === restored.date)
+  ) {
     state = S.setDate(state, restored.date);
   }
   poisData = await getJSON(`/p/${state.slug}/pois.geojson`);

@@ -847,3 +847,26 @@ dialog form button {
   font-size: 0.64rem;
   margin-top: 0.3rem;
 }
+
+/* Dates double-clicked out of the scrubber: shown crossed-out so they can
+   be toggled back on (INSAR scrubber UX, user 2026-10-14) */
+#cloud-strip span.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  position: relative;
+}
+#cloud-strip span.disabled::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    #334155 calc(50% - 1px),
+    #334155 calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+#cloud-strip span.disabled:hover {
+  filter: none;
+}

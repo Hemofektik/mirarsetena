@@ -17,7 +17,11 @@ import {
   settingsFromState,
   setBasemap,
   setDatesLoading,
+  setDate,
+  disabledDatesFor,
+  stripDates,
   t,
+  toggleDisabledDate,
   setHideCloudy,
   setLayer,
   setLang,
@@ -370,9 +374,9 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(restored.maxCloud).toBe(30);
     expect(restored.showProperties).toBe(false);
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
-    // settings payload never carries transient view state
+    // settings payload never carries transient view state (dates, viewport)
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "show3d", "showProperties"],
+      ["basemap", "disabledDates", "hideCloudy", "maxCloud", "poiGroups", "rioLine", "show3d", "showProperties"],
     );
   });
 });
@@ -395,5 +399,80 @@ describe("showCloudControls (cloud UI only where cloud data exists)", () => {
     expect(
       showCloudControls(setLayer(makeState(config), "insar", DATES_S1)),
     ).toBe(false);
+  });
+});
+
+describe("disabled dates (double-click a cloud-strip tick)", () => {
+  const config = {
+    slug: "x",
+    layers: ["rgb", "insar"],
+    timeline: { start: "2026-01-01", works_start: "2026-06-01" },
+  };
+
+  it("toggling disables/enables a date for the CURRENT layer only", () => {
+    let state = setLayer(makeState(config), "rgb", DATES_S2);
+    state = toggleDisabledDate(state, "2026-07-08");
+    expect(disabledDatesFor(state)).toEqual(["2026-07-08"]);
+    // the same date on another layer stays enabled (cloud scores are optical)
+    const radar = setLayer(state, "insar", DATES_S1);
+    expect(disabledDatesFor(radar)).toEqual([]);
+    // toggling again re-enables
+    expect(
+      disabledDatesFor(toggleDisabledDate(state, "2026-07-08")),
+    ).toEqual([]);
+  });
+
+  it("the scrubber skips disabled dates but the strip keeps showing them", () => {
+    const state = toggleDisabledDate(
+      setLayer(makeState(config), "rgb", DATES_S2),
+      "2026-07-08",
+    );
+    // slider list: the disabled date is skipped
+    expect(visibleDates(state).map((d) => d.date)).toEqual([
+      "2026-07-03",
+      "2026-07-10",
+    ]);
+    // strip list: still present (double-click must be able to re-enable)
+    expect(stripDates(state).map((d) => d.date)).toEqual([
+      "2026-07-03",
+      "2026-07-08",
+      "2026-07-10",
+    ]);
+  });
+
+  it("disabling the selected date moves the selection off it", () => {
+    const base = setLayer(makeState(config), "rgb", DATES_S2);
+    const selected = setDate(base, "2026-07-08");
+    const next = toggleDisabledDate(selected, "2026-07-08");
+    expect(next.date).toBe("2026-07-10"); // newest remaining
+    // disabling the LAST remaining date leaves no selection, honestly
+    const only = toggleDisabledDate(
+      setDate(
+        toggleDisabledDate(selected, "2026-07-08"),
+        "2026-07-10",
+      ),
+      "2026-07-10",
+    );
+    const last = toggleDisabledDate(only, "2026-07-03");
+    expect(visibleDates(last)).toEqual([]);
+    expect(last.date).toBeNull();
+  });
+
+  it("disabled dates survive the settings round-trip (and reject garbage)", () => {
+    const state = toggleDisabledDate(
+      setLayer(makeState(config), "rgb", DATES_S2),
+      "2026-07-08",
+    );
+    const saved = settingsFromState(state);
+    const restored = restoreSettings(
+      setLayer(makeState(config), "rgb", DATES_S2),
+      JSON.parse(JSON.stringify(saved)),
+    );
+    expect(disabledDatesFor(restored)).toEqual(["2026-07-08"]);
+    // type-strict merge: a bad shape is ignored, not trusted
+    const dirty = restoreSettings(makeState(config), {
+      disabledDates: { rgb: "2026-07-08" },
+    });
+    expect(dirty.disabledDates).toEqual({});
   });
 });
