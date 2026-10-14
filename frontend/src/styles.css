@@ -870,3 +870,9 @@ dialog form button {
 #cloud-strip span.disabled:hover {
   filter: none;
 }
+
+/* Selected date's tick: dark ring so the scrub position is readable at a
+   glance (box-shadow keeps the dot's size; follows the corner radius) */
+#cloud-strip span.current {
+  box-shadow: 0 0 0 1.5px #0f172a;
+}

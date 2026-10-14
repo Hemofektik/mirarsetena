@@ -1160,3 +1160,35 @@ test("double-clicking a cloud-strip tick disables that date for scrubbing", asyn
   ).not.toHaveClass(/disabled/);
   expect(await page.locator("#date-end").getAttribute("max")).toBe(maxBefore);
 });
+
+test("the selected date's cloud-strip tick carries the current highlight", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  // boot selects the newest date -> its tick is highlighted
+  const dots = await page.locator("#cloud-strip span").count();
+  const last = page.locator("#cloud-strip span").nth(dots - 1);
+  await expect(last).toHaveClass(/current/);
+
+  // clicking another tick moves the highlight with the selection
+  const mid = page.locator("#cloud-strip span").nth(Math.floor(dots / 2));
+  const midDate = await mid.getAttribute("data-date");
+  await mid.click();
+  await expect(mid).toHaveClass(/current/);
+  await expect(mid).not.toHaveClass(/disabled/);
+  await expect(last).not.toHaveClass(/current/);
+  expect(await page.locator("#date-value").textContent()).toBe(midDate);
+
+  // scrubbing the slider moves it too (track click at the far left)
+  const track = await page
+    .locator("#date-slider .range-track")
+    .boundingBox();
+  await page.mouse.click(track.x + 1, track.y + track.height / 2);
+  await expect(
+    page.locator("#cloud-strip span").first(),
+  ).toHaveClass(/current/);
+  await expect(mid).not.toHaveClass(/current/);
+});

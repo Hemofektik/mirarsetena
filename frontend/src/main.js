@@ -338,6 +338,12 @@ function renderScrubber() {
       strip.appendChild(dot);
     }
   }
+  // Selected tick highlight: toggled on the EXISTING nodes every render —
+  // folding it into the signature above would rebuild the strip on every
+  // scrub tick, replacing the nodes a double-click needs to land.
+  for (const dot of strip.children) {
+    dot.classList.toggle("current", dot.dataset.date === state.date);
+  }
   document.getElementById("works-marker").textContent =
     `${S.t(state.lang, "works_start")}: ${config.timeline.works_start}`;
 }
