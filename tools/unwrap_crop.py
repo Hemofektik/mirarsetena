@@ -30,29 +30,7 @@ ALTITUDE_M = 693000.0
 RANGE_LOOKS, AZIMUTH_LOOKS = 19, 7  # full->looks ratio for IW2 at this AOI
 
 
-def _radar_window(merged: Path, bbox: tuple[float, float, float, float],
-                  width: int, length: int) -> tuple[int, int, int, int]:
-    """(row0, row1, col0, col1) crop covering the WGS84 bbox, with margin."""
-    import rasterio
-
-    west, south, east, north = bbox
-    with rasterio.open(merged / "lat.rdr.full.vrt") as src:
-        lat = src.read(1)
-    with rasterio.open(merged / "lon.rdr.full.vrt") as src:
-        lon = src.read(1)
-    ri = (np.arange(length) * lat.shape[0] / length).astype(int).clip(0, lat.shape[0] - 1)
-    ci = (np.arange(width) * lat.shape[1] / width).astype(int).clip(0, lat.shape[1] - 1)
-    LAT = lat[np.ix_(ri, ci)]
-    LON = lon[np.ix_(ri, ci)]
-    target = (LAT >= south) & (LAT <= north) & (LON >= west) & (LON <= east)
-    if not target.any():
-        raise SystemExit("AOI bbox does not intersect the swath radar grid")
-    rows, cols = np.where(target)
-    m = 150  # margin for phase continuity + context
-    return (
-        max(0, rows.min() - m), min(length, rows.max() + m),
-        max(0, cols.min() - m), min(width, cols.max() + m),
-    )
+from mirarsetena.coherence.isce_products import radar_window
 
 
 def unwrap_crop(merged: Path, bbox, workdir: Path) -> dict:
@@ -64,7 +42,7 @@ def unwrap_crop(merged: Path, bbox, workdir: Path) -> dict:
 
     flat_img = read_isce_image(merged / "filt_topophase.flat")  # (L, W) cfloat
     length, width = flat_img.shape
-    r0, r1, c0, c1 = _radar_window(merged, bbox, width, length)
+    r0, r1, c0, c1 = radar_window(merged, bbox, width, length)
     ch, cw = r1 - r0, c1 - c0
 
     flat = flat_img[r0:r1, c0:c1].copy()

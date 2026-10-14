@@ -28,7 +28,11 @@ import numpy as np
 import rasterio
 
 from mirarsetena.coherence.crop_chain import build_crop_product, reference_mask_outside
-from mirarsetena.coherence.isce_products import read_isce_image, read_snaphu_unw
+from mirarsetena.coherence.isce_products import (
+    radar_window,
+    read_isce_image,
+    read_snaphu_unw,
+)
 from mirarsetena.pipeline.indices import NODATA, layer_key
 from mirarsetena.pipeline.insar import write_insar_series
 
@@ -44,32 +48,6 @@ def load_pois(slug: str, config_dir: Path | None = None) -> list[dict]:
 
     config_dir = Path(config_dir) if config_dir else Path("config/projects")
     return ProjectRegistry(config_dir).load_pois(slug)
-
-
-def _radar_window(merged: Path, bbox: tuple[float, float, float, float],
-                  width: int, length: int) -> tuple[int, int, int, int]:
-    """(row0, row1, col0, col1) crop covering the WGS84 bbox, with margin.
-
-    Same geometry as tools/unwrap_crop (the unwrap was run on this window).
-    """
-    west, south, east, north = bbox
-    with rasterio.open(merged / "lat.rdr.full.vrt") as src:
-        lat = src.read(1)
-    with rasterio.open(merged / "lon.rdr.full.vrt") as src:
-        lon = src.read(1)
-    ri = (np.arange(length) * lat.shape[0] / length).astype(int).clip(0, lat.shape[0] - 1)
-    ci = (np.arange(width) * lat.shape[1] / width).astype(int).clip(0, lat.shape[1] - 1)
-    LAT = lat[np.ix_(ri, ci)]
-    LON = lon[np.ix_(ri, ci)]
-    target = (LAT >= south) & (LAT <= north) & (LON >= west) & (LON <= east)
-    if not target.any():
-        raise SystemExit("AOI bbox does not intersect the swath radar grid")
-    rows, cols = np.where(target)
-    m = 150
-    return (
-        max(0, rows.min() - m), min(length, rows.max() + m),
-        max(0, cols.min() - m), min(width, cols.max() + m),
-    )
 
 
 def build_and_store(
@@ -91,7 +69,7 @@ def build_and_store(
 
     flat = read_isce_image(merged / "filt_topophase.flat")
     length, width = flat.shape
-    r0, r1, c0, c1 = _radar_window(merged, bbox, width, length)
+    r0, r1, c0, c1 = radar_window(merged, bbox, width, length)
     ch, cw = r1 - r0, c1 - c0
 
     phase, amp = read_snaphu_unw(unw, (ch, cw))

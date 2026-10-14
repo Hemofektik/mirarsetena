@@ -34,14 +34,16 @@ REPO = Path(__file__).resolve().parents[1]
 # topsApp leftovers that the product build never reads (the SAFEs are
 # 14 GB zips + 14 GB unpacks; fine_* coreg stacks are the next biggest).
 # merged/ (flat, phsig, lat/lon rdr) and unwrap2/ (crop.unw) are the
-# rebuild inputs and are NEVER purged.
+# rebuild inputs and are NEVER purged — and neither is geom_reference:
+# merged/lat.rdr.full.vrt STITCHES ../geom_reference/*.vrt (purging it
+# broke the 2026-10-03 pair's re-derivation, measured 2026-10-14).
 HEAVY_PAIR_DIRS = (
     "coarse_coreg", "coarse_interferogram", "coarse_offsets",
     "fine_coreg", "fine_interferogram", "fine_offsets",
-    "ESD", "geom_reference", "reference", "secondary", "PICKLE",
+    "ESD", "reference", "secondary", "PICKLE",
     "unwrap",  # topsApp's full-swath attempt; the chain uses unwrap2/
 )
-KEEP_PAIR_DIRS = ("merged", "unwrap2")
+KEEP_PAIR_DIRS = ("merged", "unwrap2", "geom_reference")
 
 
 def resolve_pairs(search_fn, bbox, start, end):

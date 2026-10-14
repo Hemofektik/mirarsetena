@@ -162,3 +162,79 @@ def test_real_topophase_cor_sidecar_declares_bil_two_bands():
     assert layout.scheme == "BIL"
     assert layout.bands == 2
     assert (layout.width, layout.length) == (1286, 1748)
+
+def _write_geo_vrts(merged, lat, lon):
+    """Write the two ISCE geolocation rasters as GDAL-readable files with
+    the production names (GDAL identifies the driver by content)."""
+    from rasterio.io import MemoryFile
+
+    profile = {
+        "driver": "GTiff", "dtype": "float32", "count": 1,
+        "height": lat.shape[0], "width": lat.shape[1],
+    }
+    for name, arr in (("lat.rdr.full.vrt", lat), ("lon.rdr.full.vrt", lon)):
+        with MemoryFile() as mem:
+            with mem.open(**profile) as dst:
+                dst.write(arr.astype(np.float32), 1)
+            (merged / name).write_bytes(mem.read())
+
+
+def _ascending_swath(length=60, width=80):
+    """ASC-pass-shaped geolocation grid: lat AND lon increase with the
+    indices (the 2026-07-23 ASC geometry the 08-04 batch pair used)."""
+    lat = 9.2 + 0.005 * np.arange(length)[:, None] * np.ones((1, width))
+    lon = -83.9 + 0.005 * np.arange(width)[None, :] * np.ones((length, 1))
+    return lat, lon
+
+
+def test_radar_window_never_touches_the_grid_edges(tmp_path):
+    # Measured live failure (2026-10-14, 2026-08-04 pair): a window whose
+    # r0 clipped to 0 fed a geolocation array whose FIRST ROW was included
+    # — GDAL's geoloc warp then returned ZERO coverage (all-NODATA
+    # product); dropping that one row restored 100%. The shared window
+    # keeps a >=1 inset on every side.
+    from mirarsetena.coherence.isce_products import radar_window
+
+    lat, lon = _ascending_swath()
+    merged = tmp_path / "merged"
+    merged.mkdir()
+    _write_geo_vrts(merged, lat, lon)
+    length, width = lat.shape
+
+    # bbox in the NORTH of the swath: rows.min() - margin clips to 0
+    r0, r1, c0, c1 = radar_window(
+        merged, (-83.675, 9.378, -83.660, 9.397), width, length
+    )
+    assert 1 <= r0 < r1 <= length - 1
+    assert 1 <= c0 < c1 <= width - 1
+    # the bbox itself stays inside the window
+    assert r0 <= 35 and 44 <= r1  # rows of lat 9.378..9.397
+    assert c0 <= 43 and 52 <= c1  # cols of lon -83.675..-83.660
+
+
+def test_radar_window_then_geocode_covers_the_whole_bbox(tmp_path):
+    # End-to-end pin of the inset: the windowed crop of an ASC swath
+    # geocodes with FULL coverage (the pre-inset window measured 0/35404).
+    from rasterio.io import MemoryFile
+
+    from mirarsetena.coherence.geocode import geocode_radar_band
+    from mirarsetena.coherence.isce_products import radar_window
+
+    lat, lon = _ascending_swath()
+    merged = tmp_path / "merged"
+    merged.mkdir()
+    _write_geo_vrts(merged, lat, lon)
+    length, width = lat.shape
+    bbox = (-83.675, 9.378, -83.660, 9.397)
+    r0, r1, c0, c1 = radar_window(merged, bbox, width, length)
+
+    tb = geocode_radar_band(
+        np.ones((r1 - r0, c1 - c0), dtype=np.float32),
+        lat[r0:r1, c0:c1], lon[r0:r1, c0:c1],
+        bbox, resolution=0.0005,
+    )
+    with MemoryFile(tb) as mem, mem.open() as src:
+        g = src.read(1)
+    from mirarsetena.pipeline.indices import NODATA
+
+    assert (g != NODATA).sum() == g.size  # every pixel covered

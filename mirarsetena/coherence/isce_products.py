@@ -127,3 +127,51 @@ def read_snaphu_unw(
         )
     raw = np.fromfile(unw_path, dtype=np.float32).reshape(rows, 2, cols)
     return raw[:, 1, :].copy(), raw[:, 0, :].copy()  # (phase, amplitude)
+
+def radar_window(
+    merged: Path,
+    bbox: tuple[float, float, float, float],
+    width: int,
+    length: int,
+    *,
+    margin: int = 150,
+) -> tuple[int, int, int, int]:
+    """(row0, row1, col0, col1) crop covering the WGS84 bbox, with margin.
+
+    Shared by tools/unwrap_crop and tools/insar_product — the unwrap is
+    written at this window's shape, so the product build MUST recompute
+    the identical window (one implementation, no drift).
+
+    Every side keeps an inset >= 1: a window touching the geolocation
+    grid's edge made GDAL's geoloc-array warp return ZERO coverage on the
+    2026-08-04 ASC pair (all-NODATA product despite a healthy 38%-coherent
+    input); dropping the single edge row restored 100%. The inset costs
+    one radar row/col (metres) inside the 150 px margin.
+    """
+    import rasterio
+
+    west, south, east, north = bbox
+    with rasterio.open(merged / "lat.rdr.full.vrt") as src:
+        lat = src.read(1)
+    with rasterio.open(merged / "lon.rdr.full.vrt") as src:
+        lon = src.read(1)
+    # the vrt grids are full-swath; subsample them onto the processing
+    # grid (flat's shape) so indices line up with filt_topophase.flat
+    ri = (np.arange(length) * lat.shape[0] / length).astype(int).clip(
+        0, lat.shape[0] - 1
+    )
+    ci = (np.arange(width) * lon.shape[1] / width).astype(int).clip(
+        0, lon.shape[1] - 1
+    )
+    LAT = lat[np.ix_(ri, ci)]
+    LON = lon[np.ix_(ri, ci)]
+    target = (LAT >= south) & (LAT <= north) & (LON >= west) & (LON <= east)
+    if not target.any():
+        raise SystemExit("AOI bbox does not intersect the swath radar grid")
+    rows, cols = np.where(target)
+    return (
+        max(1, int(rows.min()) - margin),
+        min(length - 1, int(rows.max()) + margin),
+        max(1, int(cols.min()) - margin),
+        min(width - 1, int(cols.max()) + margin),
+    )

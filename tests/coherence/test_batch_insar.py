@@ -60,11 +60,14 @@ def test_pair_is_done_requires_product_and_series(tmp_path):
 
 
 def test_purge_candidates_keep_the_rebuild_inputs(tmp_path):
-    keep = ["merged", "unwrap2"]
+    # merged/lat.rdr.full.vrt stitches ../geom_reference/*.vrt — purging
+    # geom_reference broke the 10-03 pair's re-derivation (measured
+    # 2026-10-14), so it is a rebuild input like merged/ and unwrap2/.
+    keep = ["merged", "unwrap2", "geom_reference"]
     heavy = [
         "fine_coreg", "fine_offsets", "fine_interferogram",
         "coarse_coreg", "coarse_offsets", "coarse_interferogram",
-        "ESD", "geom_reference", "reference", "secondary", "PICKLE", "unwrap",
+        "ESD", "reference", "secondary", "PICKLE", "unwrap",
     ]
     for name in keep + heavy:
         (tmp_path / name).mkdir()
