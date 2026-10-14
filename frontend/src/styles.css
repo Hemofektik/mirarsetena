@@ -243,7 +243,11 @@ section h2 {
   height: 16px;
   margin: 0;
   background: transparent;
-  pointer-events: none;
+  /* the whole track is interactive: a click anywhere jumps the thumb to
+     that date (native range behaviour); only the thumb was clickable when
+     this was pointer-events: none */
+  pointer-events: auto;
+  cursor: pointer;
   -webkit-appearance: none;
   appearance: none;
   accent-color: var(--green-700);

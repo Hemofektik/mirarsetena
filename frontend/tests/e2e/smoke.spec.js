@@ -1087,3 +1087,36 @@ test("cloud filter controls hide on the radar/insar layer", async ({ page }) => 
   await expect(page.locator("#hide-cloudy-row")).toBeVisible();
   await expect(page.locator("#max-cloud-row")).toBeVisible();
 });
+
+test("clicking the date slider track jumps straight to that date", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible();
+  const newest = await page.locator("#date-value").textContent();
+  expect(newest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+  // slider indices map to the catalog's visible dates (no cloud filter on
+  // a fresh page): index 0 = first date, max = last date
+  const dates = await page.evaluate(async (slug) => {
+    const response = await fetch(`/p/${slug}/api/dates?layer=rgb`);
+    return (await response.json()).dates.map((entry) => entry.date);
+  }, SLUG);
+  expect(dates.length).toBeGreaterThan(2);
+  expect(dates[0]).not.toBe(newest);
+
+  // click the far LEFT of the track (thumb starts at the newest date, so
+  // the left end is clear) -> jump to the earliest date
+  const track = await page
+    .locator("#date-slider .range-track")
+    .boundingBox();
+  expect(track).not.toBeNull();
+  await page.mouse.click(track.x + 1, track.y + track.height / 2);
+  await expect(page.locator("#date-end")).toHaveValue("0");
+  await expect(page.locator("#date-value")).toHaveText(dates[0]);
+
+  // click back at the far RIGHT -> newest date again
+  await page.mouse.click(track.x + track.width - 1, track.y + track.height / 2);
+  await expect(page.locator("#date-end")).toHaveValue(String(dates.length - 1));
+  await expect(page.locator("#date-value")).toHaveText(dates.at(-1));
+});
