@@ -119,3 +119,29 @@ def test_swath_covering_uses_the_strip_not_sparse_nodes():
     assert swath_covering(pts, aoi) is True
     # a strip 0.4 deg west of the AOI does not cover it
     assert swath_covering(_slant_grid(-84.5, -84.0, 9.2, 10.9), aoi) is False
+
+
+def test_deploy_commands_target_the_live_cache_root(tmp_path):
+    # A wrong destination silently undid a deploy after a full pair build
+    # (2026-10-14): the docker cp path must be /app/data/cache/<key>.
+    from tools.batch_insar import deploy_commands
+
+    cmds = deploy_commands(
+        "2026-08-04", "cdp-rio-general", tmp_path, "mirarsetena-api-1"
+    )
+    tiles_rm = cmds[0]
+    assert tiles_rm[:4] == ["docker", "exec", "mirarsetena-api-1", "rm"]
+    assert "/tiles/insar/2026-08-04" in tiles_rm[-1]
+    copies = cmds[1:]
+    assert len(copies) == 2
+    for cmd in copies:
+        assert cmd[:2] == ["docker", "cp"]
+        src, dest = cmd[2], cmd[3]
+        assert src.startswith(str(tmp_path / "p/cdp-rio-general/layers/"))
+        assert dest.startswith("mirarsetena-api-1:/app/data/cache/p/")
+        # product and series both travel, and their names are distinct
+    names = sorted(cmd[2].rsplit("/", 1)[-1] for cmd in copies)
+    assert names == [
+        "sentinel-1-slc_2026-08-04_insar.tif",
+        "sentinel-1-slc_2026-08-04_insar_series.json",
+    ]

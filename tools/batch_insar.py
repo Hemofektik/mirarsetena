@@ -93,29 +93,39 @@ def _run(cmd: list[str], *, cwd: Path | None = None, label: str) -> None:
     print(f"    ok in {time.time() - t0:.0f}s", flush=True)
 
 
-def deploy(date: str, slug: str, e2e_root: Path, container: str) -> None:
-    """Move the built product+series into the LIVE store and drop that
-    date's stale tiles (the tile cache key carries no product identity)."""
+def deploy_commands(
+    date: str, slug: str, e2e_root: Path, container: str
+) -> list[list[str]]:
+    """docker argv list for one pair: clear that date's stale tiles, then
+    copy the built product + series into the LIVE store. Pure — pinned by
+    test because a wrong destination silently undid a whole pair's deploy
+    (2026-10-14: '/app/data/p/...' instead of '/app/data/cache/p/...')."""
     from mirarsetena.pipeline.indices import layer_key
     from mirarsetena.pipeline.insar import insar_series_key
 
     prefix = f"/app/data/cache/p/{slug}"
-    tiles = f"{prefix}/tiles/insar/{date}"
-    _run(
-        ["docker", "exec", container, "rm", "-rf", tiles],
-        label=f"clear tiles {date}",
-    )
+    out = [
+        ["docker", "exec", container, "rm", "-rf",
+         f"{prefix}/tiles/insar/{date}"],
+    ]
     for key in (
         layer_key(slug, "sentinel-1-slc", date, "insar"),
         insar_series_key(slug, date),
     ):
-        src = e2e_root / key
-        if not src.is_file():
-            raise SystemExit(f"built file missing: {src}")
-        _run(
-            ["docker", "cp", str(src), f"{container}:/app/data/{key}"],
-            label=f"deploy {Path(key).name}",
+        out.append(
+            ["docker", "cp", str(e2e_root / key),
+             # storage root is /app/data/cache — NOT /app/data (the path
+             # typo that failed the first 08-04 deploy)
+             f"{container}:/app/data/cache/{key}"]
         )
+    return out
+
+
+def deploy(date: str, slug: str, e2e_root: Path, container: str) -> None:
+    """Move the built product+series into the LIVE store and drop that
+    date's stale tiles (the tile cache key carries no product identity)."""
+    for cmd in deploy_commands(date, slug, e2e_root, container):
+        _run(cmd, label=f"deploy {cmd[-1].rsplit('/', 1)[-1]}")
     # host-side tiles are the SAME files (./data is bind-mounted), but the
     # stale e2e store copy must go too — its e2e renders read it directly
     host_tiles = e2e_root / f"p/{slug}/tiles/insar/{date}"
@@ -177,6 +187,13 @@ def main() -> int:
 
         if pair_is_done(live_store, slug, date):
             print("  already deployed (product+series) — skipping", flush=True)
+            continue
+        if pair_is_done(LocalStore(e2e_root), slug, date):
+            # built but the deploy failed (e.g. the 2026-10-14 path bug):
+            # reuse it instead of re-running an hour of topsApp
+            print("  built (e2e store), not deployed — deploying only",
+                  flush=True)
+            deploy(date, slug, e2e_root, args.container)
             continue
 
         _run(
