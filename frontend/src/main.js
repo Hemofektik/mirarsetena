@@ -7,6 +7,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 import * as S from "./state.js";
 import { buildPlanChart, chartSvg } from "./chart.js";
+import { composePng } from "./png-export.js";
 import { installPoiMarkers } from "./poi-markers.js";
 import { installTileLoaders, retireTileRequests } from "./tile-loaders.js";
 
@@ -847,9 +848,21 @@ function wireUi() {
   });
   document.getElementById("png-btn").addEventListener("click", () => {
     if (!map) return; // WebGL unavailable: there is no canvas to export
+    const canvas = map.getCanvas();
+    const rect = canvas.getBoundingClientRect();
+    // backing-store px per CSS px (devicePixelRatio); the marker plan is
+    // in CSS px and must be scaled to the exported bitmap
+    const scale = rect.width ? canvas.width / rect.width : 1;
+    const plan = poiMarkers?.exportState() ?? {
+      leaders: [],
+      labels: [],
+      dots: [],
+    };
     const link = document.createElement("a");
     link.download = `${state.slug}-${state.layer}-${state.date}.png`;
-    link.href = map.getCanvas().toDataURL("image/png");
+    // map bitmap + POI markers: the raw toDataURL() alone drops the DOM
+    // overlay (user 2026-10-14: "the PNG download is missing the POIs")
+    link.href = composePng(canvas, plan, scale);
     link.click();
   });
   document.getElementById("status-link").href = `/p/${state.slug}/status/page`;

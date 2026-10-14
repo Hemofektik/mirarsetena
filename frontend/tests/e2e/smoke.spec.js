@@ -1338,3 +1338,124 @@ test("insar legend shows which acquisition dates the delta spans", async ({
   expect(span.to).toBe(await page.locator("#date-value").textContent());
   expect(span.to).not.toBe(span.from);
 });
+
+test("PNG download includes the POI markers (dots, labels, leaders)", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+  // markers exist and are positioned (repaint ran after layout)
+  await expect(page.locator("#poi-markers .poi-dot")).toHaveCount(10, {
+    timeout: 30_000,
+  });
+  await page.waitForFunction(
+    () => {
+      const d = document.querySelector("#poi-markers .poi-dot");
+      return Boolean(d) && Boolean(d.style.transform);
+    },
+    null,
+    { timeout: 30_000 },
+  );
+  await page.waitForFunction(
+    () => {
+      const map = window.__mirarsetenaMap;
+      return Boolean(map) && map.loaded() && map.areTilesLoaded();
+    },
+    null,
+    { timeout: 60_000 },
+  );
+  await page.waitForTimeout(1200);
+
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.click("#png-btn"),
+  ]);
+  const path = await download.path();
+  expect(path).toBeTruthy();
+  const base64 = readFileSync(path).toString("base64");
+
+  const result = await page.evaluate(async (payload) => {
+    const image = new Image();
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+      image.src = `data:image/png;base64,${payload}`;
+    });
+    const expCanvas = document.createElement("canvas");
+    expCanvas.width = image.width;
+    expCanvas.height = image.height;
+    const ectx = expCanvas.getContext("2d");
+    ectx.drawImage(image, 0, 0);
+
+    const raw = window.__mirarsetenaMap.getCanvas();
+    const rawCanvas = document.createElement("canvas");
+    rawCanvas.width = raw.width;
+    rawCanvas.height = raw.height;
+    const rctx = rawCanvas.getContext("2d");
+    rctx.drawImage(raw, 0, 0);
+
+    const mapRect = raw.getBoundingClientRect();
+    const scale = raw.width / mapRect.width;
+    const sample = (ctx, x, y) => {
+      const [r, g, b] = ctx.getImageData(x, y, 1, 1).data;
+      return [r, g, b];
+    };
+    const centers = {};
+    for (const dot of document.querySelectorAll("#poi-markers .poi-dot")) {
+      const rect = dot.getBoundingClientRect();
+      const key = dot.dataset.group;
+      if (centers[key]) continue;
+      centers[key] = {
+        x: (rect.x - mapRect.x + rect.width / 2) * scale,
+        y: (rect.y - mapRect.y + rect.height / 2) * scale,
+        color: getComputedStyle(dot).backgroundColor,
+      };
+    }
+    const dist = (a, b) =>
+      Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+
+    let diffPixels = 0;
+    const w = Math.min(expCanvas.width, rawCanvas.width);
+    const h = Math.min(expCanvas.height, rawCanvas.height);
+    const ea = ectx.getImageData(0, 0, w, h).data;
+    const ra = rctx.getImageData(0, 0, w, h).data;
+    for (let i = 0; i < ea.length; i += 4) {
+      if (dist([ea[i], ea[i + 1], ea[i + 2]], [ra[i], ra[i + 1], ra[i + 2]]) > 30) {
+        diffPixels += 1;
+      }
+    }
+
+    const out = { size: [image.width, image.height], rawSize: [raw.width, raw.height], diffPixels };
+    for (const [key, dot] of Object.entries(centers)) {
+      const expected = dot.color.match(/\d+/g).slice(0, 3).map(Number);
+      out[key] = {
+        exported: sample(ectx, Math.round(dot.x), Math.round(dot.y)),
+        raw: sample(rctx, Math.round(dot.x), Math.round(dot.y)),
+        expected,
+      };
+    }
+    return out;
+  }, base64);
+
+  // same dimensions as the map canvas
+  expect(result.size).toEqual(result.rawSize);
+  // a marker-rich overlay means thousands of differing pixels (labels alone)
+  expect(result.diffPixels).toBeGreaterThan(2000);
+  // each group's dot centre: exported == its CSS colour, raw != it
+  for (const group of ["facilities", "inspection"]) {
+    const check = result[group];
+    expect(check, `no ${group} dot sampled`).toBeTruthy();
+    expect(
+      Math.hypot(
+        ...check.exported.map((c, i) => c - check.expected[i]),
+      ),
+    ).toBeLessThan(12);
+    expect(
+      Math.hypot(
+        ...check.raw.map((c, i) => c - check.expected[i]),
+      ),
+    ).toBeGreaterThan(20);
+  }
+});

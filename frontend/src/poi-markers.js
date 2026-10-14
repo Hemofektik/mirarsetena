@@ -81,19 +81,28 @@ export function installPoiMarkers(map, geojson, labelFor) {
     for (const marker of visible) {
       const p = screen.get(marker.id);
       const box = placed.find((r) => r.id === marker.id);
-      if (!p || !box) continue;
+      if (!p || !box) {
+        marker.screen = null; // dropped from layout: nothing to export either
+        marker.placed = null;
+        marker.leader = null;
+        continue;
+      }
+      marker.screen = { x: p.x, y: p.y };
+      marker.placed = { x: box.x, y: box.y };
       marker.dot.style.transform = `translate(${p.x}px, ${p.y}px)`;
       marker.label.style.transform = `translate(${box.x}px, ${box.y}px)`;
       if (box.leader) {
         // line from the dot to the nearest point of the label box
         const cx = Math.min(Math.max(p.x, box.x), box.x + marker.w);
         const cy = Math.min(Math.max(p.y, box.y), box.y + marker.h);
+        marker.leader = { x1: p.x, y1: p.y, x2: cx, y2: cy };
         marker.line.setAttribute("x1", p.x);
         marker.line.setAttribute("y1", p.y);
         marker.line.setAttribute("x2", cx);
         marker.line.setAttribute("y2", cy);
         marker.line.style.display = "";
       } else {
+        marker.leader = null;
         marker.line.style.display = "none";
       }
     }
@@ -142,10 +151,64 @@ export function installPoiMarkers(map, geojson, labelFor) {
     repaint();
   });
 
+  /**
+   * Data-only snapshot of the on-screen markers for the PNG export
+   * (png-export.paintPoiPlan): positions from the last repaint, styles
+   * read from the live CSS so the export can never drift from the map.
+   */
+  const shadowColorOf = (value) => {
+    if (!value || value === "none") return null;
+    const rgba = /rgba?\([^)]*\)/.exec(value);
+    if (rgba) return rgba[0];
+    return value.split(/\s+/)[0] || null;
+  };
+
+  function exportState() {
+    const plan = { leaders: [], labels: [], dots: [] };
+    for (const marker of markers) {
+      if (hiddenGroups.has(marker.group)) continue;
+      if (marker.dot.style.display === "none") continue;
+      if (!marker.screen || !marker.placed) continue; // never laid out
+      const ds = getComputedStyle(marker.dot);
+      const ls = getComputedStyle(marker.label);
+      plan.dots.push({
+        x: marker.screen.x,
+        y: marker.screen.y,
+        r: (marker.dot.offsetWidth || 12) / 2,
+        fill: ds.backgroundColor,
+        ring: ds.borderColor,
+        shadow: shadowColorOf(ds.boxShadow),
+      });
+      plan.labels.push({
+        x: marker.placed.x,
+        y: marker.placed.y,
+        w: marker.w,
+        h: marker.h,
+        text: marker.label.textContent,
+        font: ls.font || `${ls.fontWeight} ${ls.fontSize} ${ls.fontFamily}`,
+        bg: ls.backgroundColor,
+        border: ls.borderColor,
+        color: ls.color,
+        radius: Number.parseFloat(ls.borderRadius) || 0,
+        shadow: shadowColorOf(ls.boxShadow),
+      });
+      if (marker.leader && marker.line.style.display !== "none") {
+        const cs = getComputedStyle(marker.line);
+        plan.leaders.push({
+          ...marker.leader,
+          stroke: cs.stroke,
+          width: Number.parseFloat(cs.strokeWidth) || 1.5,
+        });
+      }
+    }
+    return plan;
+  }
+
   return {
     setVisible,
     updateLabels,
     repaint,
+    exportState,
     destroy() {
       map.off("move", repaint);
       map.off("zoom", repaint);
