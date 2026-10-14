@@ -278,8 +278,37 @@ scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
   Phase L (when implementation starts); README feature line; `.env.example`
   already carries the CDSE keys.
 
+### L.9 Plan vs. Realidad timeline (design accepted 2026-10-14; gated on plan
+### target data) — 1–2 days
+- **Context:** as the InSAR stack densifies, plot the 1991/2017 plan's intended
+  excavation against what the satellites actually measured — scope item agreed
+  to be defined before implementation.
+- **Design: two series, two axes, two units — never one shared axis:**
+  - *Plan* (step line from a static `data/projects/<slug>/plan.json`):
+    works_start 2026-06-01, phase milestones from the resolution (constructiva
+    → extracción y beneficiado; six-monthly regencia reports), and numeric
+    designed values (levels/volumes per period) **if and when supplied**.
+  - *Realidad* (sparse points with gaps): per-POI InSAR LOS in cm from
+    `insar_series.json` written beside each product (`date`, `poi`,
+    `los_cm`, `coherence`); coherence-masked, reference epoch = works marker,
+    **never interpolated across missing dates** (decorrelation at the active
+    dig is signal, not zero).
+- **Honesty rule (pinned in the UI copy):** InSAR LOS ≠ excavation depth —
+  active digs decorrelate, meter-scale removal breaks pair unwrapping
+  (snaphu captures ≤ ~±5.5 cm/pair); the chart labels each axis with its own
+  unit.
+- **UI:** *Plan vs. Realidad* panel synced to the existing scrubber + a
+  toggleable *Plan* map layer for milestone/POI plan state.
+- **Gate:** numeric plan targets are **not** in the resolution text nor in the
+  accessible attachments (cadastral scans, regional geology maps) — the
+  milestones-only fallback can ship immediately, numeric targets land when the
+  user provides them (plan de aprovechamiento schedules/levels if they exist).
+- **TDD:** pytest — series schema + epoch alignment; e2e — chart follows the
+  scrubber date.
+
 **MVP (L.1–L.5): ≈ 4.5–6.5 days. Full incl. naive accumulation + validation
-(L.1–L.7): ≈ 6–9 days; MintPy tier adds 2–3.**
+(L.1–L.7): ≈ 6–9 days; MintPy tier adds 2–3. L.9 timeline: +1–2 days (data
+gate).**
 
 ## 7. Decisions (recommended defaults; gates marked)
 
