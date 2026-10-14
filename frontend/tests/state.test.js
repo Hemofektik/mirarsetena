@@ -476,3 +476,53 @@ describe("disabled dates (double-click a cloud-strip tick)", () => {
     expect(dirty.disabledDates).toEqual({});
   });
 });
+
+describe("disabled dates are shared per data source (mission)", () => {
+  const config = {
+    slug: "x",
+    layers: ["rgb", "ndvi", "insar"],
+    timeline: { start: "2026-01-01", works_start: "2026-06-01" },
+  };
+
+  it("all Sentinel-2 layers share one tick state; insar has its own", () => {
+    let state = toggleDisabledDate(
+      setLayer(makeState(config), "rgb", DATES_S2),
+      "2026-07-08",
+    );
+    // switching to another S2 layer keeps the disabled date excluded
+    state = setLayer(state, "ndvi", DATES_S2);
+    expect(disabledDatesFor(state)).toEqual(["2026-07-08"]);
+    expect(visibleDates(state).map((d) => d.date)).toEqual([
+      "2026-07-03",
+      "2026-07-10",
+    ]);
+    // toggling from the other S2 layer removes it for ALL of them
+    state = toggleDisabledDate(state, "2026-07-08");
+    expect(disabledDatesFor(setLayer(state, "rgb", DATES_S2))).toEqual([]);
+    // the radar mission never saw it
+    expect(disabledDatesFor(setLayer(state, "insar", DATES_S1))).toEqual([]);
+  });
+
+  it("legacy layer-keyed settings migrate into the mission bucket", () => {
+    // the feature first shipped keyed per LAYER (rgb: [...]); those stored
+    // sets must keep working, folded into their mission and UNIONED with
+    // anything already there
+    const saved = {
+      disabledDates: { rgb: ["2026-07-08"], ndvi: ["2026-07-10"] },
+    };
+    let state = restoreSettings(makeState(config), saved);
+    expect(disabledDatesFor(state)).toEqual(
+      expect.arrayContaining(["2026-07-08", "2026-07-10"]),
+    );
+    // union, not replace: an existing mission entry survives too
+    state = restoreSettings(
+      { ...makeState(config), disabledDates: { "sentinel-2-l2a": ["2026-07-03"] } },
+      saved,
+    );
+    expect(disabledDatesFor(state).sort()).toEqual([
+      "2026-07-03",
+      "2026-07-08",
+      "2026-07-10",
+    ]);
+  });
+});

@@ -600,7 +600,10 @@ dialog form button {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(15, 23, 42, 0.18);
+  /* SPINNER ONLY: the old dark veil (rgba(15,23,42,.18)) darkened tiles
+     that were already on screen while the next ones loaded (user
+     2026-10-14). The spinner alone communicates the wait. */
+  background: transparent;
   border-radius: 2px;
 }
 

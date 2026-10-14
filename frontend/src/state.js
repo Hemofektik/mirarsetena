@@ -52,9 +52,9 @@ export function setDatesLoading(state, loading) {
 export function setLayer(state, layer, dates) {
   const list = dates ?? [];
   const remembered = state.date;
-  // Disabled dates (double-clicked out of the scrubber, per layer) are
-  // never picked, not even as the remembered/fallback date.
-  const off = state.disabledDates?.[layer] ?? [];
+  // Disabled dates (double-clicked out of the scrubber, per DATA SOURCE)
+  // are never picked, not even as the remembered/fallback date.
+  const off = state.disabledDates?.[disabledBucket(layer)] ?? [];
   const pool = list.filter((entry) => !off.includes(entry.date));
   const stillValid = pool.some((entry) => entry.date === remembered);
   // The slider opens on the NEWEST date the user can actually pick:
@@ -181,12 +181,15 @@ export function restoreSettings(state, saved) {
     typeof saved.disabledDates === "object" &&
     !Array.isArray(saved.disabledDates)
   ) {
-    // per-layer arrays of date strings; anything else in the map is dropped
-    const map = {};
-    for (const [layer, list] of Object.entries(saved.disabledDates)) {
-      if (Array.isArray(list) && list.every((d) => typeof d === "string")) {
-        map[layer] = [...list];
+    // per-mission arrays of date strings; legacy LAYER-keyed entries fold
+    // into their mission and UNION with anything already stored
+    const map = { ...next.disabledDates };
+    for (const [key, list] of Object.entries(saved.disabledDates)) {
+      if (!Array.isArray(list) || !list.every((d) => typeof d === "string")) {
+        continue;
       }
+      const bucket = disabledBucket(key);
+      map[bucket] = [...new Set([...(map[bucket] ?? []), ...list])];
     }
     next = { ...next, disabledDates: map };
   }
@@ -209,8 +212,18 @@ export function stripDates(state) {
 }
 
 /** Dates double-clicked out of the scrubber for the ACTIVE layer. */
+/**
+ * Disabled dates are keyed per DATA SOURCE (mission): all Sentinel-2
+ * layers share one tick state, radar has its own (user 2026-10-14).
+ * Legacy layer-name keys still resolve through missionForLayer.
+ */
+function disabledBucket(layer) {
+  return missionForLayer(layer) ?? layer;
+}
+
+/** Dates double-clicked out of the scrubber for the ACTIVE layer. */
 export function disabledDatesFor(state) {
-  return state.disabledDates?.[state.layer] ?? [];
+  return state.disabledDates?.[disabledBucket(state.layer)] ?? [];
 }
 
 export function visibleDates(state) {
@@ -226,13 +239,14 @@ export function visibleDates(state) {
 export function toggleDisabledDate(state, date) {
   const layer = state.layer;
   if (!layer) return state;
-  const current = state.disabledDates?.[layer] ?? [];
+  const bucket = disabledBucket(layer);
+  const current = state.disabledDates?.[bucket] ?? [];
   const nextList = current.includes(date)
     ? current.filter((d) => d !== date)
     : [...current, date];
   const next = {
     ...state,
-    disabledDates: { ...state.disabledDates, [layer]: nextList },
+    disabledDates: { ...state.disabledDates, [bucket]: nextList },
   };
   if (next.date !== date) return next;
   // The selected date just left the scrubber: move to the newest remaining

@@ -1153,11 +1153,25 @@ test("double-clicking a cloud-strip tick disables that date for scrubbing", asyn
     page.locator(`#cloud-strip span[data-date="${midDate}"]`),
   ).toHaveClass(/disabled/, { timeout: 30_000 });
 
-  // double-click again re-enables: max restored, class gone
+  // the tick state is shared per DATA SOURCE: another S2 layer sees the
+  // same disabled date (and can toggle it back for all of them)
+  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
+  await expect(
+    page.locator(`#cloud-strip span[data-date="${midDate}"]`),
+  ).toHaveClass(/disabled/, { timeout: 30_000 });
+  expect(await page.locator("#date-end").getAttribute("max")).toBe(
+    String(Number(maxBefore) - 1),
+  );
   await page.locator(`#cloud-strip span[data-date="${midDate}"]`).dblclick();
   await expect(
     page.locator(`#cloud-strip span[data-date="${midDate}"]`),
   ).not.toHaveClass(/disabled/);
+
+  // …and back on rgb the re-enable shows too: max restored, class gone
+  await page.locator('#layer-buttons [data-layer="rgb"]').click();
+  await expect(
+    page.locator(`#cloud-strip span[data-date="${midDate}"]`),
+  ).not.toHaveClass(/disabled/, { timeout: 30_000 });
   expect(await page.locator("#date-end").getAttribute("max")).toBe(maxBefore);
 });
 
@@ -1191,4 +1205,33 @@ test("the selected date's cloud-strip tick carries the current highlight", async
     page.locator("#cloud-strip span").first(),
   ).toHaveClass(/current/);
   await expect(mid).not.toHaveClass(/current/);
+});
+
+test("loading tiles show only a spinner, never a darkening veil", async ({
+  page,
+}) => {
+  // hold every overlay tile response so the loaders stay up long enough
+  // to inspect (tiles would otherwise land in milliseconds locally)
+  let release;
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  await page.route("**/tiles/**", async (route) => {
+    await held;
+    await route.continue();
+  });
+  await page.goto(`/p/${SLUG}/`);
+  await page.locator("#cloud-strip span").first().waitFor({ timeout: 30_000 });
+
+  // switch to insar: a cold tile wave starts and the loaders appear
+  await page.locator('#layer-buttons [data-layer="insar"]').click();
+  const loader = page.locator(".tile-loader").first();
+  await expect(loader).toBeVisible({ timeout: 30_000 });
+  await expect(loader.locator(".tile-loader-spinner")).toBeVisible();
+  // the loader must not darken what is already on screen (user 2026-10-14)
+  const background = await loader.evaluate(
+    (el) => getComputedStyle(el).backgroundColor,
+  );
+  expect(background).toBe("rgba(0, 0, 0, 0)");
+  release();
 });
