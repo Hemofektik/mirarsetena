@@ -10,6 +10,8 @@ CDSE/ISCE in CI — only the pure logic.
 import json
 from pathlib import Path
 
+import pytest
+
 from mirarsetena.pipeline.catalog import parse_scenes
 from mirarsetena.storage import LocalStore
 from tools.batch_insar import pair_is_done, purge_candidates, resolve_pairs
@@ -77,3 +79,43 @@ def test_purge_candidates_keep_the_rebuild_inputs(tmp_path):
     # the product-rebuild inputs are never on the purge list
     for name in keep:
         assert name not in names
+
+
+def _slant_grid(west_edge, east_edge, lat0, lat1, lines=10, pixels=21):
+    """Synthetic curvilinear geolocation grid: (line, pixel, lon, lat),
+    columns slanted eastward with latitude (like a real IW strip)."""
+    pts = []
+    for i in range(lines):
+        lat = lat0 + (lat1 - lat0) * i / (lines - 1)
+        shift = 0.15 * (lat - lat0)  # slant: strip drifts east going north
+        for j in range(pixels):
+            lon = (west_edge + (east_edge - west_edge) * j / (pixels - 1)
+                   + shift)
+            pts.append((i * 1500, j * 1223, lon, lat))
+    return pts
+
+
+def test_lon_band_interpolates_between_grid_nodes():
+    from tools.spike_insar import lon_band_at
+
+    # strip: lon -84.04..-83.18 at lat 9.3875 (the REAL 08-04 IW2 numbers)
+    pts = _slant_grid(-84.041, -83.182, 9.235, 10.915)
+    band = lon_band_at(pts, 9.3875)
+    assert band is not None
+    lo, hi = band
+    assert lo == pytest.approx(-84.041 + 0.15 * (9.3875 - 9.235), abs=0.01)
+    assert hi == pytest.approx(-83.182 + 0.15 * (9.3875 - 9.235), abs=0.01)
+    # outside the strip's latitude range: no band at all
+    assert lon_band_at(pts, 11.5) is None
+
+
+def test_swath_covering_uses_the_strip_not_sparse_nodes():
+    from tools.spike_insar import swath_covering
+
+    # the real 2026-07-23 IW2 case: nodes are ~0.11 deg apart, so the old
+    # node-inside-bbox count was 0 even though the strip covers the AOI
+    pts = _slant_grid(-84.041, -83.182, 9.235, 10.915)
+    aoi = (-83.675, 9.378, -83.660, 9.397)
+    assert swath_covering(pts, aoi) is True
+    # a strip 0.4 deg west of the AOI does not cover it
+    assert swath_covering(_slant_grid(-84.5, -84.0, 9.2, 10.9), aoi) is False

@@ -21,6 +21,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from itertools import pairwise
 from pathlib import Path
 
 from mirarsetena.coherence.cdse import auth_from_env
@@ -39,13 +40,11 @@ from mirarsetena.storage import LocalStore
 REPO = Path(__file__).resolve().parents[1]
 
 
-def _annotation_swaths(safe_dir: Path) -> dict[int, list[tuple[float, float]]]:
-    """IW sub-swath -> corner lon/lat list, parsed from SAFE annotations.
-
-    Each annotation XML carries geolocationGrid corner points; we only need
-    enough to decide which sub-swath covers the AOI.
-    """
-    out: dict[int, list[tuple[float, float]]] = {}
+def _annotation_swaths(safe_dir: Path) -> dict[int, list[tuple[int, int, float, float]]]:
+    """IW sub-swath -> (line, pixel, lon, lat) geolocation grid points,
+    parsed from SAFE annotations. line/pixel reconstruct the 2D grid, so
+    coverage can be INTERPOLATED instead of testing sparse nodes."""
+    out: dict[int, list[tuple[int, int, float, float]]] = {}
     ann_dir = safe_dir / "annotation"
     if not ann_dir.is_dir():
         return out
@@ -59,35 +58,108 @@ def _annotation_swaths(safe_dir: Path) -> dict[int, list[tuple[float, float]]]:
             root = ET.parse(xml_path).getroot()
         except ET.ParseError:
             continue
-        corners: list[tuple[float, float]] = []
+        points: list[tuple[int, int, float, float]] = []
         for point in root.iter("geolocationGridPoint"):
             lat = point.findtext("latitude")
             lon = point.findtext("longitude")
-            if lat is not None and lon is not None:
-                corners.append((float(lon), float(lat)))
-        out[swath] = corners
+            line = point.findtext("line")
+            pixel = point.findtext("pixel")
+            if lat is not None and lon is not None and line and pixel:
+                points.append(
+                    (int(line), int(pixel), float(lon), float(lat))
+                )
+        out[swath] = points
     return out
 
 
-def _swath_covering(safe_dir: Path, bbox: tuple[float, float, float, float]) -> int:
-    """Pick the IW sub-swath whose corner points overlap the AOI bbox."""
+# lon slack when testing AOI-centre containment in a swath band: covers
+# interpolation noise at the strip edge, nothing more
+SWATH_LON_EPS = 0.02
+
+
+def lon_band_at(
+    points: list[tuple[int, int, float, float]], lat: float
+) -> tuple[float, float] | None:
+    """Across-track lon span of a swath at one latitude.
+
+    Annotation geolocation grids are ~0.11 deg apart — far coarser than
+    the 0.015 deg AOI — so membership must interpolate along-track within
+    each grid column. None when the latitude is off the strip.
+    """
+    columns: dict[int, list[tuple[float, float]]] = {}
+    for _line, pixel, lon, point_lat in points:
+        columns.setdefault(pixel, []).append((point_lat, lon))
+    lo = hi = None
+    for samples in columns.values():
+        samples.sort()
+        if not (samples[0][0] <= lat <= samples[-1][0]):
+            continue
+        for (a_lat, a_lon), (b_lat, b_lon) in pairwise(samples):
+            if a_lat <= lat <= b_lat:
+                t = 0.0 if b_lat == a_lat else (lat - a_lat) / (b_lat - a_lat)
+                value = a_lon + t * (b_lon - a_lon)
+                lo = value if lo is None else min(lo, value)
+                hi = value if hi is None else max(hi, value)
+                break
+    if lo is None:
+        return None
+    return lo, hi
+
+
+def swath_covering(
+    points: list[tuple[int, int, float, float]],
+    bbox: tuple[float, float, float, float],
+    *,
+    lon_eps: float = SWATH_LON_EPS,
+) -> bool:
+    """True when the strip CONTINUOUSLY covers the bbox centre latitude."""
     west, south, east, north = bbox
+    band = lon_band_at(points, (south + north) / 2)
+    if band is None:
+        return False
+    lo, hi = band
+    lon = (west + east) / 2
+    return lo - lon_eps <= lon <= hi + lon_eps
+
+
+def _swath_covering(safe_dir: Path, bbox: tuple[float, float, float, float]) -> int:
+    """The IW sub-swath whose strip covers the AOI (deepest margin wins).
+
+    The old selection counted grid NODES inside the AOI — a lottery on the
+    sparse annotation grid: for the 2026-07-23 ASC pass no node landed in
+    the bbox, the fallback picked IW1 (which ends 0.5 deg west), and
+    topsApp burned 65 minutes on a swath where the crop found nothing.
+    """
+    west, south, east, north = bbox
+    lat = (south + north) / 2
+    lon = (west + east) / 2
     swaths = _annotation_swaths(safe_dir)
     if not swaths:
         raise SystemExit(f"no annotations found in {safe_dir}")
-    best, best_hits = None, -1
-    for swath, corners in swaths.items():
-        hits = sum(
-            1
-            for lon, lat in corners
-            if west - 0.05 <= lon <= east + 0.05 and south - 0.05 <= lat <= north + 0.05
-        )
-        if hits > best_hits:
-            best, best_hits = swath, hits
-    if best is None or best_hits == 0:
-        # fall back to the swath with any corner inside a generous window
-        best = min(swaths)
-    return best
+    best, best_margin = None, None
+    bands: dict[int, tuple[float, float] | None] = {}
+    for swath in sorted(swaths):
+        band = lon_band_at(swaths[swath], lat)
+        bands[swath] = band
+        if band is None:
+            continue
+        lo, hi = band
+        if lo - SWATH_LON_EPS <= lon <= hi + SWATH_LON_EPS:
+            margin = min(lon - lo, hi - lon)
+            if best_margin is None or margin > best_margin:
+                best, best_margin = swath, margin
+    if best is not None:
+        return best
+    # fail BEFORE topsApp, with the evidence
+    detail = ", ".join(
+        f"IW{s}="
+        + ("off-strip" if b is None else f"{b[0]:.3f}..{b[1]:.3f}")
+        for s, b in bands.items()
+    )
+    raise SystemExit(
+        f"no IW sub-swath covers lon {lon:.4f} at lat {lat:.4f} "
+        f"(bands: {detail})"
+    )
 
 
 def _dir_size(path: Path) -> int:
