@@ -80,6 +80,29 @@ class JobQueue:
         ).fetchall()
         return {row["status"]: row["n"] for row in rows}
 
+    def breakdown(self) -> dict[str, dict]:
+        """Per-type status counts plus the most recent error per type —
+        the status page's explanation of what a failed pile IS."""
+        rows = self._conn.execute(
+            "SELECT type, status, COUNT(*) AS n "
+            "FROM jobs GROUP BY type, status"
+        ).fetchall()
+        out: dict[str, dict] = {}
+        for row in rows:
+            out.setdefault(row["type"], {})[row["status"]] = row["n"]
+        for type_, entry in out.items():
+            if "failed" not in entry:
+                continue
+            last = self._conn.execute(
+                "SELECT last_error FROM jobs "
+                "WHERE type = ? AND status = 'failed' "
+                "ORDER BY updated DESC LIMIT 1",
+                (type_,),
+            ).fetchone()
+            if last and last["last_error"]:
+                entry["last_error"] = last["last_error"]
+        return out
+
     def run_once(self, handlers: dict[str, Handler]) -> str | None:
         """Run the next pending job of a registered type; returns its
         resulting status (None when nothing runnable remains — jobs whose

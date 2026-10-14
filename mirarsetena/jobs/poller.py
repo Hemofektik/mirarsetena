@@ -19,6 +19,11 @@ log = logging.getLogger("mirarsetena.poller")
 
 MAX_DRAIN_PER_CYCLE = 50
 
+# Job types this build can actually RUN (single source for the status
+# page's parked/runnable split: pending jobs of any other type — e.g. the
+# retired coherence_eager — have no handler and will never be drained).
+RUNNABLE_TYPES = ("catalog_poll", "insar_eager", "insar_pair")
+
 
 def make_catalog_poll_handler(registry, storage, *, search_fn):
     def handler(payload: dict) -> None:

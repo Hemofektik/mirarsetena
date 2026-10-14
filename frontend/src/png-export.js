@@ -16,6 +16,14 @@ export function parseCssColor(value) {
   return { r: parts[0], g: parts[1], b: parts[2], a: parts[3] ?? 1 };
 }
 
+/** Multiply the px sizes in a CSS font shorthand (device scaling). */
+export function scaleFont(font, s) {
+  if (!font || s === 1) return font;
+  return font.replace(/(\d+(?:\.\d+)?)px/g, (_, size) =>
+    `${Number(size) * s}px`,
+  );
+}
+
 function roundedRectPath(ctx, x, y, w, h, r) {
   const radius = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
@@ -70,7 +78,10 @@ export function paintPoiPlan(ctx, plan, { scale = 1 } = {}) {
     ctx.strokeStyle = label.border;
     ctx.stroke();
     ctx.fillStyle = label.color;
-    ctx.font = label.font;
+    // the label BOX is scaled to the backing store — the font must be
+    // too, or text renders sub-scale on hi-dpi displays (user report
+    // 2026-10-14: "the text in the POI labels is too small")
+    ctx.font = scaleFont(label.font, s);
     ctx.textBaseline = "middle";
     ctx.fillText(label.text, x + 7 * s, y + h / 2);
     ctx.restore();

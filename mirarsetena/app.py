@@ -178,12 +178,15 @@ def create_app(
     def project_status(slug: str) -> dict:
         from datetime import datetime, timezone
 
+        from mirarsetena.jobs.poller import RUNNABLE_TYPES
+
         try:
             config = registry.get(slug)
         except ProjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         return status_payload(
-            storage, config, queue, now=datetime.now(timezone.utc)
+            storage, config, queue, now=datetime.now(timezone.utc),
+            search_fn=app.state.search_fn, runnable_types=RUNNABLE_TYPES,
         )
 
     @app.get("/p/{slug}/status/page")
@@ -191,12 +194,15 @@ def create_app(
         import json as _json
         from datetime import datetime, timezone
 
+        from mirarsetena.jobs.poller import RUNNABLE_TYPES
+
         try:
             config = registry.get(slug)
         except ProjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         payload = status_payload(
-            storage, config, queue, now=datetime.now(timezone.utc)
+            storage, config, queue, now=datetime.now(timezone.utc),
+            search_fn=app.state.search_fn, runnable_types=RUNNABLE_TYPES,
         )
         html = (
             "<!doctype html><html><head><meta charset='utf-8'>"

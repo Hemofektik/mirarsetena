@@ -42,7 +42,10 @@ def test_status_payload_contains_all_sections(tmp_path, fake_search):
     assert payload["cache"]["total_bytes"] >= 105
 
     assert payload["catalog"]["updated_at"] == "2026-10-07T12:00:00+00:00"
-    assert payload["jobs"] == {"pending": 1}
+    assert payload["jobs"]["pending"] == 1
+    assert payload["jobs"]["by_type"] == {
+        "catalog_poll": {"pending": 1}
+    }
 
     missions = payload["missions"]
     assert missions["sentinel-2-l2a"] == {
@@ -78,3 +81,66 @@ def test_status_routes(tmp_path, fake_search):
     assert page.headers["content-type"].startswith("text/html")
     assert "Mirar Setena" in page.text
     assert SLUG in page.text
+
+
+def test_status_insar_mission_is_pair_aware_with_search_fn(tmp_path, fake_search):
+    # The pair-derived mission used to read "0 / null" (outdated: pairs are
+    # never catalog-indexed). With the search fn it reports the REAL state:
+    # planned pairs, the last pair's end date, the predicted next pass and
+    # how many products are actually stored.
+    from mirarsetena.pipeline.indices import layer_key
+
+    storage, config, queue = _seeded(tmp_path, fake_search)
+    payload = status_payload(
+        storage, config, queue, now=NOW, search_fn=fake_search
+    )
+    slc = payload["missions"]["sentinel-1-slc"]
+    # fixture: 6 planned pairs, newest ending 2026-10-03
+    assert slc["pairs_planned"] == 6
+    assert slc["last_scene"] == "2026-10-03"
+    assert slc["next_acquisition"] == "2026-10-15"  # +12 d past 10-07
+    assert slc["products_processed"] == 0
+
+    # a stored product flips the count (storage-only truth, no search needed)
+    from mirarsetena.pipeline.insar import insar_series_key
+
+    storage.put(layer_key(SLUG, "sentinel-1-slc", "2026-10-03", "insar"), b"t")
+    storage.put(insar_series_key(SLUG, "2026-10-03"), b"{}")
+    again = status_payload(
+        storage, config, queue, now=NOW, search_fn=fake_search
+    )
+    assert again["missions"]["sentinel-1-slc"]["products_processed"] == 1
+
+    # without the search fn the pair fields degrade honestly to None
+    offline = status_payload(storage, config, queue, now=NOW)
+    assert offline["missions"]["sentinel-1-slc"]["pairs_planned"] is None
+    assert offline["missions"]["sentinel-1-slc"]["products_processed"] == 1
+
+
+def test_status_jobs_split_parked_retired_types_and_show_errors(tmp_path, fake_search):
+    # pending:1 was a coherence_eager job of the RETIRED GRD coherence
+    # feature — no handler will ever run it. With runnable_types the
+    # payload separates parked jobs from runnable pending, and by_type
+    # explains what the failed pile actually is (last error included).
+    storage, config, queue = _seeded(tmp_path, fake_search)
+    queue.enqueue("coherence_eager", {"slug": SLUG}, dedupe="retired")
+    queue.enqueue("insar_pair", {"slug": SLUG}, dedupe="boom1")
+
+    def exploding(_payload):
+        raise RuntimeError("CDSE credentials not configured — demo")
+
+    for _ in range(3):  # MAX_ATTEMPTS: the 3rd failure parks it as failed
+        queue.run_once({"insar_pair": exploding})
+
+    payload = status_payload(
+        storage, config, queue, now=NOW,
+        runnable_types=("catalog_poll", "insar_eager", "insar_pair"),
+    )
+    jobs = payload["jobs"]
+    # catalog_poll (the seeded one) is runnable-pending; coherence_eager parks
+    assert jobs["pending"] == 1
+    assert jobs["parked"] == 1
+    assert jobs["by_type"]["coherence_eager"] == {"pending": 1}
+    pair = jobs["by_type"]["insar_pair"]
+    assert pair["failed"] == 1
+    assert "CDSE credentials" in pair["last_error"]

@@ -99,3 +99,19 @@ describe("paintPoiPlan", () => {
     expect(parseCssColor("blue")).toBeNull();
   });
 });
+
+describe("device-scaled font (export must match on-screen labels)", () => {
+  it("multiplies the CSS px font size by the scale", () => {
+    const ctx = recordingCtx();
+    paintPoiPlan(ctx, PLAN, { scale: 2 });
+    // PLAN label font: "400 11px sans-serif" → 22px at dpr 2
+    expect(ctx.font).toBe("400 22px sans-serif");
+  });
+  it("leaves the font untouched at scale 1 and keeps weight/family", () => {
+    const ctx = recordingCtx();
+    paintPoiPlan(ctx, {
+      labels: [{ ...PLAN.labels[0], font: "700 11px serif" }],
+    }, { scale: 1 });
+    expect(ctx.font).toBe("700 11px serif");
+  });
+});
