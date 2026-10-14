@@ -1235,3 +1235,37 @@ test("loading tiles show only a spinner, never a darkening veil", async ({
   expect(background).toBe("rgba(0, 0, 0, 0)");
   release();
 });
+
+test("arrow keys step the date slider from anywhere", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible();
+  const newest = await page.locator("#date-value").textContent();
+
+  // focus something neutral (NOT the slider): the step must still work
+  await page.locator("#app-title").click();
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator("#date-value")).not.toHaveText(newest);
+  const stepped = await page.locator("#date-value").textContent();
+  expect(stepped < newest).toBe(true); // previous date in the ascending list
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#date-value")).toHaveText(newest);
+
+  // disabled dates are skipped: disable the second-newest tick, then
+  // ArrowLeft from the newest must jump over it
+  const dots = await page.locator("#cloud-strip span").count();
+  const secondLast = page.locator("#cloud-strip span").nth(dots - 2);
+  const skipped = await secondLast.getAttribute("data-date");
+  await secondLast.dblclick();
+  await page.locator("#app-title").click();
+  await page.keyboard.press("ArrowLeft");
+  const landed = await page.locator("#date-value").textContent();
+  expect(landed).not.toBe(skipped);
+  expect(landed < skipped).toBe(true);
+
+  // form fields keep their native arrow behaviour (no scrubbing)
+  const before = await page.locator("#date-value").textContent();
+  await page.locator("#max-cloud").focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(150);
+  expect(await page.locator("#date-value").textContent()).toBe(before);
+});

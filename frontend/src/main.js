@@ -829,6 +829,36 @@ function wireUi() {
     link.click();
   });
   document.getElementById("status-link").href = `/p/${state.slug}/status/page`;
+  // Arrow keys step the scrubber from ANYWHERE (user 2026-10-14). Capture
+  // phase: the step must land BEFORE MapLibre's canvas key handler (same
+  // key would otherwise pan the map) and before the focused range input's
+  // native handling (which would move the thumb a second time).
+  window.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      const target = event.target;
+      const tag = target?.tagName;
+      if (
+        tag === "INPUT" ||
+        tag === "SELECT" ||
+        tag === "TEXTAREA" ||
+        target?.isContentEditable
+      ) {
+        return; // form fields keep their native arrow behaviour
+      }
+      if (document.getElementById("about-dialog")?.open) return;
+      if (!state.layer) return; // no scrubber: arrows belong to the map
+      const date = S.stepDate(state, event.key === "ArrowRight" ? 1 : -1);
+      if (date && date !== state.date) applyDate(date);
+      // swallow the key while a layer is active — even at the clamped
+      // ends, so arrows never half-step the date and half-pan the map
+      event.preventDefault();
+      event.stopPropagation();
+    },
+    true,
+  );
   document.getElementById("lang-select").addEventListener("change", (event) => {
     state = S.setLang(state, event.target.value);
     localStorage.setItem(LANG_KEY, state.lang);

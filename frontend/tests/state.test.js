@@ -19,6 +19,7 @@ import {
   setDatesLoading,
   setDate,
   disabledDatesFor,
+  stepDate,
   stripDates,
   t,
   toggleDisabledDate,
@@ -524,5 +525,41 @@ describe("disabled dates are shared per data source (mission)", () => {
       "2026-07-08",
       "2026-07-10",
     ]);
+  });
+});
+
+describe("stepDate (arrow-key stepping over the scrubber dates)", () => {
+  const config = {
+    slug: "x",
+    layers: ["rgb", "insar"],
+    timeline: { start: "2026-01-01", works_start: "2026-06-01" },
+  };
+
+  it("steps prev/next and clamps at both ends", () => {
+    const base = setLayer(makeState(config), "rgb", DATES_S2);
+    const mid = setDate(base, "2026-07-08");
+    expect(stepDate(mid, 1)).toBe("2026-07-10");
+    expect(stepDate(setDate(base, "2026-07-10"), 1)).toBe("2026-07-10"); // end
+    expect(stepDate(mid, -1)).toBe("2026-07-03");
+    expect(stepDate(setDate(base, "2026-07-03"), -1)).toBe("2026-07-03"); // start
+  });
+
+  it("skips disabled dates like the slider does", () => {
+    let state = toggleDisabledDate(
+      setDate(setLayer(makeState(config), "rgb", DATES_S2), "2026-07-10"),
+      "2026-07-08",
+    );
+    expect(stepDate(state, -1)).toBe("2026-07-03"); // 07-08 is disabled
+    expect(
+      stepDate(setDate(state, "2026-07-03"), 1),
+    ).toBe("2026-07-10");
+  });
+
+  it("without a selection: right opens the first, left the last date", () => {
+    const base = setLayer(makeState(config), "rgb", DATES_S2);
+    expect(stepDate(setDate(base, null), 1)).toBe("2026-07-03");
+    expect(stepDate(setDate(base, null), -1)).toBe("2026-07-10");
+    // nothing loaded -> nothing to step to
+    expect(stepDate(makeState(config), 1)).toBeNull();
   });
 });

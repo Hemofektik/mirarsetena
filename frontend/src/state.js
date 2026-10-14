@@ -235,6 +235,21 @@ export function visibleDates(state) {
     : shown;
 }
 
+/**
+ * The date an arrow-key step should select: prev/next in the SCRUBBER
+ * list (disabled dates skipped, ends clamped). Without a selection the
+ * right arrow opens the first date, the left one the last; null when
+ * there is nothing to step to.
+ */
+export function stepDate(state, delta) {
+  const dates = visibleDates(state);
+  if (!dates.length) return null;
+  const index = dates.findIndex((entry) => entry.date === state.date);
+  const base = index === -1 ? (delta > 0 ? -1 : dates.length) : index;
+  const target = Math.min(Math.max(base + delta, 0), dates.length - 1);
+  return dates[target].date;
+}
+
 /** Double-click toggle: exclude a date from the scrubber (or bring it back). */
 export function toggleDisabledDate(state, date) {
   const layer = state.layer;
