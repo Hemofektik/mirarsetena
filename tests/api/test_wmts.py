@@ -261,3 +261,48 @@ def test_composite_baseline_falls_back_below_two_products(tmp_path, world_geotif
         assert resp.status_code == 404
         # the date-based default was resolved and produced on demand
         assert processed == [("sigma0", "2026-05-05")]
+
+
+def test_xyz_known_date_without_product_is_blank_200_not_404(tmp_path):
+    """Route contract for the map client: a scrubber date whose product is
+    not computed yet returns 200 + a transparent PNG. A 404 here sends
+    MapLibre down its tile-error path (ancestor retries z-1..z0 + loader
+    veils), which is what made 09-09 and 10-03 look identical."""
+    from fastapi.testclient import TestClient
+
+    from mirarsetena.app import create_app
+    from mirarsetena.pipeline.catalog import Scene
+
+    def search_with_dates(collection, bbox, start, end):
+        if collection != "sentinel-1-grd":
+            return []
+        days = ["2026-05-05", "2026-07-11"]
+        return [
+            Scene(id=f"fake-{d}", collection=collection,
+                  datetime=f"{d}T12:00:00Z", date=d, cloud=1.0)
+            for d in days
+        ]
+
+    app = create_app(
+        config_dir=_radar_config_dir(tmp_path),
+        storage_root=tmp_path / "cache",
+        search_fn=search_with_dates,
+        processor=lambda layer, date: None,  # writes nothing: no product
+    )
+    with TestClient(app) as client:
+        # known date, no product -> blank tile
+        resp = client.get(f"/p/{SLUG}/tiles/sigma0/2026-07-11/0/0/0.png")
+        assert resp.status_code == 200
+        assert resp.headers["content-type"] == "image/png"
+        from io import BytesIO
+
+        from PIL import Image
+
+        img = Image.open(BytesIO(resp.content)).convert("RGBA")
+        import numpy as np
+
+        assert (np.asarray(img)[..., 3] == 0).all()
+        # unknown date (not in the layer's date list) -> still 404
+        assert client.get(
+            f"/p/{SLUG}/tiles/sigma0/2099-01-01/0/0/0.png"
+        ).status_code == 404

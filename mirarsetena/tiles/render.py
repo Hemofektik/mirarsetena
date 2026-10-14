@@ -119,6 +119,13 @@ def encode_png(rgba_chw: np.ndarray) -> bytes:
     return buffer.getvalue()
 
 
+# A scrubber date whose product doesn't exist yet serves this instead of a
+# 404: MapLibre's tile-error path retries the tile and cascades into
+# ancestor requests (z, z-1, ... 0) whose loader veils end up covering the
+# whole map — measured as "09-09 and 10-03 look exactly the same".
+EMPTY_TILE = encode_png(np.zeros((4, TILE_SIZE, TILE_SIZE), dtype=np.uint8))
+
+
 def render_tile(
     product_bytes: bytes, z: int, x: int, y: int, style: dict
 ) -> bytes:

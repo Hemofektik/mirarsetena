@@ -26,7 +26,12 @@ from mirarsetena.pipeline.indices import layer_key, process_s2_daily
 from mirarsetena.projects.registry import ProjectConfig, cache_key
 from mirarsetena.storage import Storage, enforce_budget
 from mirarsetena.tiles.cache import TileCache
-from mirarsetena.tiles.render import TileError, render_tile, validate_tile
+from mirarsetena.tiles.render import (
+    EMPTY_TILE,
+    TileError,
+    render_tile,
+    validate_tile,
+)
 from mirarsetena.tiles.styles import RADAR_LAYERS, style_for
 
 S2_COLLECTION = "sentinel-2-l2a"
@@ -276,7 +281,11 @@ class TileService:
 
         scene = self._product(layer, date)
         if scene is None:
-            return None
+            # The date is in the scrubber but its product doesn't exist yet:
+            # serve a blank tile, not a 404 (an error response sends
+            # MapLibre down its retry path — ancestor requests up to z0 and
+            # loader veils over the whole map).
+            return EMPTY_TILE
 
         fingerprint = ""
         if layer in RADAR_LAYERS:

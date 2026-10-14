@@ -158,3 +158,29 @@ def test_insar_tile_cache_invalidates_when_the_range_changes(tmp_path):
     assert second[2] > 120 and second[0] < 80, (
         f"stale cached tile served: {second}"
     )
+
+
+def test_known_date_without_product_serves_blank_tile(tmp_path):
+    # A date that EXISTS in the layer's scrubber but has no product yet must
+    # render as a blank tile, not an error: a 404 makes MapLibre retry the
+    # tile and cascade into ancestor requests (z14 -> z13 -> ... -> z7),
+    # each spawning a full-viewport loader veil — the user saw identical
+    # washed-out maps on 09-09 (no product) and 10-03 (product).
+    config = _insar_config(ProjectRegistry(CONFIG_DIR).get("cdp-rio-general"))
+    storage = LocalStore(tmp_path / "cache")
+    service = TileService(storage, config, search_fn=_fake_search)
+
+    png = service.get_tile("insar", "2026-09-09", 16, 17536, 31051)
+    assert png is not None, "known date without product must serve a tile"
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+
+    import io
+
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(png)).convert("RGBA")
+    alpha = np.asarray(img)[..., 3]
+    assert (alpha == 0).all()  # fully transparent: nothing to show yet
+
+    # a date that is NOT in the layer's pair list still maps to nothing
+    assert service.get_tile("insar", "2099-01-01", 16, 17536, 31051) is None
