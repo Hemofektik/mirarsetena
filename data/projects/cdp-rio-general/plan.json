@@ -1,0 +1,11 @@
+{
+  "_readme": "Plan milestones for the Plan vs. Realidad chart (INSAR-PLAN L.9). Sources: RES-1333-2017 TERCERO and config timeline. Keep dates consistent with config/projects/cdp-rio-general.yaml (timeline.works_start). Numeric target values (levels/volumes/phase schedule) belong here as future milestone/target entries once supplied from the original plan — never derive them.",
+  "milestones": [
+    {
+      "date": "2026-06-01",
+      "kind": "works_start",
+      "es": "Inicio de obras · comienza el primer periodo de informe de regencia",
+      "en": "Works start · first environmental supervision report period begins"
+    }
+  ]
+}

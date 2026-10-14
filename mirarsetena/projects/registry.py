@@ -6,6 +6,7 @@ added later as config files, with no management UI.
 """
 from __future__ import annotations
 
+import json
 from datetime import date
 from pathlib import Path
 
@@ -80,6 +81,9 @@ class ProjectConfig(BaseModel):
     pois_path: str
     rio_path: str | None = None  # optional work-area line overlay (OSM)
     official_path: str | None = None  # optional official cadastral perimeter (SIRI)
+    # Optional plan milestones for the Plan vs. Realidad chart (L.9):
+    # data/projects/<slug>/plan.json; series values come from storage.
+    plan_path: str | None = None
     bbox: tuple[float, float, float, float]
     layers: list[str] = Field(min_length=1)
     timeline: Timeline
@@ -115,6 +119,25 @@ class ProjectRegistry:
     @property
     def config_dir(self) -> Path:
         return self._config_dir
+
+    def load_pois(self, slug: str) -> list[dict]:
+        """Point sample features of a project as [{"id", "coordinates"}].
+
+        The contract shared by the InSAR series writer (sample_pois) and
+        anything else that samples a product at the project's POIs; ids come
+        from pois.geojson so series entries and map pins stay joinable.
+        """
+        config = self.get(slug)
+        root = self._config_dir.resolve().parent.parent
+        gj = json.loads((root / config.pois_path).read_text(encoding="utf-8"))
+        return [
+            {
+                "id": feature["properties"]["id"],
+                "coordinates": feature["geometry"]["coordinates"],
+            }
+            for feature in gj["features"]
+            if (feature.get("geometry") or {}).get("type") == "Point"
+        ]
 
     def get(self, slug: str) -> ProjectConfig:
         try:

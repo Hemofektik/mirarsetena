@@ -770,3 +770,76 @@ dialog form button {
   font-size: 0.64rem;
   margin-top: 0.3rem;
 }
+
+/* --- Plan vs. Realidad chart (INSAR-PLAN L.9) --- */
+#plan-poi-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+}
+#plan-poi {
+  max-width: 62%;
+  font-size: 0.74rem;
+}
+#plan-chart {
+  margin-top: 0.4rem;
+  background: #fbfdfb;
+  border: 1px solid #e2e9e3;
+  border-radius: 6px;
+  padding: 2px;
+}
+.plan-chart-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.plan-works {
+  fill: rgba(245, 158, 11, 0.1); /* works period (plan side) */
+}
+.plan-grid {
+  stroke: #e5ebe6;
+  stroke-width: 1;
+}
+.plan-zero {
+  stroke: #9fb3a5;
+  stroke-width: 1;
+}
+.plan-tick {
+  font-size: 8px;
+  fill: #5b6f62;
+}
+.plan-ylab {
+  font-size: 8.5px;
+  font-weight: 700;
+  fill: var(--green-900, #1f3d2b);
+}
+.plan-milestone {
+  stroke: #8a6d3b;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+.plan-mslabel {
+  font-size: 8px;
+  fill: #8a6d3b;
+}
+.plan-line {
+  fill: none;
+  stroke: #b45309;
+  stroke-width: 1.6;
+}
+.plan-dot {
+  fill: #b45309;
+  stroke: #fff;
+  stroke-width: 1;
+}
+.plan-cursor {
+  stroke: #0f2417;
+  stroke-width: 1.2;
+  stroke-dasharray: 2 2;
+}
+#plan-note {
+  font-size: 0.64rem;
+  margin-top: 0.3rem;
+}

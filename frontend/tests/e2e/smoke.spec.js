@@ -1038,3 +1038,31 @@ test("retargeting over errored tiles never crashes the renderer", async ({ page 
 
   expect(pageErrors.filter((error) => error.includes("bind"))).toEqual([]);
 });
+
+test("plan vs realidad chart follows the insar layer (L.9)", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  // hidden while an optical layer is active
+  await expect(page.locator("#plan-section")).toBeHidden();
+
+  await page.locator('#layer-buttons [data-layer="insar"]').click();
+  await expect(page.locator("#plan-section")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#plan-section h2")).toHaveText("Plan vs. Realidad");
+
+  // chart renders with the measured series for the default POI (quarry)
+  await expect(page.locator('#plan-chart svg[data-chart="plan"]')).toBeVisible();
+  await expect(page.locator("#plan-chart circle[data-los]")).not.toHaveCount(0);
+  // plan milestone tick (works start, from plan.json — the plan side)
+  await expect(page.locator("#plan-chart [data-milestone]")).not.toHaveCount(0);
+  // the default POI is the excavation pit itself
+  await expect(page.locator("#plan-poi")).toHaveValue("quarry");
+
+  // POI switch re-renders for that point; lang switch re-labels the panel
+  await page.locator("#plan-poi").selectOption("office");
+  await expect(page.locator("#plan-poi")).toHaveValue("office");
+  await page.locator("#lang-select").selectOption("en");
+  await expect(page.locator("#plan-section h2")).toHaveText("Plan vs. Actual");
+
+  // back to optical: the section leaves with the layer
+  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
+  await expect(page.locator("#plan-section")).toBeHidden();
+});

@@ -259,3 +259,65 @@ def test_los_range_ignores_nodata_and_handles_empty():
         threshold=0.35,
     )
     assert los_range(masked) is None
+
+
+def test_sample_pois_reads_values_nulls_nodata_and_outside():
+    """L.9 Plan vs. Realidad: per-POI LOS values come from the product.
+
+    A POI on a coherence-masked pixel or outside the product footprint is
+    an honest null (a gap the chart must NOT interpolate across), not 0.
+    """
+    from mirarsetena.pipeline.insar import sample_pois
+
+    like = _geo()
+    grid = np.arange(36, dtype=np.float32).reshape(6, 6) / 10.0
+    grid[0, 0] = NODATA
+    product = _encode(grid, like)
+
+    pois = [
+        {"id": "inside", "coordinates": [-83.670, 9.390]},   # pixel (2,2)=1.4
+        {"id": "gap", "coordinates": [-83.674, 9.396]},      # pixel (0,0) nodata
+        {"id": "outside", "coordinates": [-83.500, 9.500]},  # beyond footprint
+    ]
+    out = sample_pois(product, pois)
+    assert out == [
+        {"id": "inside", "los_cm": 1.4},
+        {"id": "gap", "los_cm": None},
+        {"id": "outside", "los_cm": None},
+    ]
+
+
+def test_write_insar_series_stores_sampled_pois_beside_product(tmp_path):
+    """L.9: the series entry lives next to the product under a stable key."""
+    import json
+
+    from mirarsetena.pipeline.insar import write_insar_series
+    from mirarsetena.storage import LocalStore
+
+    like = _geo()
+    grid = np.full((like["height"], like["width"]), 0.25, dtype=np.float32)
+    grid[0, 0] = NODATA
+    product = _encode(grid, like)
+
+    store = LocalStore(tmp_path)
+    key = write_insar_series(
+        store,
+        "cdp-rio-general",
+        "2026-10-03",
+        product,
+        [
+            {"id": "inside", "coordinates": [-83.670, 9.390]},
+            {"id": "gap", "coordinates": [-83.674, 9.396]},
+        ],
+    )
+    assert key == (
+        "p/cdp-rio-general/layers/sentinel-1-slc_2026-10-03_insar_series.json"
+    )
+    payload = json.loads(store.get(key))
+    assert payload["date"] == "2026-10-03"
+    assert payload["pois"] == [
+        {"id": "inside", "los_cm": 0.25},
+        {"id": "gap", "los_cm": None},
+    ]
+    # the per-date ramp limit rides along so the chart axis can match the map
+    assert payload["los_range"] is not None and payload["los_range"] >= 0.5

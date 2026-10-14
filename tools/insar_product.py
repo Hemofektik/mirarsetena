@@ -30,6 +30,20 @@ import rasterio
 from mirarsetena.coherence.crop_chain import build_crop_product, reference_mask_outside
 from mirarsetena.coherence.isce_products import read_isce_image, read_snaphu_unw
 from mirarsetena.pipeline.indices import NODATA, layer_key
+from mirarsetena.pipeline.insar import write_insar_series
+
+
+def load_pois(slug: str, config_dir: Path | None = None) -> list[dict]:
+    """POI sample points for the plan-vs-actual series (L.9).
+
+    Thin delegate to ProjectRegistry.load_pois — the tool keeps a one-line
+    entry point; the contract lives in the service layer (which ships in
+    the container, unlike this tools/ package).
+    """
+    from mirarsetena.projects.registry import ProjectRegistry
+
+    config_dir = Path(config_dir) if config_dir else Path("config/projects")
+    return ProjectRegistry(config_dir).load_pois(slug)
 
 
 def _radar_window(merged: Path, bbox: tuple[float, float, float, float],
@@ -110,10 +124,15 @@ def build_and_store(
     store = LocalStore(storage_root)
     store.put(key, product)
 
+    # L.9 plan-vs-actual: sample the POIs NOW so the API serves a
+    # pre-computed series instead of re-opening rasters per request.
+    series_key = write_insar_series(store, slug, date, product, load_pois(slug))
+
     with rasterio.io.MemoryFile(product) as mem, mem.open() as src:
         data = src.read(1)
     valid = data[data != NODATA]
     print(f"key: {key}")
+    print(f"series: {series_key}")
     print(f"size: {len(product)} bytes  grid: {src.width}x{src.height}")
     print(f"valid px: {valid.size}/{data.size}")
     if valid.size:

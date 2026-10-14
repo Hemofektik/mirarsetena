@@ -135,6 +135,45 @@ def create_app(
         trigger_insar_on_first_view(storage, config, queue, app.state.search_fn)
         return result
 
+    @app.get("/p/{slug}/api/plan")
+    def project_plan(slug: str) -> dict:
+        """Plan vs. Realidad (INSAR-PLAN L.9): timeline anchors + plan
+        milestones + the measured per-POI InSAR series, each from its own
+        source — the chart must not invent any of them."""
+        import json as _json
+
+        from mirarsetena.projects.registry import cache_key
+
+        try:
+            config = registry.get(slug)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+        milestones: list[dict] = []
+        if config.plan_path:
+            path = config_dir.resolve().parent.parent / config.plan_path
+            if not path.is_file():
+                raise HTTPException(
+                    status_code=404, detail=f"plan file not found: {path.name}"
+                )
+            payload = _json.loads(path.read_text(encoding="utf-8"))
+            milestones = list(payload.get("milestones", []))
+
+        prefix = cache_key(slug, "layers") + "/"
+        series = []
+        for key in storage.list(prefix):
+            if key.endswith("_insar_series.json"):
+                raw = storage.get(key)
+                if raw:
+                    series.append(_json.loads(raw))
+        series.sort(key=lambda entry: entry["date"])
+
+        return {
+            "timeline": config.timeline.model_dump(mode="json"),
+            "milestones": milestones,
+            "series": series,
+        }
+
     @app.get("/p/{slug}/status")
     def project_status(slug: str) -> dict:
         from datetime import datetime, timezone

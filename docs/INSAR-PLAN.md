@@ -279,7 +279,12 @@ scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
   already carries the CDSE keys.
 
 ### L.9 Plan vs. Realidad timeline (design accepted 2026-10-14; gated on plan
-### target data) — 1–2 days
+### target data) — 1–2 days — ✅ milestones-only shipped 2026-10-13
+- **Status:** implemented as below (TDD: 7 pytest + 10 vitest + 1 e2e),
+  `GET /p/{slug}/api/plan` live, series backfilled for the 2026-10-03
+  product (quarry +0.052 cm … two POIs honest null). The **numeric-target
+  gate stays open** — add entries to `plan.json` when the original plan's
+  values are supplied; nothing else changes.
 - **Context:** as the InSAR stack densifies, plot the 1991/2017 plan's intended
   excavation against what the satellites actually measured — scope item agreed
   to be defined before implementation.

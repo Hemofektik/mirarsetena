@@ -347,6 +347,11 @@ export const MESSAGES = {
     legend_los_negative: "−{limit} (hacia el satélite)",
     legend_los_positive: "+{limit} (alejándose / hundimiento)",
     legend_los_mask: "máscara: baja coherencia",
+    plan_title: "Plan vs. Realidad",
+    plan_poi: "Punto",
+    plan_note:
+      "Puntos = InSAR medido (cm en la línea de visión; huecos = sin dato). " +
+      "Trazo punteado = hitos del plan. El InSAR no mide metros de excavación.",
   },
   en: {
     app: "Mirar Setena",
@@ -435,6 +440,11 @@ export const MESSAGES = {
     legend_los_negative: "−{limit} (toward satellite)",
     legend_los_positive: "+{limit} (away / sinking)",
     legend_los_mask: "mask: low coherence",
+    plan_title: "Plan vs. Actual",
+    plan_poi: "Point",
+    plan_note:
+      "Dots = InSAR measured (cm along the satellite line of sight; gaps = no " +
+      "data). Dashed = plan milestones. InSAR does not measure excavation metres.",
   },
 };
 

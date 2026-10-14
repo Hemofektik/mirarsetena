@@ -6,6 +6,7 @@ import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./styles.css";
 import * as S from "./state.js";
+import { buildPlanChart, chartSvg } from "./chart.js";
 import { installPoiMarkers } from "./poi-markers.js";
 import { installTileLoaders, retireTileRequests } from "./tile-loaders.js";
 
@@ -19,6 +20,11 @@ let map;
 let poisData = null;
 let aoiData = null;
 let rioData = null;
+// Plan vs. Realidad (INSAR-PLAN L.9): /api/plan payload + selected POI.
+// planData null = no plan/series available -> the section stays hidden
+// (honest absence, never an invented chart).
+let planData = null;
+let planPoi = null;
 
 // maxzoom = the deepest tile the provider actually serves over this AOI
 // (measured 2026-10-12: Esri World Imagery returns uniform gray #CCCCCC
@@ -310,9 +316,64 @@ function renderScrubber() {
     `${S.t(state.lang, "works_start")}: ${config.timeline.works_start}`;
 }
 
+/**
+ * Plan vs. Realidad panel (L.9): visible only with the insar layer, the
+ * POI select mirrors the map's pin labels, and the chart follows the
+ * scrubber date (cursor) — plan milestones and measured series stay their
+ * own marks on their own axes.
+ */
+function renderPlanSection() {
+  const section = document.getElementById("plan-section");
+  const show = state.layer === "insar" && Boolean(planData);
+  section.hidden = !show;
+  if (!show) return;
+
+  const select = document.getElementById("plan-poi");
+  const features = (poisData?.features ?? []).filter(
+    (feature) => feature.geometry?.type === "Point",
+  );
+  if (!features.length) return;
+  const ids = features.map((feature) => feature.properties.id);
+  planPoi = planPoi && ids.includes(planPoi)
+    ? planPoi
+    : ids.includes("quarry")
+      ? "quarry"
+      : ids[0];
+
+  // rebuild options only when labels/selection actually changed — scrubbing
+  // re-renders every tick and resetting innerHTML would drop select focus
+  const options = features
+    .map((feature) => {
+      const id = feature.properties.id;
+      const label = poiLabelFor(id, feature.properties.label ?? id);
+      const selected = id === planPoi ? " selected" : "";
+      return `<option value="${id}"${selected}>${label}</option>`;
+    })
+    .join("");
+  const signature = `${state.lang}|${planPoi}`;
+  if (select.dataset.signature !== signature) {
+    select.innerHTML = options;
+    select.dataset.signature = signature;
+  }
+  select.value = planPoi;
+
+  const model = buildPlanChart({
+    timeline: planData.timeline,
+    milestones: planData.milestones,
+    series: planData.series,
+    poi: planPoi,
+    date: state.date,
+  });
+  document.getElementById("plan-chart").innerHTML = chartSvg(model, {
+    lang: state.lang,
+    yLabel: S.t(state.lang, "legend_los_title"),
+  });
+}
+
 function renderAll() {
   renderLayerButtons();
   renderScrubber();
+  renderPlanSection();
   updateOverlay();
   updatePoiVisibility();
   updateAoiVisibility();
@@ -709,6 +770,10 @@ function wireUi() {
     state = S.setShowRioLine(state, event.target.checked);
     renderAll();
   });
+  document.getElementById("plan-poi").addEventListener("change", (event) => {
+    planPoi = event.target.value;
+    renderAll();
+  });
   document.getElementById("share-btn").addEventListener("click", async () => {
     pushUrl();
     await navigator.clipboard?.writeText(location.href);
@@ -811,6 +876,14 @@ async function boot() {
     state = S.setDate(state, restored.date);
   }
   poisData = await getJSON(`/p/${state.slug}/pois.geojson`);
+  // Plan vs. Realidad (L.9): plan milestones + measured InSAR series.
+  // Missing/failed plan = no chart, never a fabricated one.
+  try {
+    planData = await getJSON(`/p/${state.slug}/api/plan`);
+  } catch (error) {
+    console.error("plan request failed", error);
+    planData = null;
+  }
   // the perimeter is the OFFICIAL cadastral geometry when the project
   // fetched it (SNITCR SIRI); the derrotero reconstruction is the
   // fallback for projects without an official fetch (user 2026-10-12:

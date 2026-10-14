@@ -21,10 +21,13 @@ colour-renderable LOS-centimetre product the tile service serves.
 """
 from __future__ import annotations
 
+import json
+
 import numpy as np
 from rasterio.io import MemoryFile
 
 from mirarsetena.pipeline.indices import NODATA
+from mirarsetena.projects.registry import cache_key
 
 C_BAND_WAVELENGTH_M = 0.055465763  # Sentinel-1, 5.405 GHz
 
@@ -109,6 +112,56 @@ def los_range(product_bytes: bytes) -> float | None:
         return None
     limit = float(np.percentile(np.abs(valid), 99))
     return max(limit, 0.5)
+
+
+def sample_pois(product_bytes: bytes, pois: list[dict]) -> list[dict]:
+    """Sample LOS cm at POI coordinates from a product (L.9 plan-vs-actual).
+
+    Each poi is `{"id": ..., "coordinates": [lon, lat]}` (GeoJSON-style
+    WGS84). The value is rounded to 0.001 cm; a coherence-masked pixel or a
+    coordinate outside the footprint yields `los_cm: null` — an honest gap
+    the chart must not interpolate across, never a fabricated 0.
+    """
+    out: list[dict] = []
+    with MemoryFile(product_bytes) as memfile, memfile.open() as src:
+        data = src.read(1)
+        for poi in pois:
+            lon, lat = poi["coordinates"][:2]
+            row, col = src.index(lon, lat)
+            if not (0 <= row < src.height and 0 <= col < src.width):
+                out.append({"id": poi["id"], "los_cm": None})
+                continue
+            value = float(data[row, col])
+            out.append(
+                {
+                    "id": poi["id"],
+                    "los_cm": None if value == NODATA else round(value, 3),
+                }
+            )
+    return out
+
+
+def insar_series_key(slug: str, date: str) -> str:
+    """Storage key of the per-date series entry, beside the product .tif."""
+    return cache_key(slug, "layers", f"sentinel-1-slc_{date}_insar_series.json")
+
+
+def write_insar_series(
+    store, slug: str, date: str, product_bytes: bytes, pois: list[dict]
+) -> str:
+    """Persist per-POI LOS values for one date (L.9 plan-vs-actual series).
+
+    Written at product-build time so the API serves a pre-sampled series
+    instead of re-opening rasters per request. Returns the storage key.
+    """
+    payload = {
+        "date": date,
+        "los_range": los_range(product_bytes),
+        "pois": sample_pois(product_bytes, pois),
+    }
+    key = insar_series_key(slug, date)
+    store.put(key, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+    return key
 
 
 def reference_los(product_bytes: bytes, reference: np.ndarray) -> bytes:
