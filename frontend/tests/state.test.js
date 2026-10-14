@@ -376,3 +376,24 @@ describe("remembered settings (bare-URL loads)", () => {
     );
   });
 });
+
+describe("showCloudControls (cloud UI only where cloud data exists)", () => {
+  it("shows the cloud filter for optical dates and hides it for radar", async () => {
+    const { showCloudControls } = await import("../src/state.js");
+    const config = {
+      slug: "x",
+      layers: ["rgb", "insar"],
+      timeline: { start: "2026-01-01", works_start: "2026-06-01" },
+    };
+    // no dates loaded: nothing to filter — controls stay hidden
+    expect(showCloudControls(makeState(config))).toBe(false);
+    // optical dates carry cloud scores -> filter relevant
+    expect(
+      showCloudControls(setLayer(makeState(config), "rgb", DATES_S2)),
+    ).toBe(true);
+    // radar/InSAR dates never do -> controls hide (user request 2026-10-13)
+    expect(
+      showCloudControls(setLayer(makeState(config), "insar", DATES_S1)),
+    ).toBe(false);
+  });
+});

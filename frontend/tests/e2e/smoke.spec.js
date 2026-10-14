@@ -1066,3 +1066,24 @@ test("plan vs realidad chart follows the insar layer (L.9)", async ({ page }) =>
   await page.locator('#layer-buttons [data-layer="ndvi"]').click();
   await expect(page.locator("#plan-section")).toBeHidden();
 });
+
+test("cloud filter controls hide on the radar/insar layer", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  // optical layer: the cloud controls belong to dates that carry scores
+  await expect(page.locator("#hide-cloudy-row")).toBeVisible();
+  await expect(page.locator("#max-cloud-row")).toBeVisible();
+
+  // insar: radar dates have no cloud score -> controls hidden, not disabled.
+  // Wait for CONTROLS visible first: date-value keeps the previous layer's
+  // text while hidden, which would race the assertion through the load.
+  await page.locator('#layer-buttons [data-layer="insar"]').click();
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
+  await expect(page.locator("#hide-cloudy-row")).toBeHidden();
+  await expect(page.locator("#max-cloud-row")).toBeHidden();
+
+  // back to optical: they return
+  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
+  await expect(page.locator("#hide-cloudy-row")).toBeVisible();
+  await expect(page.locator("#max-cloud-row")).toBeVisible();
+});

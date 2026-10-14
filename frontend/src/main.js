@@ -279,6 +279,12 @@ function renderScrubber() {
   }
   if (!state.layer) return;
 
+  // Cloud filter UI only where dates carry cloud scores (optical); the
+  // radar/InSAR scrubber has none — hide the controls, not just disable them.
+  const showCloud = S.showCloudControls(state);
+  document.getElementById("hide-cloudy-row").hidden = !showCloud;
+  document.getElementById("max-cloud-row").hidden = !showCloud;
+
 
   const loading = state.datesLoading;
   const dates = S.visibleDates(state);

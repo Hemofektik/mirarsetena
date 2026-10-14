@@ -178,6 +178,15 @@ export function visibleDates(state) {
   );
 }
 
+/**
+ * Whether the cloud filter UI (hide-cloudy + max-cloud) applies: only when
+ * the loaded dates actually carry cloud scores. Radar/InSAR dates never
+ * do, so the controls hide instead of pretending to filter anything.
+ */
+export function showCloudControls(state) {
+  return state.dates.some((entry) => entry.cloud != null);
+}
+
 export function tileUrl(state, z, x, y) {
   return `/p/${state.slug}/tiles/${state.layer}/${state.date}/${z}/${x}/${y}.png`;
 }
