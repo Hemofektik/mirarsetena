@@ -153,6 +153,19 @@ def main() -> int:
         "better than January forest)",
     )
     parser.add_argument(
+        "--stop-after", default="geocode", choices=["filter", "geocode"],
+        help="run topsApp only up to this stage: 'filter' skips the "
+        "full-swath unwrap->geocode stage (pathological over this "
+        "tropically-decorrelated swath, >55 min without output, and the "
+        "batch chain unwraps an AOI crop instead — tools/unwrap_crop); "
+        "'geocode' keeps the original spike measurement behavior",
+    )
+    parser.add_argument(
+        "--slc-cache", default=None,
+        help="shared SLC zip cache: pair-dir zips become hardlinks, so "
+        "chained pairs (…,B),(B,…) download B once (tools/batch_insar)",
+    )
+    parser.add_argument(
         "--polarization", default="VV", help="SLC polarization (VV/VH)"
     )
     args = parser.parse_args()
@@ -182,7 +195,15 @@ def main() -> int:
     auth = auth_from_env(storage)
     if not auth.enabled:
         raise SystemExit("CDSE_CLIENT_ID/CDSE_CLIENT_SECRET not set in .env")
-    downloader = make_slc_downloader(auth)
+    downloader = (
+        make_slc_downloader(
+            auth,
+            cache_dir=Path(args.slc_cache).resolve(),
+            budget_bytes=config.cache.slc_budget_bytes,
+        )
+        if args.slc_cache
+        else make_slc_downloader(auth)
+    )
 
     topsapp = find_topsapp()
     if topsapp is None:
@@ -314,25 +335,31 @@ def main() -> int:
         masked = _mask_ifg_nan(pair_dir)
         print(f"  masked {masked} NaN ifg pixels (zero phase + zero coherence)")
 
-        print("  running topsApp unwrap->geocode ...")
-        t2 = time.time()
-        proc2 = subprocess.run(
-            [sys.executable, topsapp, str(runconfig),
-             "--steps", "--start=unwrap", "--end=geocode"],
-            cwd=str(pair_dir), capture_output=True, text=True, check=False,
-        )
-        runtime += time.time() - t2
-        peak_rss_mb = max(
-            peak_rss_mb, resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024
-        )
-        if proc2.returncode != 0:
-            print(f"  topsApp FAILED after {runtime:.0f}s (rc={proc2.returncode})")
-            print(proc2.stderr[-2000:])
-            results.append(
-                {"pair": pair.id, "ok": False, "runtime_s": runtime,
-                 "masked": masked, "stderr_tail": proc2.stderr[-500:]}
+        if args.stop_after == "filter":
+            # Batch chain (tools/batch_insar): merged/ is complete after
+            # filter, the full-swath unwrap here is pathological over this
+            # swath, and the chain unwraps an AOI crop instead.
+            print("  stopping after filter (--stop-after filter)")
+        else:
+            print("  running topsApp unwrap->geocode ...")
+            t2 = time.time()
+            proc2 = subprocess.run(
+                [sys.executable, topsapp, str(runconfig),
+                 "--steps", "--start=unwrap", "--end=geocode"],
+                cwd=str(pair_dir), capture_output=True, text=True, check=False,
             )
-            continue
+            runtime += time.time() - t2
+            peak_rss_mb = max(
+                peak_rss_mb, resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss / 1024
+            )
+            if proc2.returncode != 0:
+                print(f"  topsApp FAILED after {runtime:.0f}s (rc={proc2.returncode})")
+                print(proc2.stderr[-2000:])
+                results.append(
+                    {"pair": pair.id, "ok": False, "runtime_s": runtime,
+                     "masked": masked, "stderr_tail": proc2.stderr[-500:]}
+                )
+                continue
 
         disk_mb = _dir_size(pair_dir) / 1e6
         print(

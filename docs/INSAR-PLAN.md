@@ -69,6 +69,22 @@ delta from the previous same-track acquisition (11–13 d, `pairs.py`).
 the selected date (`state.js::deltaSpan`), so the map always states which
 acquisitions its delta spans.
 
+**Batch history builder (`tools/batch_insar.py`, 2026-10-14):** the single
+spike product left every other insar date blank — the driver processes the
+pairs BEFORE it (`--pair-indexes -5,-4,-3,-2` → ends 08-04, 08-16, 08-28,
+09-09, all S1D; S1A's chain ended in June) through the proven chain:
+`spike_insar --stop-after filter` (the full-swath unwrap stage is skipped —
+pathological; only merged/ is needed) → `unwrap_crop` → `insar_product`
+(10 m) → deploy (tiles cleared, product+series copied into the container)
+→ **purge** (SAFEs + heavy ISCE dirs ≈ 50 GB/pair; `merged/` + `unwrap2/`
+are the re-derivation inputs and are NEVER purged — pinned by
+`test_purge_candidates_keep_the_rebuild_inputs`). Resumable: a pair with
+stored product+series is skipped after a restart, and a shared `--slc-cache`
+hardlinks scenes so the 4 pairs' 5 unique SLCs are downloaded once
+(`make_slc_downloader`'s chained-pair cache, budget = `slc_budget_bytes`).
+Not in CI — needs CDSE + isce2 env + hours; `batch-report.json` tracks
+progress.
+
 **Adaptive ramp (decision 5 gate triggered):** the fixed ±5 cm MVP range
 rendered this product all-white (±0.56 cm data on a ±5 cm ramp). The limit
 is now per-product (p99 of |valid|, floor 0.5 cm — measured 0.578 cm for
