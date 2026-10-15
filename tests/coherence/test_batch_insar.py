@@ -148,3 +148,24 @@ def test_deploy_commands_target_the_live_cache_root(tmp_path):
         "sentinel-1-slc_2026-08-04_insar.tif",
         "sentinel-1-slc_2026-08-04_insar_series.json",
     ]
+
+
+def test_disk_headroom_guard(monkeypatch, tmp_path):
+    # topsApp SIGBUS'd at rc=-7 when the disk hit 0 bytes mid-pair
+    # (2026-10-15, pair 16): the driver must refuse to START a pair it
+    # cannot finish, with a message that says how much is needed.
+    import shutil as _shutil
+
+    from tools.batch_insar import MIN_FREE_BYTES, has_disk_headroom
+
+    def usage(_path):
+        return _shutil._ntuple_diskusage(total=1, used=0, free=MIN_FREE_BYTES - 1)
+
+    monkeypatch.setattr("tools.batch_insar.shutil.disk_usage", usage)
+    assert has_disk_headroom(tmp_path) is False
+
+    def plenty(_path):
+        return _shutil._ntuple_diskusage(total=1, used=0, free=MIN_FREE_BYTES)
+
+    monkeypatch.setattr("tools.batch_insar.shutil.disk_usage", plenty)
+    assert has_disk_headroom(tmp_path) is True

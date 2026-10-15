@@ -45,6 +45,16 @@ HEAVY_PAIR_DIRS = (
 )
 KEEP_PAIR_DIRS = ("merged", "unwrap2", "geom_reference")
 
+# A pair peaks near 40 GB (14 GB SAFEs + unpacks + ISCE intermediates);
+# topsApp SIGBUS'd (rc=-7) when the disk hit 0 bytes mid-pair (2026-10-15,
+# pair 16). Refuse to START a pair without this much free.
+MIN_FREE_BYTES = 45 * 1024**3
+
+
+def has_disk_headroom(path: Path | None = None) -> bool:
+    """True when the workdir's filesystem has >= MIN_FREE_BYTES free."""
+    return shutil.disk_usage(path or Path.cwd()).free >= MIN_FREE_BYTES
+
 
 def resolve_pairs(search_fn, bbox, start, end):
     """Planned pairs in the SAME catalog window the spike indexes against
@@ -197,6 +207,15 @@ def main() -> int:
                   flush=True)
             deploy(date, slug, e2e_root, args.container)
             continue
+        if not has_disk_headroom(work):
+            # topsApp SIGBUS'd at 0 bytes free (pair 16, 2026-10-15): a
+            # pair needs ~40 GB peak — refuse to start what we cannot finish
+            raise SystemExit(
+                f"insufficient disk headroom: need "
+                f"{MIN_FREE_BYTES / 1024**3:.0f} GB free for pair {date}, "
+                f"have {shutil.disk_usage(work).free / 1024**3:.1f} GB — "
+                "purge pair dirs or lower MIN_FREE_BYTES"
+            )
 
         _run(
             [sys.executable, "-m", "tools.spike_insar",
