@@ -78,8 +78,26 @@ export function buildPlanChart({
     const los = hit?.los_cm ?? null;
     return { date: entry.date, los };
   });
+  // Noise floor (L.7 validation): population std of this POI's readings
+  // ACROSS the pairs — the ±1σ whisker that shows a point's uncertainty.
+  // One pair has no spread to show (sigma null, never a fabricated bar).
+  const values = points
+    .map((p) => p.los)
+    .filter((v) => v != null);
+  const mean = values.length
+    ? values.reduce((acc, v) => acc + v, 0) / values.length
+    : 0;
+  const sigma =
+    values.length >= 2
+      ? Math.sqrt(
+          values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / values.length,
+        )
+      : null;
   const maxAbs = points.reduce(
-    (m, p) => (p.los == null ? m : Math.max(m, Math.abs(p.los))),
+    (m, p) =>
+      p.los == null
+        ? m
+        : Math.max(m, Math.abs(p.los) + (sigma ?? 0)),
     0,
   );
   // axis fits the data, floored like the map ramp (0.5 cm), 0.1 cm steps
@@ -94,7 +112,7 @@ export function buildPlanChart({
       run = [];
       continue;
     }
-    run.push({ ...point, x: xAt(dayMs(point.date)), y: yAt(point.los) });
+    run.push({ ...point, sigma, x: xAt(dayMs(point.date)), y: yAt(point.los) });
   }
   if (run.length) segments.push(run);
 
@@ -266,6 +284,27 @@ export function chartSvg(model, { lang = "es", yLabel = "cm" } = {}) {
         `</text>`,
     );
   });
+
+  // noise-floor whiskers (±1σ across pairs) under line and dots — the
+  // visual answer to "is this reading above its own uncertainty?"
+  const whiskerY = (los) =>
+    pad.top + ((limit - los) / (2 * limit)) * (height - pad.top - pad.bottom);
+  for (const segment of model.segments) {
+    for (const p of segment) {
+      if (p.sigma == null) continue;
+      const yTop = whiskerY(p.los + p.sigma).toFixed(1);
+      const yBot = whiskerY(p.los - p.sigma).toFixed(1);
+      const x = p.x.toFixed(1);
+      parts.push(
+        `<line class="plan-whisker" data-date="${p.date}" ` +
+          `x1="${x}" y1="${yTop}" x2="${x}" y2="${yBot}" />`,
+        `<line class="plan-whisker-cap" x1="${(+p.x - 3).toFixed(1)}" y1="${yTop}" ` +
+          `x2="${(+p.x + 3).toFixed(1)}" y2="${yTop}" />`,
+        `<line class="plan-whisker-cap" x1="${(+p.x - 3).toFixed(1)}" y1="${yBot}" ` +
+          `x2="${(+p.x + 3).toFixed(1)}" y2="${yBot}" />`,
+      );
+    }
+  }
 
   // measured series: broken polylines + dots (gaps = no segment at all)
   for (const segment of model.segments) {

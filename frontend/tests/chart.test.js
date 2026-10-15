@@ -22,7 +22,9 @@ describe("buildPlanChart", () => {
       poi: "quarry",
       date: "2026-10-03",
     });
-    expect(big.limit).toBeCloseTo(0.8, 10);
+    // the domain covers |los| ± σ so noise-floor whiskers never clip:
+    // values {0.8, -0.6} -> σ 0.7 -> max |los|+σ = 1.5
+    expect(big.limit).toBeCloseTo(1.5, 10);
 
     const small = buildPlanChart({
       timeline: TIMELINE,
@@ -205,5 +207,68 @@ describe("label honesty (regression)", () => {
     expect(svg.indexOf('class="plan-cursor"')).toBeLessThan(
       svg.indexOf('class="plan-line"'),
     );
+  });
+});
+
+describe("noise-floor whiskers (±1σ across pairs, L.7 validation)", () => {
+  const series = [
+    { date: "2026-08-04", los_range: 0.8, pois: [{ id: "quarry", los_cm: 0.05 }] },
+    { date: "2026-08-16", los_range: 0.7, pois: [{ id: "quarry", los_cm: 0.07 }] },
+    { date: "2026-08-28", los_range: 0.7, pois: [{ id: "quarry", los_cm: 0.24 }] },
+    { date: "2026-09-09", los_range: 0.7, pois: [{ id: "quarry", los_cm: -0.15 }] },
+    { date: "2026-10-03", los_range: 0.6, pois: [{ id: "quarry", los_cm: 0.04 }] },
+  ];
+
+  test("attaches the population std over all pairs as each point's sigma", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series, poi: "quarry", date: "2026-10-03",
+    });
+    const flat = model.segments.flat();
+    expect(flat).toHaveLength(5);
+    for (const p of flat) {
+      expect(p.sigma).toBeGreaterThan(0.1); // measured quarry floor ~0.12
+      expect(p.sigma).toBeLessThan(0.2);
+    }
+    // measured goldens: values [0.05, 0.07, 0.24, -0.15, 0.04] -> std
+    expect(flat[0].sigma).toBeCloseTo(0.128, 2);
+    expect(flat[2].sigma).toBeCloseTo(0.128, 2);
+  });
+
+  test("no sigma for a lone pair (nothing to spread over)", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series: series.slice(-1), poi: "quarry",
+      date: "2026-10-03",
+    });
+    expect(model.segments[0][0].sigma).toBeNull();
+  });
+
+  test("the y domain covers los ± sigma so whiskers never clip", () => {
+    const outlier = [...series.slice(0, 4), {
+      date: "2026-10-03", los_range: 0.6,
+      pois: [{ id: "quarry", los_cm: 0.9 }],
+    }];
+    const model = buildPlanChart({
+      timeline: TIMELINE, series: outlier, poi: "quarry", date: "2026-10-03",
+    });
+    const flat = model.segments.flat();
+    for (const p of flat) {
+      expect(Math.abs(p.los) + p.sigma).toBeLessThanOrEqual(model.limit + 1e-9);
+    }
+  });
+
+  test("renders whiskers (line + caps) for points with sigma, none without", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series, poi: "quarry", date: "2026-10-03",
+    });
+    const svg = chartSvg(model, { lang: "es", yLabel: "cm" });
+    expect(svg.match(/class="plan-whisker"/g) ?? []).toHaveLength(5); // line per point
+    expect(svg.match(/plan-whisker-cap/g) ?? []).toHaveLength(10); // 2 caps each
+
+    const lone = buildPlanChart({
+      timeline: TIMELINE, series: series.slice(-1), poi: "quarry",
+      date: "2026-10-03",
+    });
+    const loneSvg = chartSvg(lone, { lang: "es", yLabel: "cm" });
+    expect(loneSvg).not.toContain("plan-whisker");
   });
 });

@@ -485,6 +485,7 @@ export const MESSAGES = {
     plan_poi: "Punto",
     plan_note:
       "Puntos = InSAR medido (cm en la línea de visión; huecos = sin dato). " +
+      "Barras = ±1σ entre pares (suelo de ruido). " +
       "Trazo punteado = hitos del plan. El InSAR no mide metros de excavación.",
   },
   en: {
@@ -579,7 +580,8 @@ export const MESSAGES = {
     plan_poi: "Point",
     plan_note:
       "Dots = InSAR measured (cm along the satellite line of sight; gaps = no " +
-      "data). Dashed = plan milestones. InSAR does not measure excavation metres.",
+      "data). Bars = ±1σ across pairs (noise floor). Dashed = plan milestones. " +
+      "InSAR does not measure excavation metres.",
   },
 };
 

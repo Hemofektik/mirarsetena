@@ -1459,3 +1459,25 @@ test("PNG download includes the POI markers (dots, labels, leaders)", async ({
     ).toBeGreaterThan(20);
   }
 });
+
+test("plan chart shows noise-floor whiskers per measured point", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
+  await page.locator('#layer-buttons [data-layer="insar"]').click();
+  const dots = page.locator("#plan-chart circle[data-los]");
+  await expect(dots.first()).toBeVisible({ timeout: 30_000 });
+
+  // with >= 2 stored pairs every plotted point carries a ±1σ whisker
+  const dotCount = await dots.count();
+  expect(dotCount).toBeGreaterThanOrEqual(2);
+  await expect(page.locator("#plan-chart line.plan-whisker")).toHaveCount(
+    dotCount,
+  );
+  await expect(page.locator("#plan-chart line.plan-whisker-cap")).toHaveCount(
+    dotCount * 2,
+  );
+  // the note explains the bars (i18n present, es default)
+  await expect(page.locator("#plan-note")).toContainText("1σ");
+});

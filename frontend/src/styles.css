@@ -905,3 +905,13 @@ dialog form button {
   margin-bottom: 0.3rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* Noise-floor whiskers (±1σ across pairs, L.7 validation) */
+.plan-whisker {
+  stroke: #7c2d12;
+  stroke-width: 1;
+}
+.plan-whisker-cap {
+  stroke: #7c2d12;
+  stroke-width: 1;
+}
