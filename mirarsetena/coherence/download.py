@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -122,24 +123,62 @@ def _ts_distance(a: str, b: str) -> int:
     return abs(int((da - db).total_seconds()))
 
 
-def download_product(auth: CdseAuth, product_id: str, dest: Path) -> Path:
-    """Stream one CDSE product (SAFE zip) to `dest`."""
+DOWNLOAD_ATTEMPTS = 4
+DOWNLOAD_READ_TIMEOUT_S = 60.0
+_BACKOFF_S = (5, 15, 45)  # between attempts; the read timeout per chunk
+
+
+def download_product(
+    auth: CdseAuth,
+    product_id: str,
+    dest: Path,
+    *,
+    client=None,
+    sleep=time.sleep,
+) -> Path:
+    """Stream one CDSE product (SAFE zip) to `dest`, resumable + retrying.
+
+    CDSE stalls occasionally mid-stream (measured 2026-10-15: a 7 GB read
+    timed out 23 minutes in and killed the pair). Each attempt resumes
+    from the bytes already on `dest` via HTTP Range, so a stall costs the
+    gap — not the whole scene — and a partial file survives a final
+    failure for the next run to resume. HTTP >= 400 is not retried.
+    """
     if not auth.enabled:
         raise CoherenceUnavailable("CDSE credentials not configured")
+    dest = Path(dest)
+    client = client or auth.client
     url = f"{ODATA_DOWNLOAD_URL}/Products({product_id})/$value"
-    try:
-        with auth.client.stream(
-            "GET", url, headers={"Authorization": f"Bearer {auth.token()}"}
-        ) as response:
-            if response.status_code >= 400:
-                raise CoherenceUnavailable(
-                    f"CDSE download failed: HTTP {response.status_code}"
-                )
-            with open(dest, "wb") as handle:
-                handle.writelines(response.iter_bytes())
-    except httpx.HTTPError as exc:
-        raise CoherenceUnavailable(f"CDSE download transport error: {exc}") from exc
-    return dest
+    last_exc = None
+    for attempt in range(DOWNLOAD_ATTEMPTS):
+        offset = dest.stat().st_size if dest.is_file() else 0
+        extra = {"Range": f"bytes={offset}-"} if offset else {}
+        try:
+            with client.stream(
+                "GET", url,
+                headers={"Authorization": f"Bearer {auth.token()}", **extra},
+                timeout=httpx.Timeout(DOWNLOAD_READ_TIMEOUT_S, connect=30.0),
+            ) as response:
+                if response.status_code >= 400:
+                    raise CoherenceUnavailable(
+                        f"CDSE download failed: HTTP {response.status_code}"
+                    )
+                appending = offset > 0 and response.status_code == 206
+                if not appending:
+                    offset = 0
+                with open(dest, "ab" if appending else "wb") as handle:
+                    handle.writelines(response.iter_bytes())
+            return dest
+        except CoherenceUnavailable:
+            raise
+        except httpx.HTTPError as exc:
+            last_exc = exc
+            if attempt == DOWNLOAD_ATTEMPTS - 1:
+                break
+            sleep(_BACKOFF_S[min(attempt, len(_BACKOFF_S) - 1)])
+    raise CoherenceUnavailable(
+        f"CDSE download transport error after {DOWNLOAD_ATTEMPTS} attempts: {last_exc}"
+    ) from last_exc
 
 
 def _link_into(src: Path, dst: Path) -> None:
