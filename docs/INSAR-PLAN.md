@@ -320,6 +320,28 @@ scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
   (and IMPLEMENTATION Phase L once started).
 - **Checks:** sign convention verified against known subsidence-free terrain;
   no km-scale ramps (atmosphere) surviving the stack; two tracks not mixed.
+- **Measured 2026-10-15 (5 live pairs, user: "the data looks like noise" —
+  quantified):**
+  1. *Coherence gate coverage* (phsig over the AOI crop, threshold 0.35):
+     08-04 **39%**, 08-16 44%, 08-28 46%, 09-09 54%, 10-03 (dry season)
+     median 0.536 — vegetation decorrelation removes ~half the map in the
+     wet season and improves toward the dry season. Vegetation decides
+     WHERE measurements exist (bare: quarry, roads, buildings).
+  2. *Field repeatability:* pairwise Pearson correlation of the 5 LOS
+     fields over 22,168 common-valid px spans −0.61…+0.54 with no
+     persistent structure — the maps do NOT repeat, i.e. they are not
+     imaging a real displacement field.
+  3. *Per-POI noise floor:* std across pairs = 0.12–0.38 cm (quarry
+     ±0.12); every per-POI reading sits inside its own error bar.
+  **Conclusion:** per-pair products are noise-dominated — the residual is
+  per-pair atmospheric delay (±0.5–1 cm spatially varying over a few km)
+  plus unwrap noise, both temporally random. The L.6b **MintPy/SBAS gate
+  is TRIGGERED**: stacking is the fix (APS averages out, persistent
+  motion accumulates); needs 10–20+ pairs and lands as the stack tier.
+  Until then the layer's honest uses are the coherence/stability mask,
+  decorrelation-as-change (active digs lose coherence — the gaps ARE the
+  signal), and large persistent signals. Excavation PROGRESS stays with
+  the optical layers (as scoped).
 
 ### L.8 Documentation & scope sync — 0.25 day
 - SCOPE Q3 row → link this plan; research tier §5.7 status note; IMPLEMENTATION
