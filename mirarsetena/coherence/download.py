@@ -159,6 +159,12 @@ def download_product(
                 headers={"Authorization": f"Bearer {auth.token()}", **extra},
                 timeout=httpx.Timeout(DOWNLOAD_READ_TIMEOUT_S, connect=30.0),
             ) as response:
+                if response.status_code == 416 and offset > 0:
+                    # RFC 7233: an offset at/after the end of the object —
+                    # the first attempt streamed every byte but the
+                    # connection died before EOF, so the partial IS the
+                    # whole file (measured 2026-10-15, 03-18 scene)
+                    return dest
                 if response.status_code >= 400:
                     raise CoherenceUnavailable(
                         f"CDSE download failed: HTTP {response.status_code}"
@@ -247,11 +253,10 @@ def make_slc_downloader(
             product = find_slc_product(auth, scene.id)
             cache.mkdir(parents=True, exist_ok=True)
             staging = cache / f"{cached.name}.part"  # atomic: no partial zips
-            try:
-                download_product(auth, product["id"], staging)
-            except BaseException:
-                staging.unlink(missing_ok=True)
-                raise
+            # On failure the staging .part STAYS: the next run resumes it
+            # via Range instead of restarting a multi-GB transfer (the old
+            # unlink cost the 03-18 scene's 7.6 GB, 2026-10-15).
+            download_product(auth, product["id"], staging)
             os.replace(staging, cached)
             link = Path(workdir) / cached.name
             _link_into(cached, link)

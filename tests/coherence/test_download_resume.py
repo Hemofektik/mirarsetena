@@ -7,6 +7,8 @@ state. Not run in CI beyond these fakes (no network).
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import httpx
 import pytest
 
@@ -114,3 +116,63 @@ def test_http_error_is_not_retried(tmp_path):
     with pytest.raises(CoherenceUnavailable, match="403"):
         download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
     assert len(client.calls) == 1
+
+
+def test_416_on_resume_means_the_file_is_complete(tmp_path):
+    # Measured 2026-10-15: the first attempt streamed every byte but the
+    # connection dropped before EOF; the resume Range then hit 416 — the
+    # RFC's answer for an offset at the end of the object. That means the
+    # partial IS the whole file, not an error.
+    dest = tmp_path / "scene.zip"
+    client = FakeClient(
+        [
+            FakeResponse(200, FULL, fail_after=len(FULL), exc=httpx.ReadTimeout("eof stall")),
+            FakeResponse(416, b""),
+        ]
+    )
+    out = download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
+    assert out == dest
+    assert dest.read_bytes() == FULL
+
+
+def test_cache_partial_survives_a_failed_run(monkeypatch, tmp_path):
+    # The cache wrapper used to DELETE the .part on failure, throwing away
+    # gigabytes the next run could resume (the 03-18 scene lost 7.6 GB).
+    from mirarsetena.coherence import download as dl
+    from mirarsetena.coherence.download import make_slc_downloader
+    from mirarsetena.coherence.pairs import InterferometricPair
+    from mirarsetena.pipeline.catalog import Scene
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    work = tmp_path / "work"
+    work.mkdir()
+
+    monkeypatch.setattr(dl, "find_slc_product", lambda auth, sid: {"id": "x", "name": "S.zip"})
+
+    def failing(auth, product_id, dest, **kw):
+        Path(dest).write_bytes(b"partial-bytes")
+        raise CoherenceUnavailable("stall")
+
+    monkeypatch.setattr(dl, "download_product", failing)
+    scene = Scene(
+        id="S1A_TEST_20260101T000000_20260101T000030_0_X_X",
+        collection="sentinel-1-grd",
+        datetime="2026-01-01T00:00:00Z",
+        date="2026-01-01",
+        cloud=None,
+    )
+    scene2 = Scene(
+        id="S1A_TEST_20260113T000000_20260113T000030_0_X_X",
+        collection="sentinel-1-grd",
+        datetime="2026-01-13T00:00:00Z",
+        date="2026-01-13",
+        cloud=None,
+    )
+    pair = InterferometricPair(first=scene, second=scene2)
+    downloader = make_slc_downloader(_auth(), cache_dir=cache, budget_bytes=10**12)
+    with pytest.raises(CoherenceUnavailable):
+        downloader(pair, work)
+    partials = list(cache.glob("*.part"))
+    assert len(partials) == 1
+    assert partials[0].read_bytes() == b"partial-bytes"
