@@ -333,6 +333,17 @@ scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
      imaging a real displacement field.
   3. *Per-POI noise floor:* std across pairs = 0.12–0.38 cm (quarry
      ±0.12); every per-POI reading sits inside its own error bar.
+  4. *Season effect measured* (2026-10-15, experiment pair `02-22 → 03-06`,
+     S1A ascending — the geometric twin of the processed S1D asc pairs):
+     dry-season gate coverage **57%** (median γ 0.393) vs wet-season
+     39/44/54% (γ 0.315/0.328/0.376) — real but moderate (+11 pp over the
+     wet mean): permanent water and some vegetation never correlate. The
+     dry pair's product is the best yet (99.2% valid px, 10/10 POIs) and
+     S1A ran the whole pipeline cleanly. **Pre-works stack value:** 18 S1A
+     pairs exist (mostly dry-season); they lengthen the future SBAS
+     network ~4× and give the pre-works reference epoch, but they cannot
+     be phase-tied to S1D (no cross-sensor pair) — only coherence
+     magnitude is comparable across the sensor boundary.
   **Conclusion:** per-pair products are noise-dominated — the residual is
   per-pair atmospheric delay (±0.5–1 cm spatially varying over a few km)
   plus unwrap noise, both temporally random. The L.6b **MintPy/SBAS gate
