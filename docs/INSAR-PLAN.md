@@ -300,6 +300,28 @@ scrubber, WMTS time dimension, storage budgets (10 GB LRU; peak disk per pair
 - **Status:** [x] done. Tiles 404 honestly until a processor+credentials
   produce a product (L.1/L.2).
 
+### L.6a SBAS network (decision recorded 2026-10-16)
+
+The MintPy tier's standard ISCE2 loader needs the classic topsApp stack
+layout (merged/SLC full-swath unwrapped + geocoded interferograms) —
+which this project deliberately never produces: full-swath snaphu is
+pathological here and the pipeline crop-unwraps instead (L.1). Rebuilding
+the classic layout would mean reprocessing everything the expensive way.
+
+**Decision:** implement the solver in-repo (`mirarsetena/coherence/sbas.py`)
+over the data AS BUILT: per-edge geocoded, referenced, coherence-masked
+10 m products on a common grid. Weighted per-chain least squares
+(edges = 12-day chain + 24-day closers, cross-sensor never mixed) gives
+per-date cumulative LOS — the standard SBAS inversion, no loader
+archaeology. MintPy (installed into the isce2 env) stays available as a
+cross-check, not the primary engine.
+
+Network state (2026-10-16): S1D-asc = 5×12-day + 4×24-day triangles
+over nodes 07-11..09-09 (pair 0711→0723 completing the first triangle);
+S1A-asc = 9 consecutive pairs, no triangles yet (24-day closers
+available in the catalog but unprocessed — S1A remains cumsum-equivalent
+until then); S1D-desc = one pair, not invertible.
+
 ### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
   products referenced to the first pre-works pair (echoes the optical
