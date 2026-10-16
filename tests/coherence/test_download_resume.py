@@ -286,8 +286,60 @@ def test_416_with_unknown_total_restarts_clean(tmp_path):
             FakeResponse(200, FULL),                    # clean restart
         ]
     )
-    out = download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
+    download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
     assert dest.read_bytes() == FULL
     # the partial was discarded, not finalized
     assert len(client.calls) == 4
     assert "Range" not in client.calls[3]["headers"]
+
+
+def test_416_finalize_is_gated_on_content_validation(tmp_path):
+    # The traced failure (2026-10-16): attempt1 fresh-stream stalls at
+    # 5 MB; the resume hits a CDN edge with a TRUNCATED cached copy and
+    # 416s; the size probe hits ANOTHER edge and lies with a small total
+    # -> the partial was finalized as complete. Content validation must
+    # gate the finalize: a partial that fails is_valid_zip restarts even
+    # when a probe total says otherwise; a valid zip finalizes with no
+    # probe at all.
+    import io
+    import zipfile
+
+    def zip_bytes():
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("inner.txt", b"x" * 1000)
+        return buf.getvalue()
+
+    good = zip_bytes()
+
+    # (a) partial passes the validator -> finalized, no probe needed
+    dest_a = tmp_path / "a.zip"
+    dest_a.write_bytes(good)  # complete on disk, connection died before EOF
+    client_a = FakeClient(
+        [
+            FakeResponse(416, b""),  # resume -> 416; validator decides
+        ]
+    )
+    out = download_product(
+        _auth(), "42", dest_a, client=client_a, sleep=lambda _s: None,
+        validate=is_valid_zip,
+    )
+    assert out == dest_a
+    assert len(client_a.calls) == 1  # no probe round-trip
+
+    # (b) partial FAILS the validator (truncated garbage) -> restart clean
+    dest_b = tmp_path / "b.zip"
+    dest_b.write_bytes(good[:100])  # a truncated prefix on disk
+    client_b = FakeClient(
+        [
+            FakeResponse(416, b""),               # resume -> 416
+            FakeResponse(200, good),              # clean restart wins
+        ]
+    )
+    out = download_product(
+        _auth(), "42", dest_b, client=client_b, sleep=lambda _s: None,
+        validate=is_valid_zip,
+    )
+    assert dest_b.read_bytes() == good
+    assert len(client_b.calls) == 2
+    assert "Range" not in client_b.calls[1]["headers"]

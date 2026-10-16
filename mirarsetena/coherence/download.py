@@ -199,12 +199,17 @@ def download_product(
                 timeout=httpx.Timeout(DOWNLOAD_READ_TIMEOUT_S, connect=30.0),
             ) as response:
                 if response.status_code == 416 and offset > 0:
-                    # RFC 7233: offset past the end. A PROBE decides:
-                    # partial >= total -> the stream is the whole object;
-                    # a FAILED probe or a short partial means Range is
-                    # unsupported or the file is bad — discard and
-                    # restart clean (a 3.07 GB truncation once passed
-                    # as "complete" this way and burned three relaunches)
+                    # RFC 7233: offset past the end. With a CONTENT
+                    # validator the content decides alone (a traced run
+                    # showed the size probe hitting a different CDN edge
+                    # that LIED with a small total and finalized a 5 MB
+                    # truncation). Without one, only a probe that PROVES
+                    # size >= total finalizes; a failed probe restarts.
+                    if validate is not None:
+                        if validate(dest):
+                            return dest
+                        dest.unlink(missing_ok=True)
+                        continue
                     total = _probe_total(client, url, auth_headers)
                     if total is not None and dest.stat().st_size >= total:
                         return dest
