@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+from mirarsetena.coherence.pairs import plan_pairs
 from mirarsetena.pipeline.catalog import parse_scenes
 from mirarsetena.storage import LocalStore
 from tools.batch_insar import pair_is_done, purge_candidates, resolve_pairs
@@ -229,3 +230,24 @@ def test_pair_processed_needs_both_chain_outputs(tmp_path):
     (tmp_path / "unwrap2").mkdir()
     (tmp_path / "unwrap2" / "crop.unw").write_bytes(b"x")
     assert pair_processed(tmp_path)
+
+
+def test_pair_dirs_never_collide_across_baselines():
+    # Measured 2026-10-16: end-date-only dirs made the sbas-only gate skip
+    # all four 24-day closers (their end dates matched processed 12-day
+    # pairs) and a rerun would have clobbered the 12-day artifacts.
+    import json as _json
+
+    from tools.batch_insar import pair_dir_name
+
+    payload = _json.loads((FIXTURES / "stac_s1_grd.json").read_text(encoding="utf-8"))
+    scenes = parse_scenes("sentinel-1-grd", payload)
+    twelve = {(p.first.date, p.second.date): pair_dir_name(p)
+              for p in plan_pairs(scenes)}
+    twentyfour = {(p.first.date, p.second.date): pair_dir_name(p)
+                  for p in plan_pairs(scenes, min_days=23, max_days=25)}
+    # identical end dates, different windows -> different dirs
+    ends_12 = {e for _s, e in twelve}
+    ends_24 = {e for _s, e in twentyfour}
+    assert ends_12 & ends_24  # they DO share end dates (08-04, 08-16, ...)
+    assert set(twelve.values()).isdisjoint(twentyfour.values())

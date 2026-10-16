@@ -78,6 +78,14 @@ def pair_is_done(store, slug: str, date: str) -> bool:
     )
 
 
+def pair_dir_name(pair) -> str:
+    """Scratch dir for one pair — keyed by BOTH dates: a 24-day closer and
+    the 12-day chain share END dates (e.g. 08-16), and one dir per end
+    date made the sbas-only gate skip them all and would have let a
+    rerun clobber the 12-day artifacts (measured 2026-10-16)."""
+    return f"{pair.first.date}_{pair.second.date}"
+
+
 def pair_processed(pair_dir: Path) -> bool:
     """Resume gate for --sbas-only: the crop chain already produced both
     MintPy inputs (the merged interferogram and the unwrapped AOI crop)."""
@@ -219,7 +227,7 @@ def main() -> int:
         pair = pairs[idx % len(pairs)]
         date = pair.second.date
         print(f"\n=== pair[{idx}] {pair.first.date} -> {date} ===", flush=True)
-        pair_dir = work / date
+        pair_dir = work / pair_dir_name(pair)
 
         if args.sbas_only:
             # MintPy input only: no product build/deploy/purge — a 24-day
