@@ -233,6 +233,15 @@ def main() -> int:
         "'geocode' keeps the original spike measurement behavior",
     )
     parser.add_argument(
+        "--min-days", type=float, default=11.0,
+        help="pair temporal-baseline window (must match the batch driver's "
+        "planning so --pair-index selects the same pair; 23 for SBAS "
+        "triangle closers)",
+    )
+    parser.add_argument(
+        "--max-days", type=float, default=13.0,
+    )
+    parser.add_argument(
         "--slc-cache", default=None,
         help="shared SLC zip cache: pair-dir zips become hardlinks, so "
         "chained pairs (…,B),(B,…) download B once (tools/batch_insar)",
@@ -257,7 +266,7 @@ def main() -> int:
         "sentinel-1-grd", bbox,
         config.timeline.start.isoformat(), "2026-10-12",
     )
-    pairs = plan_pairs(scenes)
+    pairs = plan_pairs(scenes, min_days=args.min_days, max_days=args.max_days)
     if not pairs:
         raise SystemExit("no interferometric pairs in the catalog window")
     pairs = [pairs[args.pair_index % len(pairs)]]

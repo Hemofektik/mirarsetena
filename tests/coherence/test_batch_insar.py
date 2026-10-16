@@ -169,3 +169,63 @@ def test_disk_headroom_guard(monkeypatch, tmp_path):
 
     monkeypatch.setattr("tools.batch_insar.shutil.disk_usage", plenty)
     assert has_disk_headroom(tmp_path) is True
+
+
+def test_plan_pairs_supports_24day_triangles():
+    # SBAS needs redundant baselines: on a consecutive 12-day chain the
+    # per-date atmosphere is indistinguishable from motion (rank-deficient
+    # for MintPy). 24-day pairs close triangles (t0,t1),(t1,t2),(t0,t2).
+    import json as _json
+
+    from mirarsetena.coherence.pairs import plan_pairs
+
+    payload = _json.loads((FIXTURES / "stac_s1_grd.json").read_text(encoding="utf-8"))
+    scenes = parse_scenes("sentinel-1-grd", payload)
+    twelve = plan_pairs(scenes)
+    assert len(twelve) == 6  # default stays the consecutive 12-day chain
+    twentyfour = plan_pairs(scenes, min_days=23, max_days=25)
+    ends = [(p.first.date, p.second.date) for p in twentyfour]
+    # fixture asc chain: 07-11, 07-23, 08-04, 08-16, 08-28, 09-09 — the
+    # 24-day pairs are exactly the off-diagonal triangle closers
+    assert ("2026-07-11", "2026-08-04") in ends
+    assert ("2026-08-16", "2026-09-09") in ends
+    assert all(
+        23 <= (_dt(p.second.datetime) - _dt(p.first.datetime)).days <= 25
+        for p in twentyfour
+    )
+    # and the two planners never mix: no 12-day pair in the 24-day list
+    assert all(p.first.date != p.second.date for p in twentyfour)
+
+
+def _dt(iso):
+    from datetime import datetime
+
+    return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+
+
+def test_resolve_pairs_passes_the_baseline_window():
+    import json as _json
+
+    payload = _json.loads((FIXTURES / "stac_s1_grd.json").read_text(encoding="utf-8"))
+
+    def fake(collection, bbox, start, end):
+        return parse_scenes(collection, payload)
+
+    twelve = resolve_pairs(fake, BBOX, "2026-01-01", "2026-10-12")
+    twentyfour = resolve_pairs(
+        fake, BBOX, "2026-01-01", "2026-10-12", min_days=23, max_days=25
+    )
+    assert len(twelve) == 6
+    assert len(twentyfour) == 4  # the asc triangle closers
+
+
+def test_pair_processed_needs_both_chain_outputs(tmp_path):
+    from tools.batch_insar import pair_processed
+
+    assert not pair_processed(tmp_path)
+    (tmp_path / "merged").mkdir()
+    (tmp_path / "merged" / "filt_topophase.flat").write_bytes(b"x")
+    assert not pair_processed(tmp_path)  # unwrap still missing
+    (tmp_path / "unwrap2").mkdir()
+    (tmp_path / "unwrap2" / "crop.unw").write_bytes(b"x")
+    assert pair_processed(tmp_path)

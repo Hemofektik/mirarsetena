@@ -56,13 +56,15 @@ def has_disk_headroom(path: Path | None = None) -> bool:
     return shutil.disk_usage(path or Path.cwd()).free >= MIN_FREE_BYTES
 
 
-def resolve_pairs(search_fn, bbox, start, end):
+def resolve_pairs(search_fn, bbox, start, end, *, min_days=11.0, max_days=13.0):
     """Planned pairs in the SAME catalog window the spike indexes against
-    (a mismatch would make --pair-index select a different pair)."""
+    (a mismatch would make --pair-index select a different pair). Wider
+    windows (23–25 d) plan the SBAS triangle closers over the 12-day
+    chain — see plan_pairs."""
     from mirarsetena.coherence.pairs import plan_pairs
 
     scenes = search_fn("sentinel-1-grd", bbox, start, end)
-    return plan_pairs(scenes)
+    return plan_pairs(scenes, min_days=min_days, max_days=max_days)
 
 
 def pair_is_done(store, slug: str, date: str) -> bool:
@@ -73,6 +75,15 @@ def pair_is_done(store, slug: str, date: str) -> bool:
     return bool(
         store.exists(layer_key(slug, "sentinel-1-slc", date, "insar"))
         and store.exists(insar_series_key(slug, date))
+    )
+
+
+def pair_processed(pair_dir: Path) -> bool:
+    """Resume gate for --sbas-only: the crop chain already produced both
+    MintPy inputs (the merged interferogram and the unwrapped AOI crop)."""
+    return bool(
+        (pair_dir / "merged" / "filt_topophase.flat").is_file()
+        and (pair_dir / "unwrap2" / "crop.unw").is_file()
     )
 
 
@@ -157,6 +168,17 @@ def main() -> int:
         "--catalog-end", default="2026-10-12",
         help="must match spike_insar's window so indexes select the same pairs",
     )
+    parser.add_argument("--min-days", type=float, default=11.0,
+                        help="pair baseline window; 23..25 plans the SBAS "
+                        "triangle closers over the 12-day chain")
+    parser.add_argument("--max-days", type=float, default=13.0)
+    parser.add_argument("--sbas-only", action="store_true",
+                        help="process spike+unwrap and KEEP everything "
+                        "(no product build, no deploy, no purge): the "
+                        "24-day closers share END DATES with the served "
+                        "12-day products and must not overwrite them; "
+                        "merged/+unwrap2/+geom_reference/ are the MintPy "
+                        "input")
     parser.add_argument("--container", default="mirarsetena-api-1")
     parser.add_argument(
         "--slc-cache", default="data/spike/slc-cache",
@@ -183,7 +205,8 @@ def main() -> int:
     live_store = LocalStore(REPO / "data" / "cache")
 
     pairs = resolve_pairs(
-        search, bbox, config.timeline.start.isoformat(), args.catalog_end
+        search, bbox, config.timeline.start.isoformat(), args.catalog_end,
+        min_days=args.min_days, max_days=args.max_days,
     )
     if not pairs:
         raise SystemExit("no interferometric pairs in the catalog window")
@@ -196,6 +219,44 @@ def main() -> int:
         pair = pairs[idx % len(pairs)]
         date = pair.second.date
         print(f"\n=== pair[{idx}] {pair.first.date} -> {date} ===", flush=True)
+        pair_dir = work / date
+
+        if args.sbas_only:
+            # MintPy input only: no product build/deploy/purge — a 24-day
+            # closer shares its END DATE with the served 12-day product
+            # and must never overwrite it
+            if pair_processed(pair_dir):
+                print("  already processed (SBAS inputs present) — skipping",
+                      flush=True)
+                continue
+            if not has_disk_headroom(work):
+                raise SystemExit(
+                    f"insufficient disk headroom for pair {date}: need "
+                    f"{MIN_FREE_BYTES / 1024**3:.0f} GB"
+                )
+            _run(
+                [sys.executable, "-m", "tools.spike_insar",
+                 "--pair-index", str(idx), "--stop-after", "filter",
+                 "--min-days", str(args.min_days),
+                 "--max-days", str(args.max_days),
+                 "--workdir", str(work),
+                 *(["--slc-cache", str(Path(args.slc_cache).resolve())]
+                   if args.slc_cache else [])],
+                cwd=REPO, label=f"spike {date}",
+            )
+            if not (pair_dir / "merged" / "filt_topophase.flat").is_file():
+                raise SystemExit(f"spike produced no merged/ for {date}")
+            _run(
+                [sys.executable, "-m", "tools.unwrap_crop",
+                 "--merged", str(pair_dir / "merged"),
+                 f"--bbox={','.join(str(c) for c in bbox)}",
+                 "--workdir", str(pair_dir / "unwrap2")],
+                cwd=REPO, label=f"unwrap {date}",
+            )
+            report.append({"pair": pair.id, "date": date, "ok": True,
+                           "sbas_only": True, "finished_at": time.time()})
+            report_path.write_text(json.dumps(report, indent=2))
+            continue
 
         if pair_is_done(live_store, slug, date):
             print("  already deployed (product+series) — skipping", flush=True)
@@ -220,12 +281,13 @@ def main() -> int:
         _run(
             [sys.executable, "-m", "tools.spike_insar",
              "--pair-index", str(idx), "--stop-after", "filter",
+             "--min-days", str(args.min_days),
+             "--max-days", str(args.max_days),
              "--workdir", str(work),
              *(["--slc-cache", str(Path(args.slc_cache).resolve())]
                if args.slc_cache else [])],
             cwd=REPO, label=f"spike {date}",
         )
-        pair_dir = work / date
         if not (pair_dir / "merged" / "filt_topophase.flat").is_file():
             raise SystemExit(f"spike produced no merged/ for {date}")
 

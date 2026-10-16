@@ -6,7 +6,6 @@ interferogram). Nominal baseline: 12 days, accepted within [11, 13].
 """
 from __future__ import annotations
 
-import itertools
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -31,8 +30,20 @@ def _parse(datetime_str: str) -> datetime:
     return datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
 
 
-def plan_pairs(scenes: Sequence[Scene]) -> list[InterferometricPair]:
-    """Consecutive same-track scenes with a 12-day-ish temporal baseline."""
+def plan_pairs(
+    scenes: Sequence[Scene],
+    *,
+    min_days: float = MIN_BASELINE_DAYS,
+    max_days: float = MAX_BASELINE_DAYS,
+) -> list[InterferometricPair]:
+    """Consecutive same-track scenes within a temporal-baseline window.
+
+    Defaults plan the 12-day chain. Wider windows (min_days=23,
+    max_days=25) close SBAS triangles over that chain: on a consecutive
+    chain alone the per-date atmosphere is indistinguishable from motion
+    (rank-deficient), and (t0,t1),(t1,t2),(t0,t2) is the minimal
+    redundancy MintPy's inversion needs.
+    """
     usable = [
         scene
         for scene in scenes
@@ -47,10 +58,19 @@ def plan_pairs(scenes: Sequence[Scene]) -> list[InterferometricPair]:
     pairs: list[InterferometricPair] = []
     for track_scenes in tracks.values():
         ordered = sorted(track_scenes, key=lambda scene: scene.datetime)
-        for first, second in itertools.pairwise(ordered):
-            delta_days = (_parse(second.datetime) - _parse(first.datetime)).total_seconds() / 86400
-            if MIN_BASELINE_DAYS <= delta_days <= MAX_BASELINE_DAYS:
-                pairs.append(InterferometricPair(first=first, second=second))
+        # for each scene, pair it with its NEAREST preceding scene inside
+        # the baseline window (adjacency alone would only catch 24-day
+        # pairs where a 12-day acquisition is missing)
+        for i, second in enumerate(ordered):
+            for first in reversed(ordered[:i]):
+                delta_days = (
+                    _parse(second.datetime) - _parse(first.datetime)
+                ).total_seconds() / 86400
+                if delta_days > max_days:
+                    break
+                if delta_days >= min_days:
+                    pairs.append(InterferometricPair(first=first, second=second))
+                    break
 
     pairs.sort(key=lambda pair: (pair.first.datetime, pair.second.datetime))
     return pairs
