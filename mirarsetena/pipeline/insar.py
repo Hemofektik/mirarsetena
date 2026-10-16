@@ -146,6 +146,16 @@ def insar_series_key(slug: str, date: str) -> str:
     return cache_key(slug, "layers", f"sentinel-1-slc_{date}_insar_series.json")
 
 
+def edge_key(slug: str, first: str, second: str) -> str:
+    """Storage key of an SBAS edge product (24-day closer).
+
+    Closers share END DATES with the served 12-day products, so their
+    geocoded edges live in the sbas/ namespace — never under the layer
+    key the tiles and series read.
+    """
+    return cache_key(slug, "sbas", "edges", f"{first}_{second}.tif")
+
+
 def write_insar_series(
     store, slug: str, date: str, product_bytes: bytes, pois: list[dict],
     *,

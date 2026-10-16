@@ -322,6 +322,20 @@ S1A-asc = 9 consecutive pairs, no triangles yet (24-day closers
 available in the catalog but unprocessed — S1A remains cumsum-equivalent
 until then); S1D-desc = one pair, not invertible.
 
+### L.6a.1 First real inversion — measured 2026-10-16
+
+`tools/sbas_run.py --chain S1D-asc` assembled the full triangulated
+network (5×12-day served products + 4×24-day closers built on demand from
+the kept raw inputs into `sbas/edges/` — never touching served keys),
+inverted all 35,404 px per chain, and stored `sbas/cum/<date>.tif` +
+`sbas/series-S1D-asc.json`. The cumulative quarry trajectory
+(+0.11, +0.21, +0.17, +0.30, +0.16 cm over 07-11..09-09) is now SMOOTH
+and correlated — the per-pair atmospheric bounce (±0.25 cm) has been
+filtered into a consistent time series, which is exactly what the
+redundant baselines buy. Nothing exceeds ~0.5 cm: still no measurable
+excavation signal, but with a proper variance-reduced series to keep
+growing. UI exposure of the cumulative line: next increment.
+
 ### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
   products referenced to the first pre-works pair (echoes the optical

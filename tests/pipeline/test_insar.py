@@ -349,3 +349,14 @@ def test_write_insar_series_carries_the_chain_identity(tmp_path):
         [{"id": "quarry", "coordinates": [-83.670, 9.390]}],
     )
     assert "chain" not in json.loads(store.get(key2))
+
+
+def test_edge_key_keeps_sbас_products_out_of_layer_namespace():
+    # 24-day closer products share END DATES with served 12-day products;
+    # their geocoded edges live in the sbas/ namespace, never under the
+    # layer key the tiles/series read.
+    from mirarsetena.pipeline.insar import edge_key
+
+    key = edge_key("cdp-rio-general", "2026-07-23", "2026-08-16")
+    assert key == "p/cdp-rio-general/sbas/edges/2026-07-23_2026-08-16.tif"
+    assert "/layers/" not in key

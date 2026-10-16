@@ -64,6 +64,8 @@ def build_and_store(
     # Sentinel-1 data", whose source grid measures 2.9 x 13.9 m/px)
     resolution: float = 0.00009,
     chain: str | None = None,
+    storage_key: str | None = None,
+    write_series: bool = True,
 ) -> str:
     """Build the product and store it at the servable key; returns the key."""
     from mirarsetena.storage import LocalStore
@@ -102,21 +104,27 @@ def build_and_store(
             resolution=resolution, reference=reference,
         )
 
-    key = layer_key(slug, "sentinel-1-slc", date, "insar")
+    # storage_key overrides the servable layer key: SBAS edge products
+    # (24-day closers) share END DATES with the served 12-day products
+    # and must never overwrite them (L.6a)
+    key = storage_key or layer_key(slug, "sentinel-1-slc", date, "insar")
     store = LocalStore(storage_root)
     store.put(key, product)
 
     # L.9 plan-vs-actual: sample the POIs NOW so the API serves a
     # pre-computed series instead of re-opening rasters per request.
-    series_key = write_insar_series(
-        store, slug, date, product, load_pois(slug), chain=chain
+    series_key = (
+        write_insar_series(store, slug, date, product, load_pois(slug), chain=chain)
+        if write_series
+        else None
     )
 
     with rasterio.io.MemoryFile(product) as mem, mem.open() as src:
         data = src.read(1)
     valid = data[data != NODATA]
     print(f"key: {key}")
-    print(f"series: {series_key}")
+    if series_key:
+        print(f"series: {series_key}")
     print(f"size: {len(product)} bytes  grid: {src.width}x{src.height}")
     print(f"valid px: {valid.size}/{data.size}")
     if valid.size:
