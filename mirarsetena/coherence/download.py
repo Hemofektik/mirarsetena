@@ -128,6 +128,26 @@ DOWNLOAD_READ_TIMEOUT_S = 60.0
 _BACKOFF_S = (5, 15, 45)  # between attempts; the read timeout per chunk
 
 
+def _expected_total(response) -> int | None:
+    """Object size promised by a 200 (Content-Length) or 206 (Content-Range
+    total); None when the server does not say."""
+    if response.status_code == 206:
+        total = response.headers.get("Content-Range", "").rsplit("/", 1)[-1]
+        return int(total) if total.isdigit() else None
+    length = response.headers.get("Content-Length")
+    return int(length) if length and length.isdigit() else None
+
+
+def _probe_total(client, url, auth_headers) -> int | None:
+    """Object size via a one-byte Range GET (206 -> Content-Range total)."""
+    with client.stream(
+        "GET", url,
+        headers={**auth_headers, "Range": "bytes=0-0"},
+        timeout=httpx.Timeout(DOWNLOAD_READ_TIMEOUT_S, connect=30.0),
+    ) as response:
+        return _expected_total(response)
+
+
 def download_product(
     auth: CdseAuth,
     product_id: str,
@@ -138,17 +158,23 @@ def download_product(
 ) -> Path:
     """Stream one CDSE product (SAFE zip) to `dest`, resumable + retrying.
 
-    CDSE stalls occasionally mid-stream (measured 2026-10-15: a 7 GB read
-    timed out 23 minutes in and killed the pair). Each attempt resumes
-    from the bytes already on `dest` via HTTP Range, so a stall costs the
-    gap — not the whole scene — and a partial file survives a final
-    failure for the next run to resume. HTTP >= 400 is not retried.
+    Resilience layers, each measured on this project (2026-10-15/16):
+    a stall resumes from `dest` via HTTP Range; retries use 5/15/45 s
+    backoff and a 60 s per-chunk read timeout; a partial file survives a
+    final failure for the next run. TWO silent-truncation traps are
+    closed by SIZE VALIDATION — a clean FIN mid-transfer is a "complete"
+    stream to httpx (a 7.66 GB SLC arrived as 1.56 GB and passed), and a
+    spurious 416 must not finalize a partial: the promised total
+    (Content-Length/Content-Range) is checked, and 416-on-resume probes
+    the real size before deciding complete-vs-restart. HTTP >= 400 is
+    not retried.
     """
     if not auth.enabled:
         raise CoherenceUnavailable("CDSE credentials not configured")
     dest = Path(dest)
     client = client or auth.client
     url = f"{ODATA_DOWNLOAD_URL}/Products({product_id})/$value"
+    auth_headers = {"Authorization": f"Bearer {auth.token()}"}
     last_exc = None
     for attempt in range(DOWNLOAD_ATTEMPTS):
         offset = dest.stat().st_size if dest.is_file() else 0
@@ -156,24 +182,33 @@ def download_product(
         try:
             with client.stream(
                 "GET", url,
-                headers={"Authorization": f"Bearer {auth.token()}", **extra},
+                headers={**auth_headers, **extra},
                 timeout=httpx.Timeout(DOWNLOAD_READ_TIMEOUT_S, connect=30.0),
             ) as response:
                 if response.status_code == 416 and offset > 0:
-                    # RFC 7233: an offset at/after the end of the object —
-                    # the first attempt streamed every byte but the
-                    # connection died before EOF, so the partial IS the
-                    # whole file (measured 2026-10-15, 03-18 scene)
-                    return dest
+                    # RFC 7233: offset past the end — either the partial
+                    # IS the whole file (stream died before EOF) or the
+                    # 416 is spurious and only a probe knows which
+                    total = _probe_total(client, url, auth_headers)
+                    if total is None or dest.stat().st_size >= total:
+                        return dest
+                    dest.unlink(missing_ok=True)  # restart clean next attempt
+                    continue
                 if response.status_code >= 400:
                     raise CoherenceUnavailable(
                         f"CDSE download failed: HTTP {response.status_code}"
                     )
+                expected = _expected_total(response)
                 appending = offset > 0 and response.status_code == 206
                 if not appending:
                     offset = 0
                 with open(dest, "ab" if appending else "wb") as handle:
                     handle.writelines(response.iter_bytes())
+                received = dest.stat().st_size
+                if expected is not None and received < expected:
+                    raise httpx.ReadError(
+                        f"truncated stream: {received}/{expected} bytes"
+                    )
             return dest
         except CoherenceUnavailable:
             raise

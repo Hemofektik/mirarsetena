@@ -19,11 +19,13 @@ FULL = bytes(range(256)) * 8  # 2048 bytes
 
 
 class FakeResponse:
-    def __init__(self, status_code, body=b"", fail_after=None, exc=None):
+    def __init__(self, status_code, body=b"", fail_after=None, exc=None,
+                 headers=None):
         self.status_code = status_code
         self._body = body
         self._fail_after = fail_after
         self._exc = exc
+        self.headers = dict(headers or {})
 
     def __enter__(self):
         return self
@@ -128,6 +130,8 @@ def test_416_on_resume_means_the_file_is_complete(tmp_path):
         [
             FakeResponse(200, FULL, fail_after=len(FULL), exc=httpx.ReadTimeout("eof stall")),
             FakeResponse(416, b""),
+            # the probe confirms the offset IS the end of the object
+            FakeResponse(206, b"x", headers={"Content-Range": f"bytes 0-0/{len(FULL)}"}),
         ]
     )
     out = download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
@@ -176,3 +180,39 @@ def test_cache_partial_survives_a_failed_run(monkeypatch, tmp_path):
     partials = list(cache.glob("*.part"))
     assert len(partials) == 1
     assert partials[0].read_bytes() == b"partial-bytes"
+
+
+def test_truncated_stream_is_detected_and_resumed(tmp_path):
+    # Measured 2026-10-16: the CDN closed the connection cleanly after
+    # 1.56 GB of a 7.66 GB SLC — httpx saw a COMPLETE stream, no
+    # exception, and the truncated file passed as done. The response's
+    # Content-Length is the only truth that catches it.
+    dest = tmp_path / "scene.zip"
+    client = FakeClient(
+        [
+            FakeResponse(200, FULL[:400], headers={"Content-Length": str(len(FULL))}),
+            FakeResponse(206, FULL[400:], headers={"Content-Range": f"bytes 400-{len(FULL)-1}/{len(FULL)}"}),
+        ]
+    )
+    out = download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
+    assert out == dest
+    assert dest.read_bytes() == FULL
+    assert len(client.calls) == 2
+
+
+def test_416_before_the_end_restarts_from_zero(tmp_path):
+    # A spurious 416 with the file only PARTIAL must not finalize: the
+    # total size is probed (Range: bytes=0-0) and the download restarts.
+    dest = tmp_path / "scene.zip"
+    client = FakeClient(
+        [
+            FakeResponse(200, FULL[:400], fail_after=400, exc=httpx.ReadTimeout("stall")),
+            FakeResponse(416, b""),                              # spurious
+            FakeResponse(206, b"x", headers={"Content-Range": f"bytes 0-0/{len(FULL)}"}),  # probe
+            FakeResponse(200, FULL),                             # restart
+        ]
+    )
+    out = download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
+    assert dest.read_bytes() == FULL
+    assert client.calls[1]["headers"].get("Range") == "bytes=400-"
+    assert client.calls[2]["headers"].get("Range") == "bytes=0-0"
