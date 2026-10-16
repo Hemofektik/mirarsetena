@@ -269,3 +269,25 @@ def test_401_refreshes_the_token_and_retries(tmp_path):
     first = client.calls[0]["headers"]["Authorization"]
     second = client.calls[1]["headers"]["Authorization"]
     assert first != second  # the retry carried the refreshed token
+
+
+def test_416_with_unknown_total_restarts_clean(tmp_path):
+    # Measured 2026-10-16: CDSE serves some products chunked AND 416s on
+    # any Range — resume is impossible for them. A failed probe must NOT
+    # finalize the partial (that passed a 3.07 GB truncation as done and
+    # burned three relaunches): the file is discarded and the download
+    # restarts clean.
+    dest = tmp_path / "scene.zip"
+    client = FakeClient(
+        [
+            FakeResponse(200, FULL[:400], fail_after=400, exc=httpx.ReadTimeout("stall")),
+            FakeResponse(416, b""),                     # Range unsupported
+            FakeResponse(500, b""),                     # probe fails -> unknown
+            FakeResponse(200, FULL),                    # clean restart
+        ]
+    )
+    out = download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
+    assert dest.read_bytes() == FULL
+    # the partial was discarded, not finalized
+    assert len(client.calls) == 4
+    assert "Range" not in client.calls[3]["headers"]
