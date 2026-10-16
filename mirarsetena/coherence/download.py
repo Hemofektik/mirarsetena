@@ -128,6 +128,15 @@ DOWNLOAD_READ_TIMEOUT_S = 60.0
 _BACKOFF_S = (5, 15, 45)  # between attempts; the read timeout per chunk
 
 
+def is_valid_zip(path) -> bool:
+    """End-of-central-directory check: catches chunked-transfer truncation
+    that no header can (measured 2026-10-16: a 7.66 GB SLC truncated at
+    2.11 GB with NO Content-Length on the wire passed the size check)."""
+    import zipfile
+
+    return zipfile.is_zipfile(path)
+
+
 def _expected_total(response) -> int | None:
     """Object size promised by a 200 (Content-Length) or 206 (Content-Range
     total); None when the server does not say."""
@@ -155,6 +164,7 @@ def download_product(
     *,
     client=None,
     sleep=time.sleep,
+    validate=None,
 ) -> Path:
     """Stream one CDSE product (SAFE zip) to `dest`, resumable + retrying.
 
@@ -208,6 +218,12 @@ def download_product(
                 if expected is not None and received < expected:
                     raise httpx.ReadError(
                         f"truncated stream: {received}/{expected} bytes"
+                    )
+                if validate is not None and not validate(dest):
+                    # e.g. chunked transfer gave us no size to compare:
+                    # the CONTENT itself must prove completeness
+                    raise httpx.ReadError(
+                        "integrity check failed on downloaded object"
                     )
             return dest
         except CoherenceUnavailable:
@@ -273,7 +289,7 @@ def make_slc_downloader(
             if cache is None:
                 product = find_slc_product(auth, scene.id)
                 dest = Path(workdir) / f"{product['name'] or scene.id}.zip"
-                results.append(download_product(auth, product["id"], dest))
+                results.append(download_product(auth, product["id"], dest, validate=is_valid_zip))
                 continue
 
             cached = cache / f"{safe_name(scene.id)}.zip"
@@ -291,7 +307,7 @@ def make_slc_downloader(
             # On failure the staging .part STAYS: the next run resumes it
             # via Range instead of restarting a multi-GB transfer (the old
             # unlink cost the 03-18 scene's 7.6 GB, 2026-10-15).
-            download_product(auth, product["id"], staging)
+            download_product(auth, product["id"], staging, validate=is_valid_zip)
             os.replace(staging, cached)
             link = Path(workdir) / cached.name
             _link_into(cached, link)

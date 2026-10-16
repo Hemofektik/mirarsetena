@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from mirarsetena.coherence.cdse import CoherenceUnavailable
-from mirarsetena.coherence.download import download_product
+from mirarsetena.coherence.download import download_product, is_valid_zip
 
 FULL = bytes(range(256)) * 8  # 2048 bytes
 
@@ -216,3 +216,34 @@ def test_416_before_the_end_restarts_from_zero(tmp_path):
     assert dest.read_bytes() == FULL
     assert client.calls[1]["headers"].get("Range") == "bytes=400-"
     assert client.calls[2]["headers"].get("Range") == "bytes=0-0"
+
+
+def test_integrity_validate_catches_chunked_truncation(tmp_path):
+    # CDSE streams some products chunked — no Content-Length, so the size
+    # check has nothing to compare (measured: 07-23 truncated at 2.11 GB
+    # and passed). With a zip integrity validator the incomplete archive
+    # fails and the download resumes/restarts until it is a real zip.
+    import io
+    import zipfile
+
+    def zip_bytes(payload=b"data"):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("inner.txt", payload)
+        return buf.getvalue()
+
+    good = zip_bytes()
+    dest = tmp_path / "scene.zip"
+    client = FakeClient(
+        [
+            FakeResponse(200, good[:40]),  # truncated zip, NO size headers
+            FakeResponse(200, good),       # server restarts on retry
+        ]
+    )
+    out = download_product(
+        _auth(), "42", dest, client=client, sleep=lambda _s: None,
+        validate=is_valid_zip,
+    )
+    assert dest.read_bytes() == good
+    assert is_valid_zip(dest)
+    assert len(client.calls) == 2

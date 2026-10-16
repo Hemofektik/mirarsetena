@@ -299,7 +299,15 @@ def main() -> int:
         pair_dir = work / pair_dir_name(pair)
         pair_dir.mkdir(exist_ok=True)
         # reuse an earlier run's download (14 GB takes ~1 h; never redo it)
-        existing = sorted(pair_dir.glob("*.zip"))
+        from mirarsetena.coherence.download import is_valid_zip
+
+        existing = [
+            z for z in sorted(pair_dir.glob("*.zip")) if is_valid_zip(z)
+        ]
+        invalid = [z for z in pair_dir.glob("*.zip") if z not in existing]
+        for z in invalid:
+            print(f"  dropping corrupt zip {z.name}")
+            z.unlink(missing_ok=True)
         if len(existing) >= 2:
             paths = existing
             dl_bytes = sum(p.stat().st_size for p in paths)
