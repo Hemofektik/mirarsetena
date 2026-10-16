@@ -310,12 +310,18 @@ def make_slc_downloader(
 
             cached = cache / f"{safe_name(scene.id)}.zip"
             keep.add(cached.name)
-            if cached.is_file():
+            if cached.is_file() and is_valid_zip(cached):
                 cached.touch()  # LRU: this scene is wanted right now
                 link = Path(workdir) / cached.name
                 _link_into(cached, link)
                 results.append(link)
                 continue
+            if cached.is_file():
+                # a truncated zip that reached the cache was hardlinked
+                # back on EVERY relaunch (19-second unpack failures) —
+                # the cache-hit path validates like every other finalize
+                print(f"  dropping corrupt cache entry {cached.name}")
+                cached.unlink(missing_ok=True)
 
             product = find_slc_product(auth, scene.id)
             cache.mkdir(parents=True, exist_ok=True)

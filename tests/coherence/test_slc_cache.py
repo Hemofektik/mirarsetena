@@ -184,3 +184,31 @@ def test_downloader_without_cache_still_works(tmp_path):
     paths = downloader(_pair(SCENE_A, SCENE_B), work)
     assert stats["downloads"] == 2
     assert all(p.exists() for p in paths)
+
+
+def test_corrupt_cache_zip_is_replaced_not_reused(tmp_path):
+    # Measured 2026-10-16: a truncated zip that reached the cache was
+    # hardlinked back on EVERY relaunch (spike dropped it from the pair
+    # dir, the cache-hit branch re-added it) -> 19-second unpack
+    # failures forever. The cache-hit path must validate like every
+    # other finalize.
+
+    auth, stats = _auth(tmp_path)
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    # pre-place a corrupt cache entry for scene A
+    from mirarsetena.coherence.download import safe_name
+
+    corrupt = cache_dir / f"{safe_name(SCENE_A.id)}.zip"
+    corrupt.write_bytes(b"PK\x03\x04truncated-garbage")
+
+    downloader = make_slc_downloader(auth, cache_dir=cache_dir, budget_bytes=10**12)
+    work = tmp_path / "work"
+    work.mkdir()
+    paths = downloader(_pair(SCENE_A, SCENE_B), work)
+
+    assert stats["downloads"] == 2  # BOTH scenes fetched fresh; A was replaced
+    import zipfile
+
+    assert zipfile.is_zipfile(paths[0])
+    assert zipfile.is_zipfile(corrupt)  # the cache entry itself is now valid
