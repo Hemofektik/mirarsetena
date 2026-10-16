@@ -404,6 +404,7 @@ function renderPlanSection() {
     timeline: planData.timeline,
     milestones: planData.milestones,
     series: planData.series,
+    stack: planData.stack ?? [],
     poi: planPoi,
     date: state.date,
   });

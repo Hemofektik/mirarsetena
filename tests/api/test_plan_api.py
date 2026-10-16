@@ -9,6 +9,7 @@ the three inputs the chart renders without inventing any of them.
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 from fastapi.testclient import TestClient
 
@@ -112,3 +113,40 @@ def test_plan_configured_but_missing_file_is_404(tmp_path):
     client = make_client(tmp_path, config_dir=config_dir)
     res = client.get("/p/tmp-plan/api/plan")
     assert res.status_code == 404
+
+
+def test_plan_stack_groups_series_by_chain(tmp_path):
+    # SBAS aggregation: per-chain mean/sem per POI — S1A and S1D can never
+    # be phase-tied, so their series stay separate to the stack summary.
+    import json
+
+    from mirarsetena.pipeline.insar import insar_series_key
+    from mirarsetena.storage import LocalStore
+
+    store = LocalStore(tmp_path / "cache")
+    entries = [
+        ("2026-03-06", "S1A-asc", [{"id": "quarry", "los_cm": -0.12}]),
+        ("2026-03-18", "S1A-asc", [{"id": "quarry", "los_cm": 0.08}]),
+        ("2026-08-04", "S1D-asc", [{"id": "quarry", "los_cm": 0.05}]),
+    ]
+    for date, chain, pois in entries:
+        store.put(
+            insar_series_key("cdp-rio-general", date),
+            json.dumps({"date": date, "los_range": 0.7, "pois": pois,
+                        "chain": chain}).encode(),
+        )
+    app = create_app(config_dir=CONFIG_DIR, storage_root=tmp_path / "cache")
+    body = TestClient(app).get("/p/cdp-rio-general/api/plan").json()
+    stack = {s["chain"]: s for s in body["stack"]}
+    assert set(stack) == {"S1A-asc", "S1D-asc"}
+    s1a = stack["S1A-asc"]
+    assert s1a["n"] == 2 and s1a["start"] == "2026-03-06"
+    assert s1a["end"] == "2026-03-18"
+    quarry = next(p for p in s1a["pois"] if p["id"] == "quarry")
+    assert quarry["mean"] == pytest.approx(-0.02)
+    assert quarry["sem"] == pytest.approx(0.1)  # std/sqrt(2) = 0.1
+    # a single-date chain has no spread to report
+    single = stack["S1D-asc"]
+    q2 = next(p for p in single["pois"] if p["id"] == "quarry")
+    assert q2["mean"] == pytest.approx(0.05)
+    assert q2["sem"] is None

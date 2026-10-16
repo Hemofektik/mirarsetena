@@ -1480,4 +1480,16 @@ test("plan chart shows noise-floor whiskers per measured point", async ({
   );
   // the note explains the bars (i18n present, es default)
   await expect(page.locator("#plan-note")).toContainText("1σ");
+
+  // SBAS summary: one diamond per chain whose aggregated mean is plotted
+  // (series carry chain identity; at least S1A-asc + S1D-asc + S1D-desc)
+  const marks = page.locator("#plan-chart polygon.plan-stack-dot");
+  await expect(marks.first()).toBeVisible({ timeout: 30_000 });
+  expect(await marks.count()).toBeGreaterThanOrEqual(2);
+  const chains = await page.evaluate(
+    () => [...document.querySelectorAll("#plan-chart polygon.plan-stack-dot")]
+      .map((el) => el.dataset.chain).sort(),
+  );
+  expect(chains).toContain("S1A-asc");
+  expect(chains).toContain("S1D-asc");
 });

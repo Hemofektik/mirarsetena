@@ -272,3 +272,49 @@ describe("noise-floor whiskers (±1σ across pairs, L.7 validation)", () => {
     expect(loneSvg).not.toContain("plan-whisker");
   });
 });
+
+describe("stack markers (per-chain aggregated means)", () => {
+  const series = [
+    { date: "2026-08-04", los_range: 0.7, pois: [{ id: "quarry", los_cm: 0.05 }] },
+    { date: "2026-09-09", los_range: 0.7, pois: [{ id: "quarry", los_cm: -0.15 }] },
+  ];
+  const stack = [
+    {
+      chain: "S1D-asc", n: 2, start: "2026-08-04", end: "2026-09-09",
+      pois: [{ id: "quarry", mean: -0.05, sem: 0.1 }],
+    },
+  ];
+
+  test("places a chain marker at the mid-span with its sem", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series, stack, poi: "quarry", date: "2026-09-09",
+    });
+    expect(model.stackMarks).toHaveLength(1);
+    const mark = model.stackMarks[0];
+    expect(mark.chain).toBe("S1D-asc");
+    // the chain covers Aug-Sep: its marker sits mid-span, in the RIGHT
+    // portion of a Jan-Sep domain
+    const plotMid =
+      model.pad.left + (model.width - model.pad.left - model.pad.right) / 2;
+    expect(mark.x).toBeGreaterThan(plotMid);
+    expect(mark.x).toBeLessThanOrEqual(model.width - model.pad.right);
+    expect(mark.y).toBeGreaterThan(0);
+    expect(mark.sem).toBeCloseTo(0.1, 6);
+  });
+
+  test("skips chains without a value for the selected POI", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series, stack, poi: "office", date: "2026-09-09",
+    });
+    expect(model.stackMarks).toHaveLength(0);
+  });
+
+  test("renders one marker element with its own whisker per chain", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series, stack, poi: "quarry", date: "2026-09-09",
+    });
+    const svg = chartSvg(model, { lang: "es", yLabel: "cm" });
+    expect(svg.match(/class="plan-stack-dot"/g) ?? []).toHaveLength(1);
+    expect(svg.match(/plan-stack-whisker/g) ?? []).toHaveLength(3); // line + 2 caps
+  });
+});

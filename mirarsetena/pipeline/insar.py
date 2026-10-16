@@ -147,18 +147,25 @@ def insar_series_key(slug: str, date: str) -> str:
 
 
 def write_insar_series(
-    store, slug: str, date: str, product_bytes: bytes, pois: list[dict]
+    store, slug: str, date: str, product_bytes: bytes, pois: list[dict],
+    *,
+    chain: str | None = None,
 ) -> str:
     """Persist per-POI LOS values for one date (L.9 plan-vs-actual series).
 
     Written at product-build time so the API serves a pre-sampled series
-    instead of re-opening rasters per request. Returns the storage key.
+    instead of re-opening rasters per request. `chain` identifies the
+    satellite+track network the pair belongs to (e.g. "S1A-asc"): SBAS
+    aggregation groups by chain because cross-sensor pairs cannot be
+    phase-tied. Returns the storage key.
     """
     payload = {
         "date": date,
         "los_range": los_range(product_bytes),
         "pois": sample_pois(product_bytes, pois),
     }
+    if chain is not None:
+        payload["chain"] = chain
     key = insar_series_key(slug, date)
     store.put(key, json.dumps(payload, ensure_ascii=False).encode("utf-8"))
     return key

@@ -51,6 +51,7 @@ export function buildPlanChart({
   timeline,
   milestones = [],
   series = [],
+  stack = [],
   poi,
   date = null,
   width = 360,
@@ -161,6 +162,24 @@ export function buildPlanChart({
 
   const yTicks = [-limit, -limit / 2, 0, limit / 2, limit];
 
+  // per-chain aggregated means (SBAS summary): one marker per chain at
+  // its mid-span, carrying its own sem whisker
+  const stackMarks = stack
+    .map((entry) => {
+      const hit = (entry.pois ?? []).find((p) => p.id === poi);
+      if (!hit || hit.mean == null) return null;
+      const xa = xAt(dayMs(entry.start));
+      const xb = xAt(dayMs(entry.end));
+      return {
+        chain: entry.chain,
+        los: hit.mean,
+        sem: hit.sem ?? null,
+        x: (xa + xb) / 2,
+        y: yAt(hit.mean),
+      };
+    })
+    .filter(Boolean);
+
   return {
     width,
     height,
@@ -169,6 +188,7 @@ export function buildPlanChart({
     limit,
     worksX,
     milestones: placedMilestones,
+    stackMarks,
     segments,
     cursor,
     xTicks,
@@ -316,6 +336,31 @@ export function chartSvg(model, { lang = "es", yLabel = "cm" } = {}) {
       parts.push(
         `<circle class="plan-dot" data-date="${p.date}" data-los="${p.los}" ` +
           `cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" />`,
+      );
+    }
+  }
+  // per-chain aggregated means (SBAS summary): diamond on top of the
+  // per-pair dots, with its own sem whisker
+  for (const mark of model.stackMarks ?? []) {
+    const x = mark.x.toFixed(1);
+    const y = mark.y.toFixed(1);
+    parts.push(
+      `<polygon class="plan-stack-dot" data-chain="${mark.chain}" ` +
+        `points="${x},${(+mark.y - 5).toFixed(1)} ` +
+        `${(+mark.x + 5).toFixed(1)},${y} ` +
+        `${x},${(+mark.y + 5).toFixed(1)} ` +
+        `${(+mark.x - 5).toFixed(1)},${y}" />`,
+    );
+    if (mark.sem != null) {
+      const yTop = whiskerY(mark.los + mark.sem).toFixed(1);
+      const yBot = whiskerY(mark.los - mark.sem).toFixed(1);
+      parts.push(
+        `<line class="plan-stack-whisker" data-chain="${mark.chain}" ` +
+          `x1="${x}" y1="${yTop}" x2="${x}" y2="${yBot}" />`,
+        `<line class="plan-stack-whisker-cap" x1="${(+mark.x - 4).toFixed(1)}" ` +
+          `y1="${yTop}" x2="${(+mark.x + 4).toFixed(1)}" y2="${yTop}" />`,
+        `<line class="plan-stack-whisker-cap" x1="${(+mark.x - 4).toFixed(1)}" ` +
+          `y1="${yBot}" x2="${(+mark.x + 4).toFixed(1)}" y2="${yBot}" />`,
       );
     }
   }

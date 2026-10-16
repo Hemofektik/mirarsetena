@@ -168,10 +168,48 @@ def create_app(
                     series.append(_json.loads(raw))
         series.sort(key=lambda entry: entry["date"])
 
+        # SBAS aggregation summary: per-chain (satellite+track — never
+        # phase-tied across sensors) mean/sem per POI. Population-free
+        # sample std so n=2 has a real spread; n=1 reports sem=None.
+        from collections import defaultdict
+        from statistics import stdev
+
+        chains: dict[str, list] = defaultdict(list)
+        for entry in series:
+            if entry.get("chain"):
+                chains[entry["chain"]].append(entry)
+        stack = []
+        for chain, entries in sorted(chains.items()):
+            entries.sort(key=lambda e: e["date"])
+            by_poi: dict[str, list] = defaultdict(list)
+            for entry in entries:
+                for poi in entry.get("pois", []):
+                    if poi.get("los_cm") is not None:
+                        by_poi[poi["id"]].append(poi["los_cm"])
+            pois_out = []
+            for poi_id, values in by_poi.items():
+                mean = sum(values) / len(values)
+                sem = (
+                    stdev(values) / (len(values) ** 0.5)
+                    if len(values) >= 2
+                    else None
+                )
+                pois_out.append({"id": poi_id, "mean": mean, "sem": sem})
+            stack.append(
+                {
+                    "chain": chain,
+                    "n": len(entries),
+                    "start": entries[0]["date"],
+                    "end": entries[-1]["date"],
+                    "pois": pois_out,
+                }
+            )
+
         return {
             "timeline": config.timeline.model_dump(mode="json"),
             "milestones": milestones,
             "series": series,
+            "stack": stack,
         }
 
     @app.get("/p/{slug}/status")

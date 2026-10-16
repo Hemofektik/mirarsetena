@@ -321,3 +321,31 @@ def test_write_insar_series_stores_sampled_pois_beside_product(tmp_path):
     ]
     # the per-date ramp limit rides along so the chart axis can match the map
     assert payload["los_range"] is not None and payload["los_range"] >= 0.5
+
+
+
+def test_write_insar_series_carries_the_chain_identity(tmp_path):
+    # SBAS aggregation groups measurements by CHAIN (satellite + track):
+    # S1A and S1D pairs can never be phase-tied, so their series must stay
+    # separable all the way to the chart.
+    import json
+
+    from mirarsetena.pipeline.insar import write_insar_series
+    from mirarsetena.storage import LocalStore
+
+    like = _geo()
+    product = _encode(np.full((like["height"], like["width"]), 0.25, dtype=np.float32), like)
+    store = LocalStore(tmp_path)
+    key = write_insar_series(
+        store, "cdp-rio-general", "2026-03-06", product,
+        [{"id": "quarry", "coordinates": [-83.670, 9.390]}],
+        chain="S1A-asc",
+    )
+    payload = json.loads(store.get(key))
+    assert payload["chain"] == "S1A-asc"
+    # no chain passed -> field absent (older series stay valid)
+    key2 = write_insar_series(
+        store, "cdp-rio-general", "2026-10-03", product,
+        [{"id": "quarry", "coordinates": [-83.670, 9.390]}],
+    )
+    assert "chain" not in json.loads(store.get(key2))

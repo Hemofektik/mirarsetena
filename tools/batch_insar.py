@@ -29,6 +29,8 @@ import sys
 import time
 from pathlib import Path
 
+from mirarsetena.coherence.pairs import chain_id
+
 REPO = Path(__file__).resolve().parents[1]
 
 # topsApp leftovers that the product build never reads (the SAFEs are
@@ -318,6 +320,7 @@ def main() -> int:
              f"--bbox={','.join(str(c) for c in bbox)}",
              *(["--official", official] if official else []),
              "--slug", slug, "--date", date,
+             "--chain", chain_id(pair),
              "--storage-root", str(e2e_root)],
             cwd=REPO, label=f"product {date}",
         )

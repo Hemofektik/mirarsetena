@@ -76,6 +76,17 @@ def plan_pairs(
     return pairs
 
 
+def chain_id(pair: InterferometricPair) -> str:
+    """SBAS network identity: satellite + orbit direction (e.g. S1A-asc).
+
+    Cross-sensor pairs cannot be phase-tied, so series are grouped by
+    chain for any aggregation (stack means, future MintPy inversion).
+    """
+    satellite = pair.first.id.split("_")[0]  # S1A / S1D
+    direction = (pair.second.orbit_state or "unknown")[:3]
+    return f"{satellite}-{direction}"
+
+
 def pair_key(pair: InterferometricPair) -> str:
     """Job dedupe key for one pair."""
     return f"coherence:{pair.id}"

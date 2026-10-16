@@ -63,6 +63,7 @@ def build_and_store(
     # old 0.0003° (33 m) default looked "much more coarse than the raw
     # Sentinel-1 data", whose source grid measures 2.9 x 13.9 m/px)
     resolution: float = 0.00009,
+    chain: str | None = None,
 ) -> str:
     """Build the product and store it at the servable key; returns the key."""
     from mirarsetena.storage import LocalStore
@@ -107,7 +108,9 @@ def build_and_store(
 
     # L.9 plan-vs-actual: sample the POIs NOW so the API serves a
     # pre-computed series instead of re-opening rasters per request.
-    series_key = write_insar_series(store, slug, date, product, load_pois(slug))
+    series_key = write_insar_series(
+        store, slug, date, product, load_pois(slug), chain=chain
+    )
 
     with rasterio.io.MemoryFile(product) as mem, mem.open() as src:
         data = src.read(1)
@@ -137,6 +140,8 @@ def main() -> int:
     p.add_argument("--date", required=True, help="pair END date (YYYY-MM-DD)")
     p.add_argument("--storage-root", default="data/cache")
     p.add_argument("--resolution", type=float, default=0.00009)
+    p.add_argument("--chain", default=None,
+                   help="SBAS network id, e.g. S1A-asc (from chain_id)")
     args = p.parse_args()
     bbox = tuple(float(x) for x in args.bbox.split(","))
     build_and_store(
@@ -144,6 +149,7 @@ def main() -> int:
         official=Path(args.official) if args.official else None,
         slug=args.slug, date=args.date,
         storage_root=Path(args.storage_root), resolution=args.resolution,
+        chain=args.chain,
     )
     return 0
 

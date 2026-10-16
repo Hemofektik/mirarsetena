@@ -915,3 +915,18 @@ dialog form button {
   stroke: #7c2d12;
   stroke-width: 1;
 }
+
+/* Per-chain aggregated means (SBAS summary diamonds + sem whiskers) */
+.plan-stack-dot {
+  fill: #0f172a;
+  stroke: #ffffff;
+  stroke-width: 1;
+}
+.plan-stack-whisker {
+  stroke: #0f172a;
+  stroke-width: 1;
+}
+.plan-stack-whisker-cap {
+  stroke: #0f172a;
+  stroke-width: 1;
+}
