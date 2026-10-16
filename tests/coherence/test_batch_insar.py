@@ -289,7 +289,7 @@ def test_sbas_averages_conflicting_triangle_paths():
 
     from mirarsetena.coherence.sbas import solve_sbas
 
-    dates, fields, valid = solve_sbas(
+    _dates, fields, valid = solve_sbas(
         ["2026-01-01", "2026-01-13", "2026-01-25"],
         [
             ("2026-01-01", "2026-01-13", np.array(-1.0)),

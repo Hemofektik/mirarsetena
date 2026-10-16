@@ -25,6 +25,19 @@ from mirarsetena.storage import LocalStore
 GRD_ID = "S1D_IW_GRDH_1SDV_20261003T112229_20261003T112254_004850_0091DC"
 
 
+
+
+def _zip_body(payload: bytes) -> bytes:
+    """A VALID zip carrying `payload`: the SLC downloader now runs an
+    integrity check (is_valid_zip), so the mock CDN must serve archives."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("scene.bin", payload)
+    return buf.getvalue()
+
 def test_slc_name_prefix_is_the_stable_tail():
     # The GRD→SLC join key is the datatake+product tail, NOT the start
     # timestamp (which drifts 1–2 s between renditions; measured real CDSE:
@@ -171,7 +184,7 @@ def test_make_slc_downloader_fills_pair_workdir(tmp_path):
         decoded = urllib.parse.unquote(str(request.url))
         if "/$value" in decoded:
             product_id = decoded.split("Products(")[1].split(")")[0]
-            return httpx.Response(200, content=product_id.encode() * 10)
+            return httpx.Response(200, content=_zip_body(product_id.encode() * 10))
         # catalogue search: answer with the product matching the tail
         tail = decoded.split("contains(Name,'")[1].split("')")[0]
         product_id = next(pid for t, pid in ids_by_tail.items() if t == tail)

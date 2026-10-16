@@ -34,6 +34,18 @@ SCENE_C = Scene(
 )
 
 
+def _zip_body(payload: bytes) -> bytes:
+    """A VALID zip carrying `payload`: the SLC downloader now runs an
+    integrity check (is_valid_zip), so the mock CDN must serve archives."""
+    import io
+    import zipfile
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("scene.bin", payload)
+    return buf.getvalue()
+
+
 def _pair(first, second):
     return InterferometricPair(first=first, second=second)
 
@@ -59,7 +71,7 @@ def _auth(tmp_path):
         if "/$value" in url:
             stats["downloads"] += 1
             product_id = url.split("Products(")[1].split(")")[0]
-            return httpx.Response(200, content=product_id.encode() * 100)
+            return httpx.Response(200, content=_zip_body(product_id.encode() * 100))
         stats["queries"] += 1
         for tail, pid in tails.items():
             if tail in url:

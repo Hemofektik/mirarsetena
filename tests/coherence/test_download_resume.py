@@ -212,7 +212,7 @@ def test_416_before_the_end_restarts_from_zero(tmp_path):
             FakeResponse(200, FULL),                             # restart
         ]
     )
-    out = download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
+    download_product(_auth(), "42", dest, client=client, sleep=lambda _s: None)
     assert dest.read_bytes() == FULL
     assert client.calls[1]["headers"].get("Range") == "bytes=400-"
     assert client.calls[2]["headers"].get("Range") == "bytes=0-0"
@@ -240,10 +240,32 @@ def test_integrity_validate_catches_chunked_truncation(tmp_path):
             FakeResponse(200, good),       # server restarts on retry
         ]
     )
-    out = download_product(
+    download_product(
         _auth(), "42", dest, client=client, sleep=lambda _s: None,
         validate=is_valid_zip,
     )
     assert dest.read_bytes() == good
     assert is_valid_zip(dest)
     assert len(client.calls) == 2
+
+
+def test_401_refreshes_the_token_and_retries(tmp_path):
+    # A 10-minute token expires mid-download: the NEXT attempt must carry
+    # a FRESH Authorization (auth.token() re-fetches past its expiry),
+    # not the stale header captured before the loop (measured: pair 19
+    # died on 401 after 17 minutes).
+    dest = tmp_path / "scene.zip"
+    auth = FakeAuth()
+    tokens = iter(["tok-1", "tok-2"])
+    auth.token = lambda: next(tokens)
+    client = FakeClient(
+        [
+            FakeResponse(401, b""),
+            FakeResponse(200, FULL),
+        ]
+    )
+    download_product(auth, "42", dest, client=client, sleep=lambda _s: None)
+    assert dest.read_bytes() == FULL
+    first = client.calls[0]["headers"]["Authorization"]
+    second = client.calls[1]["headers"]["Authorization"]
+    assert first != second  # the retry carried the refreshed token

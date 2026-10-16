@@ -184,9 +184,12 @@ def download_product(
     dest = Path(dest)
     client = client or auth.client
     url = f"{ODATA_DOWNLOAD_URL}/Products({product_id})/$value"
-    auth_headers = {"Authorization": f"Bearer {auth.token()}"}
     last_exc = None
     for attempt in range(DOWNLOAD_ATTEMPTS):
+        # auth.token() refreshes past its ~10-minute expiry: a long
+        # download must not retry with the stale header (pair 19 died
+        # on HTTP 401 after 17 minutes with a pre-loop token)
+        auth_headers = {"Authorization": f"Bearer {auth.token()}"}
         offset = dest.stat().st_size if dest.is_file() else 0
         extra = {"Range": f"bytes={offset}-"} if offset else {}
         try:
@@ -204,6 +207,11 @@ def download_product(
                         return dest
                     dest.unlink(missing_ok=True)  # restart clean next attempt
                     continue
+                if response.status_code == 401:
+                    # expired token: retriable WITH the refreshed header
+                    raise httpx.HTTPError(
+                        "CDSE unauthorized (token expired mid-download)"
+                    )
                 if response.status_code >= 400:
                     raise CoherenceUnavailable(
                         f"CDSE download failed: HTTP {response.status_code}"
