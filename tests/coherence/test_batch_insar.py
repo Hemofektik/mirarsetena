@@ -251,3 +251,84 @@ def test_pair_dirs_never_collide_across_baselines():
     ends_24 = {e for _s, e in twentyfour}
     assert ends_12 & ends_24  # they DO share end dates (08-04, 08-16, ...)
     assert set(twelve.values()).isdisjoint(twentyfour.values())
+
+
+def test_sbas_inverts_a_triangle_network():
+    # The core SBAS claim: on a triangle (t0,t1),(t1,t2),(t0,t2) the
+    # per-date displacement is separable from the observations — the
+    # closing edge makes the solve REDUNDANT (atmosphere of one pair can
+    # no longer masquerade as motion). Synthetic truth: linear motion
+    # 0, -1, -2 cm; the closing edge is 2 cm total.
+    import numpy as np
+
+    from mirarsetena.coherence.sbas import solve_sbas
+
+    truth = np.array([0.0, -1.0, -2.0])  # per-date cumulative
+    edges = [
+        ("2026-01-01", "2026-01-13", np.array(-1.0)),
+        ("2026-01-13", "2026-01-25", np.array(-1.0)),
+        ("2026-01-01", "2026-01-25", np.array(-2.0)),
+    ]
+    dates, fields, valid = solve_sbas(
+        ["2026-01-01", "2026-01-13", "2026-01-25"],
+        [(a, b, v) for a, b, v in edges],
+    )
+    assert dates == ["2026-01-01", "2026-01-13", "2026-01-25"]
+    assert valid
+    for t, expect in enumerate(truth):
+        assert float(fields[t]) == pytest.approx(expect, abs=1e-6)
+    # the reference date is pinned at zero
+    assert float(fields[0]) == pytest.approx(0.0, abs=1e-9)
+
+
+def test_sbas_averages_conflicting_triangle_paths():
+    # The atmosphere enters one edge as an inconsistent 0.4 cm: the LSQ
+    # spreads it over the network (the closing edge is only ONE of three
+    # observations of the same displacement).
+    import numpy as np
+
+    from mirarsetena.coherence.sbas import solve_sbas
+
+    dates, fields, valid = solve_sbas(
+        ["2026-01-01", "2026-01-13", "2026-01-25"],
+        [
+            ("2026-01-01", "2026-01-13", np.array(-1.0)),
+            ("2026-01-13", "2026-01-25", np.array(-1.0)),
+            ("2026-01-01", "2026-01-25", np.array(-1.6)),  # -2 + 0.4 APS
+        ],
+    )
+    assert valid
+    # unweighted LSQ: minimize (x1+1)^2 + (x2-x1+1)^2 + (x2+1.6)^2 ->
+    # 2x1 - x2 = 0 and -x1 + 2x2 = -2.6 -> x1 = -2.6/3, x2 = -5.2/3
+    assert float(fields[1]) == pytest.approx(-2.6 / 3, abs=1e-6)
+    assert float(fields[2]) == pytest.approx(-5.2 / 3, abs=1e-6)
+
+
+def test_sbas_pixelwise_masks_and_chain_degeneracy():
+    # A pure chain (no closers) still solves — but its solution is just
+    # the integration (rank T-1, zero redundancy); pixels missing an
+    # edge are solved from what remains; pixels below the edge count
+    # for their dates are nodata.
+    import numpy as np
+
+    from mirarsetena.coherence.sbas import solve_sbas
+
+    dates = ["2026-01-01", "2026-01-13", "2026-01-25"]
+    d = np.array([1.0, 1.0])
+    masked = np.array([1.0, np.nan])
+    dates_out, fields, valid = solve_sbas(
+        dates,
+        [
+            ("2026-01-01", "2026-01-13", d),
+            ("2026-01-13", "2026-01-25", masked),
+        ],
+    )
+    assert dates_out == dates
+    # pixel 0 integrates the chain exactly
+    assert valid[0]
+    assert float(fields[1][0]) == pytest.approx(1.0)
+    assert float(fields[2][0]) == pytest.approx(2.0)
+    # pixel 1 has one edge only -> first two dates solve, the last is
+    # unobservable (x2 is a leaf without its edge) -> nodata there
+    assert valid[1]
+    assert float(fields[2][1]) != float(fields[2][1])  # NaN
