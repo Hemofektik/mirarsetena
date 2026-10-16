@@ -88,6 +88,23 @@ def pair_dir_name(pair) -> str:
     return f"{pair.first.date}_{pair.second.date}"
 
 
+def purge_pair(pair_dir: Path) -> float:
+    """Delete one pair's purgeable artifacts (SAFEs + heavy ISCE dirs);
+    merged/ + unwrap2/ + geom_reference/ stay. Returns GB freed."""
+    freed = 0
+    for path in purge_candidates(pair_dir):
+        freed += (
+            sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+            if path.is_dir()
+            else path.stat().st_size
+        )
+        if path.is_dir():
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            path.unlink(missing_ok=True)
+    return freed / 1e9
+
+
 def pair_processed(pair_dir: Path) -> bool:
     """Resume gate for --sbas-only: the crop chain already produced both
     MintPy inputs (the merged interferogram and the unwrapped AOI crop)."""
@@ -263,6 +280,10 @@ def main() -> int:
                  "--workdir", str(pair_dir / "unwrap2")],
                 cwd=REPO, label=f"unwrap {date}",
             )
+            # SAFEs/heavy dirs are NOT MintPy input — purge them or the
+            # kept dirs starve the disk guard for the next pair (2026-10-16)
+            freed = purge_pair(pair_dir)
+            print(f"  purged {freed:.1f} GB (kept MintPy inputs)", flush=True)
             report.append({"pair": pair.id, "date": date, "ok": True,
                            "sbas_only": True, "finished_at": time.time()})
             report_path.write_text(json.dumps(report, indent=2))
@@ -328,14 +349,7 @@ def main() -> int:
         deploy(date, slug, e2e_root, args.container)
 
         if not args.keep_downloads:
-            freed = 0
-            for path in purge_candidates(pair_dir):
-                freed += sum(
-                    f.stat().st_size for f in path.rglob("*") if f.is_file()
-                ) if path.is_dir() else path.stat().st_size
-                shutil.rmtree(path, ignore_errors=True) if path.is_dir() \
-                    else path.unlink(missing_ok=True)
-            print(f"  purged {freed / 1e9:.1f} GB", flush=True)
+            print(f"  purged {purge_pair(pair_dir):.1f} GB", flush=True)
 
         report.append({"pair": pair.id, "date": date, "ok": True,
                        "finished_at": time.time()})
