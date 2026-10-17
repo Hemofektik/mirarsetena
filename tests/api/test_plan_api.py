@@ -150,3 +150,36 @@ def test_plan_stack_groups_series_by_chain(tmp_path):
     q2 = next(p for p in single["pois"] if p["id"] == "quarry")
     assert q2["mean"] == pytest.approx(0.05)
     assert q2["sem"] is None
+
+
+def test_plan_serves_the_sbas_cumulative_series(tmp_path):
+    # The SBAS inversion stores per-POI cumulative series; /api/plan
+    # surfaces them so the chart can draw the trajectory line.
+    import json
+
+    from mirarsetena.storage import LocalStore
+
+    store = LocalStore(tmp_path / "cache")
+    store.put(
+        "p/cdp-rio-general/sbas/series-S1D-asc.json",
+        json.dumps({
+            "chain": "S1D-asc", "method": "sbas",
+            "dates": ["2026-07-11", "2026-07-23", "2026-08-04"],
+            "pois": [
+                {"id": "quarry", "los_cm": [0.0, 0.11, 0.21]},
+                {"id": "office", "los_cm": [0.0, 0.25, 0.31]},
+            ],
+        }).encode(),
+    )
+    app = create_app(config_dir=CONFIG_DIR, storage_root=tmp_path / "cache")
+    body = TestClient(app).get("/p/cdp-rio-general/api/plan").json()
+    assert len(body["sbas"]) == 1
+    entry = body["sbas"][0]
+    assert entry["chain"] == "S1D-asc"
+    assert entry["dates"] == ["2026-07-11", "2026-07-23", "2026-08-04"]
+    quarry = next(p for p in entry["pois"] if p["id"] == "quarry")
+    assert quarry["los_cm"] == [0.0, 0.11, 0.21]
+    # no sbas files -> empty list, still 200
+    app2 = create_app(config_dir=CONFIG_DIR, storage_root=tmp_path / "other")
+    body2 = TestClient(app2).get("/p/cdp-rio-general/api/plan").json()
+    assert body2["sbas"] == []

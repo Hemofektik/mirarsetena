@@ -205,11 +205,22 @@ def create_app(
                 }
             )
 
+        # SBAS cumulative series (sbas_run, L.6a): the chart draws the
+        # inverted trajectory as a line per chain
+        sbas = []
+        for key in storage.list(cache_key(slug, "sbas") + "/"):
+            if key.endswith(".json") and "series" in key.rsplit("/", 1)[-1]:
+                raw = storage.get(key)
+                if raw:
+                    sbas.append(_json.loads(raw))
+        sbas.sort(key=lambda entry: entry.get("chain", ""))
+
         return {
             "timeline": config.timeline.model_dump(mode="json"),
             "milestones": milestones,
             "series": series,
             "stack": stack,
+            "sbas": sbas,
         }
 
     @app.get("/p/{slug}/status")

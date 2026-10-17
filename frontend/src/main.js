@@ -406,6 +406,7 @@ function renderPlanSection() {
     milestones: planData.milestones,
     series: planData.series,
     stack: planData.stack ?? [],
+    sbas: planData.sbas ?? [],
     poi: planPoi,
     date: state.date,
   });

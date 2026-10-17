@@ -52,6 +52,7 @@ export function buildPlanChart({
   milestones = [],
   series = [],
   stack = [],
+  sbas = [],
   poi,
   date = null,
   width = 360,
@@ -94,13 +95,19 @@ export function buildPlanChart({
           values.reduce((acc, v) => acc + (v - mean) ** 2, 0) / values.length,
         )
       : null;
-  const maxAbs = points.reduce(
+  let maxAbs = points.reduce(
     (m, p) =>
       p.los == null
         ? m
         : Math.max(m, Math.abs(p.los) + (sigma ?? 0)),
     0,
   );
+  for (const entry of sbas) {
+    const hit = (entry.pois ?? []).find((p) => p.id === poi);
+    for (const v of hit?.los_cm ?? []) {
+      if (v != null) maxAbs = Math.max(maxAbs, Math.abs(v));
+    }
+  }
   // axis fits the data, floored like the map ramp (0.5 cm), 0.1 cm steps
   const limit = Math.max(0.5, Math.ceil(maxAbs * 10) / 10);
   const yAt = (los) => pad.top + ((limit - los) / (2 * limit)) * innerH;
@@ -162,6 +169,25 @@ export function buildPlanChart({
 
   const yTicks = [-limit, -limit / 2, 0, limit / 2, limit];
 
+  // SBAS cumulative trajectory (L.6a): the inverted per-date series for
+  // the selected POI — a line per POI, gaps preserved (null splits runs)
+  const sbasRuns = [];
+  for (const entry of sbas) {
+    const hit = (entry.pois ?? []).find((p) => p.id === poi);
+    if (!hit) continue;
+    let run = [];
+    (entry.dates ?? []).forEach((date, i) => {
+      const los = hit.los_cm?.[i] ?? null;
+      if (los == null) {
+        if (run.length) sbasRuns.push(run);
+        run = [];
+        return;
+      }
+      run.push({ date, los, x: xAt(dayMs(date)), y: yAt(los) });
+    });
+    if (run.length) sbasRuns.push(run);
+  }
+
   // per-chain aggregated means (SBAS summary): one marker per chain at
   // its mid-span, carrying its own sem whisker
   const stackMarks = stack
@@ -189,6 +215,7 @@ export function buildPlanChart({
     worksX,
     milestones: placedMilestones,
     stackMarks,
+    sbasLines: sbasRuns,
     segments,
     cursor,
     xTicks,
@@ -361,6 +388,18 @@ export function chartSvg(model, { lang = "es", yLabel = "cm" } = {}) {
           `y1="${yTop}" x2="${(+mark.x + 4).toFixed(1)}" y2="${yTop}" />`,
         `<line class="plan-stack-whisker-cap" x1="${(+mark.x - 4).toFixed(1)}" ` +
           `y1="${yBot}" x2="${(+mark.x + 4).toFixed(1)}" y2="${yBot}" />`,
+      );
+    }
+  }
+
+  // SBAS cumulative trajectories: solid line + dots per POI
+  for (const run of model.sbasLines ?? []) {
+    const pts = run.map((p) => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(" ");
+    parts.push(`<polyline class="plan-sbas-line" points="${pts}" />`);
+    for (const p of run) {
+      parts.push(
+        `<circle class="plan-sbas-dot" data-date="${p.date}" data-los="${p.los}" ` +
+          `cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.4" />`,
       );
     }
   }

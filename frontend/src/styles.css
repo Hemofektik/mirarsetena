@@ -930,3 +930,15 @@ dialog form button {
   stroke: #0f172a;
   stroke-width: 1;
 }
+
+/* SBAS cumulative trajectory (L.6a): solid dark-green line + dots */
+.plan-sbas-line {
+  fill: none;
+  stroke: #14532d;
+  stroke-width: 1.6;
+}
+.plan-sbas-dot {
+  fill: #14532d;
+  stroke: #fff;
+  stroke-width: 0.8;
+}

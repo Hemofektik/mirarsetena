@@ -1466,7 +1466,7 @@ test("plan chart shows noise-floor whiskers per measured point", async ({
   await page.goto(`/p/${SLUG}/`);
   await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
   await page.locator('#layer-buttons [data-layer="insar"]').click();
-  const dots = page.locator("#plan-chart circle[data-los]");
+  const dots = page.locator("#plan-chart circle.plan-dot");
   await expect(dots.first()).toBeVisible({ timeout: 30_000 });
 
   // with >= 2 stored pairs every plotted point carries a ±1σ whisker
@@ -1492,6 +1492,13 @@ test("plan chart shows noise-floor whiskers per measured point", async ({
   );
   expect(chains).toContain("S1A-asc");
   expect(chains).toContain("S1D-asc");
+
+  // the SBAS cumulative trajectory renders as its own line + dots
+  await expect(page.locator("#plan-chart polyline.plan-sbas-line").first())
+    .toBeVisible({ timeout: 30_000 });
+  expect(
+    await page.locator("#plan-chart circle.plan-sbas-dot").count(),
+  ).toBeGreaterThanOrEqual(6);
 });
 
 test("insar_cum layer shows the SBAS cumulative tiles and legend", async ({

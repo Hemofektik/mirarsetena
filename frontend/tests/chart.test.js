@@ -318,3 +318,51 @@ describe("stack markers (per-chain aggregated means)", () => {
     expect(svg.match(/plan-stack-whisker/g) ?? []).toHaveLength(3); // line + 2 caps
   });
 });
+
+describe("SBAS cumulative trajectory lines", () => {
+  const sbas = [
+    {
+      chain: "S1D-asc",
+      method: "sbas",
+      dates: ["2026-07-11", "2026-07-23", "2026-08-04"],
+      pois: [
+        { id: "quarry", los_cm: [0.0, 0.11, 0.21] },
+        { id: "office", los_cm: [0.0, null, 0.31] },
+      ],
+    },
+  ];
+
+  test("builds one polyline per POI with gaps preserved", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series: [], sbas, poi: "quarry", date: null,
+    });
+    expect(model.sbasLines).toHaveLength(1);
+    expect(model.sbasLines[0]).toHaveLength(3);
+    // null splits the office line into two runs
+    const m2 = buildPlanChart({
+      timeline: TIMELINE, series: [], sbas, poi: "office", date: null,
+    });
+    expect(m2.sbasLines).toHaveLength(2);
+    // the y domain covers the cumulative values
+    for (const p of model.sbasLines[0]) {
+      expect(p.y).toBeGreaterThan(0);
+      expect(p.y).toBeLessThan(model.height - model.pad.bottom + 1);
+    }
+  });
+
+  test("renders one polyline and dots per POI", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series: [], sbas, poi: "quarry", date: null,
+    });
+    const svg = chartSvg(model, { lang: "es", yLabel: "cm" });
+    expect(svg.match(/class="plan-sbas-line"/g) ?? []).toHaveLength(1);
+    expect(svg.match(/class="plan-sbas-dot"/g) ?? []).toHaveLength(3);
+  });
+
+  test("no sbas input -> no lines (chart unchanged)", () => {
+    const model = buildPlanChart({
+      timeline: TIMELINE, series: [], poi: "quarry", date: null,
+    });
+    expect(model.sbasLines).toEqual([]);
+  });
+});
