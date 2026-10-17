@@ -328,3 +328,44 @@ def test_insar_dates_carry_pair_with_start_dates(storage, registry):
         "2026-09-09": ["2026-08-28"],
         "2026-10-03": ["2026-09-21"],
     }
+
+
+def test_insar_cum_layer_serves_the_sbас_products(storage, registry):
+    # The SBAS inversion writes per-date cumulative products; the map
+    # serves them as their own layer (insar_cum), pair-derived dates,
+    # own adaptive ramp from the CUM products.
+    import numpy as np
+    from rasterio.io import MemoryFile
+    from rasterio.transform import from_origin
+
+    from mirarsetena.pipeline.indices import NODATA, layer_key
+
+    config = _with_radar(registry.get("cdp-rio-general"), ["ndvi", "insar_cum"])
+
+    def encode(values):
+        h, w = values.shape
+        profile = {
+            "driver": "GTiff", "dtype": "float32", "count": 1,
+            "height": h, "width": w, "crs": "EPSG:4326",
+            "transform": from_origin(-83.675, 9.397, 0.00375, 0.00475),
+            "nodata": NODATA, "compress": "deflate",
+        }
+        with MemoryFile() as mem:
+            with mem.open(**profile) as dst:
+                dst.write(values.astype(np.float32), 1)
+            return mem.read()
+
+    grid = np.full((6, 6), 0.2, dtype=np.float32)
+    grid[0, 0] = -0.3
+    storage.put(layer_key("cdp-rio-general", "sentinel-1-slc", "2026-08-04", "insar_cum"), encode(grid))
+
+    result = list_dates(
+        storage, "cdp-rio-general", config,
+        "insar_cum", search_fn=fake_search, now=NOW,
+    )
+    assert result["layer"] == "insar_cum"
+    by_date = {d["date"]: d for d in result["dates"]}
+    assert by_date["2026-08-04"]["processed"] is True
+    assert by_date["2026-08-04"]["los_range"] is not None
+    # a pair product existing does NOT mark the cum layer processed
+    assert by_date["2026-09-09"]["processed"] is False

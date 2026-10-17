@@ -10,6 +10,7 @@ const MISSION_BY_LAYER = {
   mndwi: "sentinel-2-l2a",
   bsi: "sentinel-2-l2a",
   insar: "sentinel-1-slc",
+  insar_cum: "sentinel-1-slc",
 };
 
 export function missionForLayer(layer) {
@@ -477,6 +478,11 @@ export const MESSAGES = {
       "línea de visión del satélite, en centímetros. Rojo = movimiento " +
       "alejándose (hundimiento); azul = acercándose. Gris/máscara = baja " +
       "coherencia (zonas muy cambiadas o con vegetación, sin medición fiable).",
+    layer_insar_cum_help:
+      "InSAR SBAS (Sentinel-1): serie acumulada por inversión de la red " +
+      "triangulada (pares de 12 y 24 días) — el ruido atmosférico por " +
+      "par se promedia out; los valores son el desplazamiento acumulado " +
+      "desde el 2026-07-11, en cm.",
     legend_los_title: "Desplazamiento LOS (cm)",
     legend_los_negative: "−{limit} (hacia el satélite)",
     legend_los_positive: "+{limit} (alejándose / hundimiento)",
@@ -572,6 +578,11 @@ export const MESSAGES = {
       "line of sight, in centimetres. Red = moving away (sinking); blue " +
       "= moving toward the satellite. Grey/masked = low coherence (very " +
       "changed or vegetated areas, no reliable measurement).",
+    layer_insar_cum_help:
+      "InSAR SBAS (Sentinel-1): cumulative series from the triangulated " +
+      "network inversion (12- and 24-day pairs) — per-pair atmospheric " +
+      "noise averages out; values are cumulative displacement since " +
+      "2026-07-11, in cm.",
     legend_los_title: "LOS displacement (cm)",
     legend_los_negative: "−{limit} (toward satellite)",
     legend_los_positive: "+{limit} (away / sinking)",

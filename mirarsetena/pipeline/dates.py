@@ -23,7 +23,9 @@ INDEX_VERSION = 2  # v2 = per-date orbit geometry (viewing-direction matching)
 
 S2_LAYERS = {"rgb", "ndvi", "mndwi", "bsi"}
 S1_LAYERS = {"sigma0", "coherence"}
-INSAR_LAYERS = {"insar"}
+# insar_cum = the SBAS cumulative products (sbas_run, L.6a): same
+# pair-derived dates, its own product key per date.
+INSAR_LAYERS = {"insar", "insar_cum"}
 
 _MISSION_BY_LAYER = {
     **{layer: "sentinel-2-l2a" for layer in S2_LAYERS},
@@ -32,6 +34,7 @@ _MISSION_BY_LAYER = {
     # InSAR LOS displacement is produced from SLC phase by the background
     # interferometry jobs (INSAR-PLAN L.3); no lazy path, jobs only.
     "insar": "sentinel-1-slc",
+    "insar_cum": "sentinel-1-slc",
 }
 
 SearchFn = Callable[..., list[Scene]]
@@ -167,6 +170,7 @@ def _list_insar_dates(
     *,
     search_fn: SearchFn,
     now: datetime,
+    layer: str = "insar",
 ) -> dict:
     """InSAR dates = END dates of planned interferometric pairs.
 
@@ -220,7 +224,7 @@ def _list_insar_dates(
 
     limits = []
     for entry in by_end.values():
-        product_key = layer_key(slug, "sentinel-1-slc", entry["date"], "insar")
+        product_key = layer_key(slug, "sentinel-1-slc", entry["date"], layer)
         product = storage.get(product_key)
         entry["processed"] = product is not None
         entry["los_range"] = los_range(product) if product is not None else None
@@ -229,7 +233,7 @@ def _list_insar_dates(
 
     dates = [by_end[key] for key in sorted(by_end)]
     return {
-        "layer": "insar",
+        "layer": layer,
         "mission": "sentinel-1-slc",
         "dates": dates,
         "los_range": max(limits) if limits else None,
@@ -255,7 +259,9 @@ def list_dates(
     mission = mission_for_layer(layer)
 
     if layer in INSAR_LAYERS:
-        return _list_insar_dates(storage, slug, config, search_fn=search_fn, now=now)
+        return _list_insar_dates(
+            storage, slug, config, search_fn=search_fn, now=now, layer=layer
+        )
 
     raw = storage.get(index_key(slug))
     index = json.loads(raw) if raw else None

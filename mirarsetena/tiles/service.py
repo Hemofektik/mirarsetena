@@ -329,7 +329,7 @@ class TileService:
         else:
             product = scene
             style = style_for(layer)
-            if layer == "insar":
+            if layer in ("insar", "insar_cum"):
                 # Adaptive ramp (INSAR-PLAN decision 5 gate): the fixed
                 # +-5 cm MVP range rendered the real referenced product
                 # (spans +-0.56 cm) all-white. The ramp limit comes from

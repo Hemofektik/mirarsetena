@@ -273,7 +273,7 @@ function renderScrubber() {
   // fixed ±5 cm MVP range rendered the real product all-white); dates
   // without a product fall back to the ±5 default.
   const legend = document.getElementById("insar-legend");
-  legend.hidden = state.layer !== "insar";
+  legend.hidden = !["insar", "insar_cum"].includes(state.layer);
   if (!legend.hidden) {
     const entry = state.dates.find((d) => d.date === state.date);
     const limit = entry?.los_range ?? 5;
@@ -282,9 +282,10 @@ function renderScrubber() {
       S.t(state.lang, "legend_los_negative", { limit: label });
     document.getElementById("insar-legend-pos").textContent =
       S.t(state.lang, "legend_los_positive", { limit: label });
-    // which acquisitions this product's delta spans (pair start → end)
+    // which acquisitions this product's delta spans (pair start → end);
+    // the SBAS cumulative layer has no single-pair span to show
     const delta = document.getElementById("insar-legend-delta");
-    const span = S.deltaSpan(entry);
+    const span = state.layer === "insar" ? S.deltaSpan(entry) : null;
     delta.hidden = !span;
     delta.textContent = span ? `Δ ${span}` : "";
   }

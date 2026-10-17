@@ -148,14 +148,24 @@ def main() -> int:
     dates, fields, valid = solve_sbas(spec["dates"], edges)
     print(f"  valid pixels: {int(valid.sum())}/{valid.size}")
 
-    # per-date cumulative products
+    # per-date cumulative products: internal sbas/ path AND the
+    # SERVABLE insar_cum layer key (the map tiles read the latter)
+    from mirarsetena.pipeline.indices import layer_key
+
+    pois_registry = registry.load_pois(slug)
     cum_prefix = f"p/{slug}/sbas/cum"
     for t, date in enumerate(dates):
         blob = cumulative_tif_bytes(fields[t], like_bytes)
         store.put(f"{cum_prefix}/{date}.tif", blob)
+        servable = layer_key(slug, "sentinel-1-slc", date, "insar_cum")
+        store.put(servable, blob)
+        # NO per-date series write: it would clobber the per-pair series
+        # at insar_series_key (same key!) — the legend ramp is computed
+        # from the product itself, and the cumulative POI series lives in
+        # sbas/series-<chain>.json
 
     # per-POI cumulative series
-    pois = registry.load_pois(slug)
+    pois = pois_registry
     series = {"chain": args.chain, "method": "sbas", "dates": dates, "pois": []}
     for poi in pois:
         values = []

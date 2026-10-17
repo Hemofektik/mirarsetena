@@ -56,6 +56,16 @@ STYLES = {
             (5.0, (178, 24, 43)),
         ],
     },
+    # SBAS cumulative products: same diverging semantics, own key so the
+    # tile service finds a style (500 without it)
+    "insar_cum": {
+        "kind": "ramp",
+        "stops": [
+            (-5.0, (33, 102, 172)),
+            (0.0, (247, 247, 247)),
+            (5.0, (178, 24, 43)),
+        ],
+    },
 }
 
 RADAR_LAYERS = {"sigma0", "coherence"}

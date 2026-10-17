@@ -16,8 +16,8 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await expect(page.locator("#app-title")).toHaveText("Mirar Setena");
   await expect(page.locator("#project-name")).toContainText("CDP Río General");
 
-  // five configured layers (insar returns as the InSAR LOS layer, INSAR-PLAN)
-  await expect(page.locator("#layer-buttons button")).toHaveCount(5);
+  // six configured layers (insar + the SBAS cumulative insar_cum)
+  await expect(page.locator("#layer-buttons button")).toHaveCount(6);
 
   // S2 dates populate the cloud strip (live catalog)
   await expect(page.locator("#cloud-strip span").first()).toBeVisible({
@@ -598,7 +598,7 @@ test("About dialog explains the RES-1333-2017 purpose in both languages", async 
 
 test("layer and mode buttons carry help tooltips", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#layer-buttons button")).toHaveCount(5);
+  await expect(page.locator("#layer-buttons button")).toHaveCount(6);
 
   // every layer pill explains what it shows, in the active language
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
@@ -613,7 +613,7 @@ test("layer and mode buttons carry help tooltips", async ({ page }) => {
     "title",
     /InSAR/,
   );
-  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(5);
+  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(6);
 
   await page.locator("#lang-select").selectOption("en");
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
@@ -1492,4 +1492,25 @@ test("plan chart shows noise-floor whiskers per measured point", async ({
   );
   expect(chains).toContain("S1A-asc");
   expect(chains).toContain("S1D-asc");
+});
+
+test("insar_cum layer shows the SBAS cumulative tiles and legend", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
+  await page.locator('#layer-buttons [data-layer="insar_cum"]').click();
+  // same pair-derived dates; the legend shows (cum layer, no pair delta)
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+  await expect(page.locator("#insar-legend")).toBeVisible();
+  await expect(page.locator("#insar-legend-delta")).toBeHidden();
+  // a cumulative product exists for 08-04 (sbas_run published it)
+  const tiles = [];
+  page.on("response", (r) => {
+    if (r.url().includes("/tiles/insar_cum/")) tiles.push(r.status());
+  });
+  await page.waitForTimeout(2500);
+  expect(tiles.some((s) => s === 200)).toBe(true);
 });

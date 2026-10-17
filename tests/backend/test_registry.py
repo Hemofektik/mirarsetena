@@ -27,7 +27,7 @@ def test_loads_the_real_project_configuration():
     # sense currently"; full InSAR is the long-term path) — the backend S1
     # machinery stays tested via config copies in the pipeline/api tests.
     # `insar` (INSAR-PLAN) renders unwrapped LOS displacement from SLC phase.
-    assert {"rgb", "ndvi", "mndwi", "bsi", "insar"} == set(cfg.layers)
+    assert {"rgb", "ndvi", "mndwi", "bsi", "insar", "insar_cum"} == set(cfg.layers)
     assert cfg.cache.max_zoom == 18
     assert cfg.cache.tile_budget_bytes == 10 * 1024**3
     assert cfg.cache.scene_budget_bytes == 10 * 1024**3
