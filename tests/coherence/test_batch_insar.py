@@ -467,3 +467,21 @@ def test_filter_pairs_by_chain():
     assert len(asc) < len(pairs)  # the fixture mixes asc and desc
     # no filter -> unchanged
     assert filter_chain(pairs, None) == pairs
+
+
+def test_spike_select_pair_honors_chain():
+    # The batch driver filters by chain but passes only --pair-index to
+    # spike, which re-planned WITHOUT the filter and picked the
+    # descending pair again (measured 2026-10-19, caught before an
+    # hour of topsApp). The selection is one shared function now.
+    import json as _json
+
+    from tools.spike_insar import select_pair
+
+    payload = _json.loads((FIXTURES / "stac_s1_grd.json").read_text(encoding="utf-8"))
+    scenes = parse_scenes("sentinel-1-grd", payload)
+    pair = select_pair(scenes, index=0, min_days=23, max_days=25, chain="S1D-asc")
+    assert pair.second.orbit_state == "ascending"
+    # no chain -> the unfiltered list's index 0 (fixture: first 24-day pair)
+    unfiltered = select_pair(scenes, index=0, min_days=23, max_days=25, chain=None)
+    assert unfiltered is not None

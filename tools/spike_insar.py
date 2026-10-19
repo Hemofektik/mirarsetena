@@ -211,6 +211,24 @@ def _mask_ifg_nan(pair_dir: Path) -> int:
     return n
 
 
+def select_pair(scenes, *, index: int, min_days: float, max_days: float,
+                chain: str | None):
+    """Plan pairs and pick one by index — WITH the chain filter applied.
+
+    The batch driver filters by chain but passed only --pair-index here;
+    re-planning without the filter picked the descending pair again
+    (measured 2026-10-19). One shared selection, one meaning for an index.
+    """
+    from tools.batch_insar import filter_chain
+
+    pairs = filter_chain(
+        plan_pairs(scenes, min_days=min_days, max_days=max_days), chain
+    )
+    if not pairs:
+        raise SystemExit("no interferometric pairs in the catalog window")
+    return pairs[index % len(pairs)]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project-dir", default="data/projects/cdp-rio-general")
@@ -242,6 +260,11 @@ def main() -> int:
         "--max-days", type=float, default=13.0,
     )
     parser.add_argument(
+        "--chain", default=None,
+        help="restrict planning to one chain (must match the batch "
+        "driver's --chain so --pair-index selects the same pair)",
+    )
+    parser.add_argument(
         "--slc-cache", default=None,
         help="shared SLC zip cache: pair-dir zips become hardlinks, so "
         "chained pairs (…,B),(B,…) download B once (tools/batch_insar)",
@@ -266,10 +289,13 @@ def main() -> int:
         "sentinel-1-grd", bbox,
         config.timeline.start.isoformat(), "2026-10-12",
     )
-    pairs = plan_pairs(scenes, min_days=args.min_days, max_days=args.max_days)
-    if not pairs:
-        raise SystemExit("no interferometric pairs in the catalog window")
-    pairs = [pairs[args.pair_index % len(pairs)]]
+    pairs = [
+        select_pair(
+            scenes, index=args.pair_index,
+            min_days=args.min_days, max_days=args.max_days,
+            chain=args.chain,
+        )
+    ]
     print(f"planned {len(pairs)} pair(s); first: {pairs[0].id}")
 
     # 2. download the SLCs from CDSE

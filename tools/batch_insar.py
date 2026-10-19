@@ -318,6 +318,7 @@ def main() -> int:
                  "--pair-index", str(idx), "--stop-after", "filter",
                  "--min-days", str(args.min_days),
                  "--max-days", str(args.max_days),
+                 *(["--chain", args.chain] if args.chain else []),
                  "--workdir", str(work),
                  *(["--slc-cache", str(Path(args.slc_cache).resolve())]
                    if args.slc_cache else [])],
@@ -366,6 +367,7 @@ def main() -> int:
              "--pair-index", str(idx), "--stop-after", "filter",
              "--min-days", str(args.min_days),
              "--max-days", str(args.max_days),
+             *(["--chain", args.chain] if args.chain else []),
              "--workdir", str(work),
              *(["--slc-cache", str(Path(args.slc_cache).resolve())]
                if args.slc_cache else [])],
