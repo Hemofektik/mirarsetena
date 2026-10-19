@@ -292,11 +292,11 @@ def main() -> int:
 
     results = []
     for i, pair in enumerate(pairs, 1):
-        # pair-specific dir keyed by BOTH dates: end-date alone collides
-        # when a 24-day closer and the 12-day chain share an end date
-        from tools.batch_insar import pair_dir_name
+        # pair-specific dir keyed by dates + track; legacy date-only
+        # dirs are reused only when their runconfig matches this pass
+        from tools.batch_insar import pair_dir_for
 
-        pair_dir = work / pair_dir_name(pair)
+        pair_dir = pair_dir_for(pair, work)
         pair_dir.mkdir(exist_ok=True)
         # reuse an earlier run's download (14 GB takes ~1 h; never redo it)
         from mirarsetena.coherence.download import is_valid_zip

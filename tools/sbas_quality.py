@@ -33,7 +33,7 @@ def _official_mask(shape: tuple[int, int], official: Path, like_bytes: bytes):
     from rasterio.features import geometry_mask
 
     with rasterio.io.MemoryFile(like_bytes) as mem, mem.open() as src:
-        transform, crs = src.transform, src.crs
+        transform = src.transform
     gj = json.loads(official.read_text(encoding="utf-8"))
     geoms = [f["geometry"] for f in gj.get("features", [])]
     # geometries are EPSG:4326, same as the product grid — this rasterio

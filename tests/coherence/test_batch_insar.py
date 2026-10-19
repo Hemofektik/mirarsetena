@@ -380,3 +380,90 @@ def test_rereference_edges_uses_one_fixed_pixel_set():
     (rr,), off = rereference_edges([e3], ref)
     assert off == [None]
     assert np.all(np.isnan(rr[:2])) and float(rr[2]) == 5.5
+
+
+def test_pair_dirs_disambiguate_tracks():
+    # Measured 2026-10-19: dates-only dirs let a DESCENDING pair's
+    # processed dir mask the ASCENDING pair with the same dates (the
+    # S1A batch skipped idx 1/4 as "already processed" and I applied
+    # chain-filtered indexes to the unfiltered list). The dir name
+    # carries the track.
+    from mirarsetena.coherence.pairs import InterferometricPair
+    from mirarsetena.pipeline.catalog import Scene
+    from tools.batch_insar import pair_dir_name
+
+    def scene(date, dt, orbit, rel):
+        return Scene(
+            id=f"S1A_IW_GRDH_1SDV_{dt}_{dt[9:]}_0_X_X",
+            collection="sentinel-1-grd", datetime=f"{date}T{dt[9:11]}:00:00Z",
+            date=date, cloud=None, orbit_state=orbit, relative_orbit=rel,
+        )
+
+    asc = InterferometricPair(
+        first=scene("2026-01-05", "20260105T234830", "ascending", 92),
+        second=scene("2026-01-29", "20260129T234830", "ascending", 92),
+    )
+    desc = InterferometricPair(
+        first=scene("2026-01-05", "20260105T112311", "descending", 84),
+        second=scene("2026-01-29", "20260129T112311", "descending", 84),
+    )
+    assert pair_dir_name(asc) != pair_dir_name(desc)
+    assert "asc92" in pair_dir_name(asc)
+    assert "desc84" in pair_dir_name(desc)
+
+
+def test_pair_dir_for_accepts_legacy_dirs_only_for_the_matching_track(tmp_path):
+    # Legacy date-only dirs (pre-track naming) are reused ONLY when their
+    # runconfig proves they were built from THIS pair's pass — otherwise a
+    # same-dates opposite-track dir would feed the wrong geometry.
+    from mirarsetena.coherence.pairs import InterferometricPair
+    from mirarsetena.pipeline.catalog import Scene
+    from tools.batch_insar import pair_dir_for
+
+    def pair(orbit, rel, hhmm):
+        first = Scene(
+            id=f"S1A_IW_GRDH_1SDV_20260105T{hhmm}_20260105T{hhmm}_0_X_X",
+            collection="sentinel-1-grd",
+            datetime=f"2026-01-05T{hhmm[:2]}:{hhmm[2:]}:00Z",
+            date="2026-01-05", cloud=None, orbit_state=orbit, relative_orbit=rel,
+        )
+        second = Scene(
+            id=f"S1A_IW_GRDH_1SDV_20260129T{hhmm}_20260129T{hhmm}_0_X_X",
+            collection="sentinel-1-grd",
+            datetime=f"2026-01-29T{hhmm[:2]}:{hhmm[2:]}:00Z",
+            date="2026-01-29", cloud=None, orbit_state=orbit, relative_orbit=rel,
+        )
+        return InterferometricPair(first=first, second=second)
+
+    legacy = tmp_path / "2026-01-05_2026-01-29"
+    legacy.mkdir()
+    (legacy / "topsapp_runconfig.xml").write_text(
+        "<!-- SAFE S1A_IW_SLC__1SDV_20260105T234829_... -->"
+    )
+    asc = pair("ascending", 92, "234830")
+    desc = pair("descending", 84, "112311")
+
+    # matching track (23:48 in the runconfig) -> the legacy dir is reused
+    assert pair_dir_for(asc, tmp_path) == legacy
+    # mismatched track (11:23 vs the dir's 23:48) -> a fresh modern dir
+    fresh = pair_dir_for(desc, tmp_path)
+    assert fresh != legacy
+    assert "desc84" in fresh.name
+
+
+def test_filter_pairs_by_chain():
+    # Measured 2026-10-19: chain-filtered probe indexes were applied to
+    # the UNFILTERED list — the S1A-asc batch processed descending pairs.
+    # The driver now filters by chain before indexing.
+    import json as _json
+
+    from tools.batch_insar import filter_chain
+
+    payload = _json.loads((FIXTURES / "stac_s1_grd.json").read_text(encoding="utf-8"))
+    scenes = parse_scenes("sentinel-1-grd", payload)
+    pairs = plan_pairs(scenes)
+    asc = filter_chain(pairs, "S1A-asc")
+    assert all(p.second.orbit_state == "ascending" for p in asc)
+    assert len(asc) < len(pairs)  # the fixture mixes asc and desc
+    # no filter -> unchanged
+    assert filter_chain(pairs, None) == pairs

@@ -80,12 +80,60 @@ def pair_is_done(store, slug: str, date: str) -> bool:
     )
 
 
+def filter_chain(pairs, chain: str | None):
+    """Restrict planned pairs to one SBAS chain (satellite+track).
+
+    Probe indexes are chain-scoped (the S1A-asc probe listed only that
+    chain) — applying them to the unfiltered list processed DESCENDING
+    pairs instead (measured 2026-10-19). The driver filters before
+    indexing so --pair-indexes always means what the probe printed.
+    """
+    if chain is None:
+        return list(pairs)
+    from mirarsetena.coherence.pairs import chain_id
+
+    return [p for p in pairs if chain_id(p) == chain]
+
+
 def pair_dir_name(pair) -> str:
-    """Scratch dir for one pair — keyed by BOTH dates: a 24-day closer and
-    the 12-day chain share END dates (e.g. 08-16), and one dir per end
-    date made the sbas-only gate skip them all and would have let a
-    rerun clobber the 12-day artifacts (measured 2026-10-16)."""
-    return f"{pair.first.date}_{pair.second.date}"
+    """Scratch dir for one pair — keyed by BOTH dates AND the track.
+
+    Dates alone collide when the same dates exist on two tracks (the
+    S1A asc/desc pair both span 01-05..01-29: measured 2026-10-19, the
+    desc dir masked the asc pair and it was skipped as 'already
+    processed'). The track suffix (asc92/desc84) separates them."""
+    orbit = {"ascending": "asc", "descending": "desc"}.get(
+        pair.second.orbit_state or "", "unk"
+    )
+    rel = pair.second.relative_orbit
+    return f"{pair.first.date}_{pair.second.date}_{orbit}{rel}"
+
+
+def pair_dir_for(pair, work: Path) -> Path:
+    """Resolve a pair's scratch dir, honoring LEGACY date-only dirs.
+
+    Pre-track dirs (2026-10-19 and earlier) are reused only when their
+    topsapp_runconfig proves they were built from THIS pair's pass —
+    otherwise a same-dates opposite-track dir would feed the wrong
+    geometry. The runconfig's SAFE name carries the acquisition stamp
+    (e.g. 20260105T234829); the pair's first scene stamp must match
+    within a minute."""
+    modern = work / pair_dir_name(pair)
+    legacy = work / f"{pair.first.date}_{pair.second.date}"
+    if modern.is_dir():
+        return modern
+    if not legacy.is_dir():
+        return modern
+    runconfig = legacy / "topsapp_runconfig.xml"
+    if not runconfig.is_file():
+        return modern
+    text = runconfig.read_text(encoding="utf-8", errors="ignore")
+    stamp = pair.first.id.split("_")[4][:13]  # YYYYMMDDTHHMM
+    # the runconfig's SAFE stamp: YYYYMMDDTHHMMSS — compare to the minute
+    if stamp in text.replace("T", "", 0) or stamp[:12] in text:
+        return legacy
+    # minute-level mismatch: opposite track on the same dates
+    return modern
 
 
 def purge_pair(pair_dir: Path) -> float:
@@ -206,6 +254,9 @@ def main() -> int:
                         "12-day products and must not overwrite them; "
                         "merged/+unwrap2/+geom_reference/ are the MintPy "
                         "input")
+    parser.add_argument("--chain", default=None,
+                        help="restrict planning to one chain (e.g. S1A-asc) "
+                        "so --pair-indexes match the probe's listing")
     parser.add_argument("--container", default="mirarsetena-api-1")
     parser.add_argument(
         "--slc-cache", default="data/spike/slc-cache",
@@ -235,6 +286,7 @@ def main() -> int:
         search, bbox, config.timeline.start.isoformat(), args.catalog_end,
         min_days=args.min_days, max_days=args.max_days,
     )
+    pairs = filter_chain(pairs, args.chain)
     if not pairs:
         raise SystemExit("no interferometric pairs in the catalog window")
     indexes = [int(x) for x in args.pair_indexes.split(",") if x.strip()]
@@ -246,7 +298,7 @@ def main() -> int:
         pair = pairs[idx % len(pairs)]
         date = pair.second.date
         print(f"\n=== pair[{idx}] {pair.first.date} -> {date} ===", flush=True)
-        pair_dir = work / pair_dir_name(pair)
+        pair_dir = pair_dir_for(pair, work)
 
         if args.sbas_only:
             # MintPy input only: no product build/deploy/purge — a 24-day
