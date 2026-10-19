@@ -336,6 +336,28 @@ redundant baselines buy. Nothing exceeds ~0.5 cm: still no measurable
 excavation signal, but with a proper variance-reduced series to keep
 growing. UI exposure of the cumulative line: next increment.
 
+### L.7.1 Network quality pass — measured 2026-10-19
+
+`tools/sbas_quality.py --chain S1D-asc` (closures = per-triangle
+|d(i,k) − d(i,j) − d(j,k)|, the network's inconsistency):
+
+- **Closures BEFORE: median 0.166 cm** (triangles 0.158–0.205, p90
+  0.44–0.53) — the irreducible atmosphere + unwrap scale over the AOI.
+- **Consistent referencing is NEUTRAL: 0.166 → 0.168 cm.** Re-zeroing
+  every edge on ONE fixed reference set (1,048 common coherent pixels
+  outside the official perimeter) did not shrink closures — the
+  per-pair reference medians were already mutually consistent, and the
+  residuals are dominated by spatially-differential atmosphere, not
+  zero-level drift. An honest negative result, now pinned by the tool.
+- The published products use the consistent referencing (same closures,
+  comparable zero levels by construction); the quarry trajectory
+  tightened from +0.11…+0.30 to +0.01…+0.09 cm — even further inside
+  the noise floor.
+- **What DOES improve quality:** more redundant baselines — the
+  S1A-asc pre-works closers (7×24-day + the 36-day bridge 0318→0423,
+  running 2026-10-19) triangulate the dry-season chain; and light
+  temporal regularization of the inversion (research note, not built).
+
 ### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
   products referenced to the first pre-works pair (echoes the optical

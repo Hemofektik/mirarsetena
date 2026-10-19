@@ -100,3 +100,70 @@ def solve_sbas(
     fields = fields_flat.reshape((t, *shape))
     valid = valid.reshape(shape)
     return dates, fields, valid
+
+
+def closure_stats(
+    edges: list[tuple[str, str, np.ndarray]],
+) -> list[dict]:
+    """Per-triangle closure statistics — the network's inconsistency metric.
+
+    For every triangle (i,j),(j,k),(i,k) the closure
+    d(i,k) − d(i,j) − d(j,k) is zero only when the three observations
+    agree; per-edge atmosphere and reference drift show up here as a
+    constant offset on the common-valid pixels. Returned sorted by
+    median |closure| descending.
+    """
+    by_pair = {(i, j): np.asarray(d, dtype=np.float64) for i, j, d in edges}
+    nodes = sorted({n for i, j in by_pair for n in (i, j)})
+    out = []
+    for a_i, a in enumerate(nodes):
+        for b_i in range(a_i + 1, len(nodes)):
+            b = nodes[b_i]
+            if (a, b) not in by_pair:
+                continue
+            for c in nodes[b_i + 1 :]:
+                paths = [(a, b, b, c, a, c), (a, c, c, b, a, b)]
+                for i, j, k, l, m, n in paths:
+                    if (k, l) in by_pair and (m, n) in by_pair:
+                        closure = by_pair[(m, n)] - by_pair[(i, j)] - by_pair[(k, l)]
+                        valid = closure[np.isfinite(closure)]
+                        if valid.size == 0:
+                            continue
+                        out.append(
+                            {
+                                "triangle": (a, b, c),
+                                "median_abs": float(np.median(np.abs(valid))),
+                                "p90_abs": float(np.percentile(np.abs(valid), 90)),
+                                "n": int(valid.size),
+                            }
+                        )
+                        break
+    out.sort(key=lambda s: -s["median_abs"])
+    return out
+
+
+def rereference_edges(
+    edges: list[np.ndarray], reference: np.ndarray
+) -> tuple[list[np.ndarray], list[float | None]]:
+    """Re-zero every edge on ONE fixed reference pixel set.
+
+    Per-pair referencing subtracts each edge's own coherent median over
+    its own valid pixels — mutually inconsistent zero levels the LSQ then
+    has to absorb. With a shared `reference` mask the offsets become
+    comparable; an edge with no valid reference pixel is left untouched
+    (offset None — honestly unreferenced rather than shifted by a guess).
+    """
+    out = []
+    offsets: list[float | None] = []
+    for edge in edges:
+        arr = np.asarray(edge, dtype=np.float64).copy()
+        in_ref = np.asarray(reference, dtype=bool) & np.isfinite(arr)
+        if not in_ref.any():
+            out.append(arr)
+            offsets.append(None)
+            continue
+        offset = float(np.median(arr[in_ref]))
+        arr[np.isfinite(arr)] -= offset
+        out.append(arr)
+        offsets.append(offset)
+    return out, offsets

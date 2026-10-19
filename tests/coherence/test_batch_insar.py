@@ -332,3 +332,51 @@ def test_sbas_pixelwise_masks_and_chain_degeneracy():
     # unobservable (x2 is a leaf without its edge) -> nodata there
     assert valid[1]
     assert float(fields[2][1]) != float(fields[2][1])  # NaN
+
+
+def test_triangle_closures_quantify_network_inconsistency():
+    # The network's quality metric: a triangle's closure
+    # d(i,k) - d(i,j) - d(j,k) is zero only when the three observations
+    # agree — per-edge atmosphere and reference drift show up here.
+    import numpy as np
+
+    from mirarsetena.coherence.sbas import closure_stats
+
+    edges = [
+        ("a", "b", np.array([1.0, 2.0])),
+        ("b", "c", np.array([1.0, 2.0])),
+        ("a", "c", np.array([2.0, 4.0])),   # perfectly consistent
+    ]
+    stats = closure_stats(edges)
+    assert len(stats) == 1
+    assert stats[0]["triangle"] == ("a", "b", "c")
+    assert stats[0]["median_abs"] == 0.0
+
+    edges[2] = ("a", "c", np.array([2.4, 4.4]))  # +0.4 cm on one path
+    stats = closure_stats(edges)
+    assert stats[0]["median_abs"] == pytest.approx(0.4)
+    assert stats[0]["p90_abs"] == pytest.approx(0.4)
+
+
+def test_rereference_edges_uses_one_fixed_pixel_set():
+    # Per-pair referencing injects per-edge constant offsets; re-referencing
+    # ALL edges to the SAME reference pixels makes their zero levels
+    # mutually consistent — the closure metric should shrink.
+    import numpy as np
+
+    from mirarsetena.coherence.sbas import rereference_edges
+
+    ref = np.array([True, True, False, False])
+    e1 = np.array([1.5, 1.7, 9.9, 9.9])    # median over ref = 1.6
+    e2 = np.array([-0.1, 0.1, 5.5, 5.5])   # median over ref = 0.0
+    (r1, r2), offsets = rereference_edges([e1, e2], ref)
+    assert offsets == pytest.approx([1.6, 0.0])
+    assert float(np.median(r1[ref])) == pytest.approx(0.0)
+    assert float(np.median(r2[ref])) == pytest.approx(0.0)
+    # values elsewhere shift by the same constant (structure preserved)
+    assert float(r1[2] - e1[2]) == pytest.approx(-1.6)
+    # an edge with NO valid reference pixel is left untouched (honest)
+    e3 = np.array([np.nan, np.nan, 5.5, 5.5])
+    (rr,), off = rereference_edges([e3], ref)
+    assert off == [None]
+    assert np.all(np.isnan(rr[:2])) and float(rr[2]) == 5.5
