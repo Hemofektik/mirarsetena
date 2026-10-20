@@ -1559,3 +1559,36 @@ test("ICESat-2 ground tracks toggle shows pass footprints", async ({ page }) => 
   );
   expect(back).toBe("visible");
 });
+
+test("ICESat-2 elevation points layer loads under the same toggle", async ({
+  page,
+}) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
+  // the elevation source exists (empty until the tool runs with creds)
+  await page.waitForFunction(
+    () => window.__mirarsetenaMap?.getSource("icesat-elev")?.type === "geojson",
+    null,
+    { timeout: 30_000 },
+  );
+  // the same toggle controls both the swaths and the elevation points
+  const toggle = page.locator("#show-icesat");
+  await toggle.uncheck();
+  const fill = await page.evaluate(() =>
+    window.__mirarsetenaMap.getLayoutProperty("icesat-fill", "visibility"),
+  );
+  const elev = await page.evaluate(() =>
+    window.__mirarsetenaMap.getLayoutProperty("icesat-elev", "visibility"),
+  );
+  expect(fill).toBe("none");
+  expect(elev).toBe("none");
+  await toggle.check();
+  const fillBack = await page.evaluate(() =>
+    window.__mirarsetenaMap.getLayoutProperty("icesat-fill", "visibility"),
+  );
+  const elevBack = await page.evaluate(() =>
+    window.__mirarsetenaMap.getLayoutProperty("icesat-elev", "visibility"),
+  );
+  expect(fillBack).toBe("visible");
+  expect(elevBack).toBe("visible");
+});

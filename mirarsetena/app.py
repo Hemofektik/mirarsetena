@@ -309,6 +309,34 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    @app.get("/p/{slug}/icesat-elevations.geojson")
+    def project_icesat_elevations(slug: str) -> Response:
+        """ICESat-2 elevation points over the AOI (ATL06, Earthdata-gated).
+
+        Served from whatever tools/icesat_elevations stored; an empty
+        store yields an empty collection — the layer lights up the
+        moment the tool runs with credentials. No network here.
+        """
+        import json as _json
+
+        from mirarsetena.projects.registry import cache_key
+
+        try:
+            registry.get(slug)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raw = storage.get(cache_key(slug, "catalog", "icesat-elevations.json"))
+        collection = (
+            _json.loads(raw)
+            if raw
+            else {"type": "FeatureCollection", "features": []}
+        )
+        return Response(
+            content=_json.dumps(collection, ensure_ascii=False).encode("utf-8"),
+            media_type="application/geo+json",
+            headers={"Cache-Control": "no-store"},
+        )
+
     @app.get("/p/{slug}/official.geojson")
     def project_official(slug: str) -> Response:
         return _geo_response(slug, "official_path")

@@ -22,6 +22,7 @@ let poisData = null;
 let aoiData = null;
 let rioData = null;
 let icesatData = null;
+let icesatElevData = null;
 // Plan vs. Realidad (INSAR-PLAN L.9): /api/plan payload + selected POI.
 // planData null = no plan/series available -> the section stays hidden
 // (honest absence, never an invented chart).
@@ -173,7 +174,7 @@ function updateAoiVisibility() {
     if (!map.getLayer(id)) continue;
     map.setLayoutProperty(id, "visibility", state.rioLine ? "visible" : "none");
   }
-  for (const id of ["icesat-fill", "icesat-outline"]) {
+  for (const id of ["icesat-fill", "icesat-outline", "icesat-elev"]) {
     if (!map.getLayer(id)) continue;
     map.setLayoutProperty(
       id, "visibility", state.showIcesat ? "visible" : "none"
@@ -662,6 +663,10 @@ function buildMap() {
           type: "geojson",
           data: icesatData ?? { type: "FeatureCollection", features: [] },
         },
+        "icesat-elev": {
+          type: "geojson",
+          data: icesatElevData ?? { type: "FeatureCollection", features: [] },
+        },
         // elevation DEM (AWS elevation-tiles, terrarium encoding, SRTM-
         // based; covers the AOI — centre ~1169 m). Only fetched when the
         // 3D toggle engages setTerrain.
@@ -770,6 +775,24 @@ function buildMap() {
             "line-color": "#0e7490",
             "line-width": 1.5,
             "line-opacity": 0.8,
+          },
+        },
+        // ATL06 elevation points (Earthdata-gated): white-cored circles
+        // with a dark ring so they read over both basemaps; empty until
+        // tools/icesat_elevations runs with credentials
+        {
+          id: "icesat-elev",
+          type: "circle",
+          source: "icesat-elev",
+          layout: {
+            visibility: state.showIcesat ? "visible" : "none",
+          },
+          paint: {
+            "circle-radius": 4,
+            "circle-color": "#f0fdfa",
+            "circle-stroke-color": "#0e7490",
+            "circle-stroke-width": 1.5,
+            "circle-opacity": 0.95,
           },
         },
       ],
@@ -1070,6 +1093,13 @@ async function boot() {
   } catch (error) {
     console.error("icesat tracks fetch failed", error);
     icesatData = null;
+  }
+  // ATL06 elevation points (empty until the tool runs with credentials)
+  try {
+    icesatElevData = await getJSON(`/p/${state.slug}/icesat-elevations.geojson`);
+  } catch (error) {
+    console.error("icesat elevations fetch failed", error);
+    icesatElevData = null;
   }
 
   try {

@@ -53,3 +53,61 @@ def test_clip_polygon_keeps_only_the_bbox_intersection():
         assert BBOX[1] <= lat <= BBOX[3]
     # a polygon fully outside clips to nothing
     assert clip_polygon_to_bbox([(-85, 10), (-84.9, 10), (-84.9, 9.9)], BBOX) == []
+
+
+def _write_atl06(path, lats, lons, elevs, quality=None):
+    """Minimal ATL06-shaped HDF5: per-beam land_segments arrays."""
+    import h5py
+    import numpy as np
+
+    with h5py.File(path, "w") as f:
+        for beam in ("gt1l", "gt2l"):
+            g = f.create_group(beam)
+            ls = g.create_group("land_segments")
+            ls.create_dataset("latitude", data=np.asarray(lats, dtype="f8"))
+            ls.create_dataset("longitude", data=np.asarray(lons, dtype="f8"))
+            canon = ls.create_group("canonical")
+            canon.create_dataset("elevation", data=np.asarray(elevs, dtype="f8"))
+            q = (
+                np.zeros(len(lats), dtype="i4") if quality is None
+                else np.asarray(quality, dtype="i4")
+            )
+            canon.create_dataset("elevation_quality_flag", data=q)
+
+
+def test_read_atl06_extracts_elevation_points_inside_the_bbox(tmp_path):
+    # The elevation layer's core: ATL06 land_segments -> (lon, lat, elev)
+    # points inside the AOI, bad-quality flags dropped.
+    import numpy as np
+
+    from mirarsetena.icesat import read_atl06
+
+    lats = np.linspace(9.37, 9.41, 40)          # crosses the AOI lat
+    lons = np.full(40, -83.6675)                # inside the AOI lon
+    elevs = np.linspace(1100.0, 1150.0, 40)
+    quality = np.zeros(40, dtype="i4")
+    quality[0] = 1                              # flagged -> dropped
+    h5 = tmp_path / "ATL06_test.h5"
+    _write_atl06(h5, lats, lons, elevs, quality)
+
+    points = read_atl06(h5, BBOX)
+    assert points, "points inside the bbox must be extracted"
+    for lon, lat, elev in points:
+        assert BBOX[0] <= lon <= BBOX[2]
+        assert BBOX[1] <= lat <= BBOX[3]
+        assert 1000.0 <= elev <= 1200.0
+    # both beams contribute (duplicate positions are fine — they are
+    # different ground tracks a few hundred m apart in reality)
+    assert len(points) >= 30
+    # the flagged point (lat 9.37, outside anyway) never appears
+    assert all(abs(e - elevs[0]) > 1e-6 for _, _, e in points)
+
+
+def test_read_atl06_missing_file_raises_clearly(tmp_path):
+    from mirarsetena.icesat import read_atl06
+
+    try:
+        read_atl06(tmp_path / "nope.h5", BBOX)
+        raise AssertionError("expected FileNotFoundError")
+    except FileNotFoundError:
+        pass

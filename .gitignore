@@ -44,3 +44,4 @@ symbology-style.db
 frontend/.audit/
 data/spike/
 *.log
+data/ice/

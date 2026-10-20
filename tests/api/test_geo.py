@@ -4,6 +4,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from mirarsetena.app import create_app
+from mirarsetena.storage import LocalStore
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "config" / "projects"
@@ -82,3 +83,37 @@ def test_icesat_tracks_endpoint_serves_clipped_features(tmp_path):
     assert res2.json() == body
     assert len(calls) == 1
     assert client.get("/p/unknown/icesat.geojson").status_code == 404
+
+
+def test_icesat_elevations_endpoint_serves_cached_points(tmp_path):
+    # The elevation layer: whatever tools/icesat_elevations stored is
+    # served; an empty store yields an empty (honest) collection — the
+    # layer lights up the moment the tool runs with Earthdata credentials.
+    import json as _json
+
+    from mirarsetena.app import create_app
+    from mirarsetena.projects.registry import cache_key
+
+    app = create_app(config_dir=CONFIG_DIR, storage_root=tmp_path / "cache")
+    client = TestClient(app)
+
+    empty = client.get("/p/cdp-rio-general/icesat-elevations.geojson")
+    assert empty.status_code == 200
+    assert empty.json() == {"type": "FeatureCollection", "features": []}
+
+    store = LocalStore(tmp_path / "cache")
+    store.put(
+        cache_key("cdp-rio-general", "catalog", "icesat-elevations.json"),
+        _json.dumps({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"date": "2026-05-09", "elev_m": 1123.4},
+                "geometry": {"type": "Point", "coordinates": [-83.6675, 9.3875]},
+            }],
+        }).encode(),
+    )
+    served = client.get("/p/cdp-rio-general/icesat-elevations.geojson")
+    assert served.status_code == 200
+    assert served.json()["features"][0]["properties"]["elev_m"] == 1123.4
+    assert client.get("/p/unknown/icesat-elevations.geojson").status_code == 404
