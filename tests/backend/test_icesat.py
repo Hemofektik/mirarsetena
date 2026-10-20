@@ -111,3 +111,19 @@ def test_read_atl06_missing_file_raises_clearly(tmp_path):
         raise AssertionError("expected FileNotFoundError")
     except FileNotFoundError:
         pass
+
+
+def test_lockout_detection_stops_the_run_early():
+    # Measured 2026-10-20: after the user's account was unlocked, the
+    # tool fired all 24 granule attempts against the still-locked OAuth
+    # endpoint — each counting as a failed login — and re-locked the
+    # profile. The lockout signal must abort the whole run immediately.
+    from tools.icesat_elevations import is_lockout
+
+    assert is_lockout(
+        b"You have exceeded the maximum number of allowed login attempts. "
+        b"User profile has been locked temporarily"
+    )
+    assert is_lockout("Credentials (username, password) are invalid".encode())
+    assert not is_lockout(b"HTTP Basic: Access denied.")
+    assert not is_lockout(b"")

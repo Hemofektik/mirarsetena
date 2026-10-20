@@ -27,6 +27,19 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 
 
+def is_lockout(body: bytes) -> bool:
+    """True when Earthdata says the profile is locked or credentials are
+    rejected — the signal to ABORT the whole run (each attempt against a
+    locked profile counts as another failed login and extends the
+    lockout; measured 2026-10-20)."""
+    text = body.decode("utf-8", "replace").lower()
+    return (
+        "maximum number of allowed login attempts" in text
+        or "locked temporarily" in text
+        or "credentials (username, password) are invalid" in text
+    )
+
+
 def _credentials() -> tuple[str | None, str | None, str | None]:
     """(user, password, bearer-token) — token preferred when present.
 
@@ -84,10 +97,21 @@ def _download(url: str, dest: Path, user, password, token) -> Path:
                     f"URS login failed: HTTP {login.status_code}"
                 )
         with client.stream("GET", url) as response:
-            response.raise_for_status()
+            if response.status_code >= 400:
+                body = b"".join(response.iter_bytes())
+                if is_lockout(body):
+                    raise LockoutError(body.decode("utf-8", "replace")[:200])
+                raise httpx.HTTPStatusError(
+                    f"HTTP {response.status_code}",
+                    request=response.request, response=response,
+                )
             with open(dest, "wb") as handle:
                 handle.writelines(response.iter_bytes())
     return dest
+
+
+class LockoutError(RuntimeError):
+    """Earthdata rejected the credentials — stop the run, do not retry."""
 
 
 def main() -> int:
@@ -147,6 +171,9 @@ def main() -> int:
             print(f"  downloading {granule} ...", flush=True)
             try:
                 _download(links[0], local, user, password, token)
+            except LockoutError as exc:
+                print(f"    LOCKOUT — aborting run: {exc}", flush=True)
+                return 2
             except httpx.HTTPError as exc:
                 print(f"    FAILED: {exc}", flush=True)
                 continue
