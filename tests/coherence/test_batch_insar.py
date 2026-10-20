@@ -485,3 +485,26 @@ def test_spike_select_pair_honors_chain():
     # no chain -> the unfiltered list's index 0 (fixture: first 24-day pair)
     unfiltered = select_pair(scenes, index=0, min_days=23, max_days=25, chain=None)
     assert unfiltered is not None
+
+
+def test_sbas_references_each_component_at_its_own_first_date():
+    # The 36-day bridge decorrelated (0 valid px, wet-season transition),
+    # splitting the S1A-asc chain: component 2 must still solve —
+    # referenced at ITS first date, not reported as NaN forever.
+    import numpy as np
+
+    from mirarsetena.coherence.sbas import solve_sbas
+
+    dates = ["2026-01-05", "2026-01-17", "2026-04-23", "2026-05-05"]
+    edges = [
+        ("2026-01-05", "2026-01-17", np.array(1.0)),
+        ("2026-04-23", "2026-05-05", np.array(-2.0)),  # disconnected
+    ]
+    dates_out, fields, valid = solve_sbas(dates, edges)
+    assert valid
+    # component 1 referenced at 01-05
+    assert float(fields[0][0]) == 0.0
+    assert float(fields[1][0]) == pytest.approx(1.0)
+    # component 2 referenced at ITS first date (04-23), not NaN
+    assert float(fields[2][0]) == 0.0
+    assert float(fields[3][0]) == pytest.approx(-2.0)

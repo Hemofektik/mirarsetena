@@ -61,13 +61,31 @@ def solve_sbas(
 
     t = len(dates)
     # group pixels by their edge-validity pattern (<= 2^E groups; E is
-    # small — 5..9 edges per chain — so each group is one dense solve)
+    # small — 5..18 edges per chain — so each group is one dense solve)
     patterns = np.zeros(n_obs, dtype=np.int64)
     for e, mask in enumerate(usable):
         patterns |= mask.astype(np.int64) << e
 
     fields_flat = np.full((t, n_obs), np.nan, dtype=np.float64)
-    fields_flat[0, :] = 0.0  # reference date pinned
+
+    def components(nodes, rows):
+        """Connected components of the used-edge graph (union-find)."""
+        parent = {n: n for n in nodes}
+
+        def find(x):
+            while parent[x] != x:
+                parent[x] = parent[parent[x]]
+                x = parent[x]
+            return x
+
+        for i, j in rows:
+            ri, rj = find(i), find(j)
+            if ri != rj:
+                parent[ri] = rj
+        groups = {}
+        for n in nodes:
+            groups.setdefault(find(n), []).append(n)
+        return list(groups.values())
 
     for pattern in np.unique(patterns[valid]):
         use = np.flatnonzero((patterns == pattern) & valid)
@@ -78,24 +96,37 @@ def solve_sbas(
             for e, (first, second, _) in enumerate(edges)
             if pattern >> e & 1
         ]
-        # design for unknowns x_1..x_{T-1}: +1 at j (if j>0), -1 at i (if i>0)
-        a = np.zeros((len(rows), t - 1), dtype=np.float64)
-        for r, (i, j) in enumerate(rows):
-            if j > 0:
-                a[r, j - 1] += 1.0
-            if i > 0:
-                a[r, i - 1] -= 1.0
         d = np.stack([flat[e][use] for e in range(len(edges)) if pattern >> e & 1])
-        rhs = a.T @ d  # (T-1, P)
-        gram = a.T @ a
-        # observability: e_t is determined iff it lies in range(gram)
-        projector = gram @ np.linalg.pinv(gram)
-        sol = np.linalg.pinv(gram) @ rhs if gram.size else np.zeros((t - 1, use.size))
-        for ti in range(1, t):
-            e_t = np.zeros(t - 1)
-            e_t[ti - 1] = 1.0
-            if np.allclose(projector @ e_t, e_t, atol=1e-8):
-                fields_flat[ti, use] = sol[ti - 1]
+        # SBAS standard for a disconnected network: each component is
+        # referenced at ITS own first date (a fully-decorrelated bridge
+        # — measured: the S1A 36-day pair — must not NaN the whole tail)
+        for comp in components(list(range(t)), rows):
+            comp_rows = [(i, j) for (i, j) in rows if i in comp and j in comp]
+            if not comp_rows:
+                continue
+            pin = min(comp)
+            free = [n for n in comp if n != pin]
+            pos = {n: k for k, n in enumerate(free)}
+            a = np.zeros((len(comp_rows), len(free)), dtype=np.float64)
+            for r, (i, j) in enumerate(comp_rows):
+                if j != pin:
+                    a[r, pos[j]] += 1.0
+                if i != pin:
+                    a[r, pos[i]] -= 1.0
+            idxs = [k for k, (i, j) in enumerate(rows) if i in comp and j in comp]
+            dc = d[idxs]
+            fields_flat[pin, use] = 0.0
+            if not free:
+                continue
+            rhs = a.T @ dc  # (F, P)
+            gram = a.T @ a
+            projector = gram @ np.linalg.pinv(gram)
+            sol = np.linalg.pinv(gram) @ rhs
+            for n in free:
+                e_t = np.zeros(len(free))
+                e_t[pos[n]] = 1.0
+                if np.allclose(projector @ e_t, e_t, atol=1e-8):
+                    fields_flat[n, use] = sol[pos[n]]
 
     fields = fields_flat.reshape((t, *shape))
     valid = valid.reshape(shape)

@@ -27,6 +27,35 @@ REPO = Path(__file__).resolve().parents[1]
 # The one chain with triangles today: 5 consecutive 12-day pairs + the
 # 4 24-day closers over nodes 07-11..09-09 (S1D ascending).
 CHAINS: dict[str, dict] = {
+    # Pre-works S1A ascending (rel92): 9 consecutive 12-day pairs
+    # (01-05..06-22) + 7x24-day closers + the 36-day bridge 0318->0423 —
+    # the dry-season chain, triangulated 2026-10-19.
+    "S1A-asc": {
+        "dates": [
+            "2026-01-05", "2026-01-17", "2026-01-29", "2026-02-22",
+            "2026-03-06", "2026-03-18", "2026-04-23", "2026-05-05",
+            "2026-05-17", "2026-05-29", "2026-06-10", "2026-06-22",
+        ],
+        "edges": [
+            ("2026-01-05", "2026-01-17", "2026-01-17"),
+            ("2026-01-17", "2026-01-29", "2026-01-29"),
+            ("2026-02-22", "2026-03-06", "2026-03-06"),
+            ("2026-03-06", "2026-03-18", "2026-03-18"),
+            ("2026-04-23", "2026-05-05", "2026-05-05"),
+            ("2026-05-05", "2026-05-17", "2026-05-17"),
+            ("2026-05-17", "2026-05-29", "2026-05-29"),
+            ("2026-05-29", "2026-06-10", "2026-06-10"),
+            ("2026-06-10", "2026-06-22", "2026-06-22"),
+            ("2026-01-05", "2026-01-29", None),   # 24-day closers
+            ("2026-01-29", "2026-02-22", None),
+            ("2026-02-22", "2026-03-18", None),
+            ("2026-04-23", "2026-05-17", None),
+            ("2026-05-05", "2026-05-29", None),
+            ("2026-05-17", "2026-06-10", None),
+            ("2026-05-29", "2026-06-22", None),
+            ("2026-03-18", "2026-04-23", None),   # 36-day bridge
+        ],
+    },
     "S1D-asc": {
         "dates": [
             "2026-07-11", "2026-07-23", "2026-08-04",
@@ -64,7 +93,10 @@ def _load_edge(store, slug: str, first: str, second: str, served: str | None,
         key = edge_key(slug, first, second)
         blob = store.get(key)
         if blob is None:
-            pair_dir = pair_root / f"{first}_{second}"
+            candidates = sorted(pair_root.glob(f"{first}_{second}*"))
+            if not candidates:
+                raise SystemExit(f"no pair dir for closer {first}->{second}")
+            pair_dir = candidates[0]
             print(f"  building closer edge {first}->{second} ...", flush=True)
             from tools.insar_product import build_and_store
 
