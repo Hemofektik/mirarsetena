@@ -417,6 +417,35 @@ verdict). The Plan vs. Realidad panel stays, now visible on every layer
 tests) stays dormant and covered, mirroring the 2026-10-12 σ⁰/GRD
 removal — re-enabling is a one-line `config.layers` change.
 
+### L.7.3 Successor for elevation change: drone photogrammetry (decision 2026-10-20)
+
+With InSAR (L.7.2) and ICESat-2 (UI removal above) both out, the user
+will acquire a drone. Decision recorded after evaluating alternatives:
+
+- **Product of record: SfM/MVS photogrammetry** (Agisoft Metashape or
+  OpenDroneMap) per repeat flight → **orthomosaic** (dated RGB layer,
+  plugs into the existing tile/WMTS pipeline at ~2 cm/px vs Sentinel-2's
+  10 m) and **DSM per flight** → **DSM differencing = cm-accurate
+  elevation-change map**, the exact product InSAR could not deliver.
+  Cut/fill volumes per face/stockpile follow directly.
+- **Accuracy:** 2–3 cm absolute with RTK/PPK or ground control points;
+  relative-only accuracy ≈ GSD (2–5 cm). Flight grid over the 1.6 km²
+  AOI is ~15–30 min → weekly/monthly cadence beats Sentinel-2's 5 days.
+- **Gaussian splatting: visualization only, not measurement.** A
+  georeferenced splat makes a photorealistic explorable 3D scene
+  (highwalls/terraces), but it is a radiance field — elevations and
+  change detection from splats are inferior to SfM. Optional "virtual
+  site visit" mode; never the source of a measured number.
+- **Known limits:** DSM measures canopy over the lush surroundings
+  (same limitation as satellite, but the bare pit/terraces — the actual
+  target — are ideal at cm resolution); repeatability needs the same
+  route/altitude/overlap (80/80) and similar lighting, plus oblique
+  passes for vertical faces; DGAC registration/permit and likely SETENA
+  notification for imaging the concession area are prerequisites.
+- **Scope status:** future phase (not in L.1–L.9); the app-side seam is
+  already prepared — a drone orthomosaic layer and a DSM-difference
+  raster are ordinary dated layers/tiles, no new architecture needed.
+
 ### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
   products referenced to the first pre-works pair (echoes the optical
@@ -548,6 +577,11 @@ gate).**
   mm-grade geodesy — research tier, after MintPy proves necessary.
 - Reintroducing σ⁰ / GRD coherence layers (stay removed until a separate
   reason appears).
+- Reintroducing the `insar`/`insar_cum` layers or the ICESat-2 overlay
+  (removed 2026-11 per L.7.2 + UI-removal note; machinery stays dormant).
+- Drone photogrammetry processing itself (L.7.3 records the decision;
+  flights/processing are a future phase, the app only ingests the
+  resulting dated layers).
 
 ## 9. Risks
 
