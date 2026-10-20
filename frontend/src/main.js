@@ -21,8 +21,6 @@ let map;
 let poisData = null;
 let aoiData = null;
 let rioData = null;
-let icesatData = null;
-let icesatElevData = null;
 // Plan vs. Realidad (INSAR-PLAN L.9): /api/plan payload + selected POI.
 // planData null = no plan/series available -> the section stays hidden
 // (honest absence, never an invented chart).
@@ -174,12 +172,6 @@ function updateAoiVisibility() {
     if (!map.getLayer(id)) continue;
     map.setLayoutProperty(id, "visibility", state.rioLine ? "visible" : "none");
   }
-  for (const id of ["icesat-fill", "icesat-outline", "icesat-elev"]) {
-    if (!map.getLayer(id)) continue;
-    map.setLayoutProperty(
-      id, "visibility", state.showIcesat ? "visible" : "none"
-    );
-  }
 }
 
 /** Drape the map over the elevation DEM (3D view toggle). */
@@ -276,27 +268,6 @@ function renderScrubber() {
   // section (title, empty message, controls), not just its innards.
   const section = document.getElementById("date-section");
   section.hidden = !state.layer;
-  // The InSAR colour legend shows only while the insar layer is active.
-  // Its ±cm labels follow the SELECTED date's adaptive ramp limit (the
-  // fixed ±5 cm MVP range rendered the real product all-white); dates
-  // without a product fall back to the ±5 default.
-  const legend = document.getElementById("insar-legend");
-  legend.hidden = !["insar", "insar_cum"].includes(state.layer);
-  if (!legend.hidden) {
-    const entry = state.dates.find((d) => d.date === state.date);
-    const limit = entry?.los_range ?? 5;
-    const label = limit >= 10 ? String(Math.round(limit)) : limit.toFixed(1);
-    document.getElementById("insar-legend-neg").textContent =
-      S.t(state.lang, "legend_los_negative", { limit: label });
-    document.getElementById("insar-legend-pos").textContent =
-      S.t(state.lang, "legend_los_positive", { limit: label });
-    // which acquisitions this product's delta spans (pair start → end);
-    // the SBAS cumulative layer has no single-pair span to show
-    const delta = document.getElementById("insar-legend-delta");
-    const span = state.layer === "insar" ? S.deltaSpan(entry) : null;
-    delta.hidden = !span;
-    delta.textContent = span ? `Δ ${span}` : "";
-  }
   if (!state.layer) return;
 
   // Cloud filter UI only where dates carry cloud scores (optical); the
@@ -369,14 +340,15 @@ function renderScrubber() {
 }
 
 /**
- * Plan vs. Realidad panel (L.9): visible only with the insar layer, the
- * POI select mirrors the map's pin labels, and the chart follows the
- * scrubber date (cursor) — plan milestones and measured series stay their
- * own marks on their own axes.
+ * Plan vs. Realidad panel (L.9): always visible when a plan payload
+ * exists (the InSAR layers left the UI 2026-11 but the chart is a time
+ * series, not a map layer), the POI select mirrors the map's pin labels,
+ * and the chart follows the scrubber date (cursor) — plan milestones and
+ * measured series stay their own marks on their own axes.
  */
 function renderPlanSection() {
   const section = document.getElementById("plan-section");
-  const show = ["insar", "insar_cum"].includes(state.layer) && Boolean(planData);
+  const show = Boolean(planData);
   section.hidden = !show;
   if (!show) return;
 
@@ -448,7 +420,6 @@ function syncControlsFromState() {
   document.getElementById("max-cloud").value = String(state.maxCloud);
   document.getElementById("show-properties").checked = state.showProperties;
   document.getElementById("show-rio-line").checked = state.rioLine;
-  document.getElementById("show-icesat").checked = state.showIcesat;
   // overlay opacity: slider position, % readout, and (like the scrubber)
   // the row only exists while a layer is active
   const opacity = Math.round(state.overlayOpacity * 100);
@@ -659,14 +630,6 @@ function buildMap() {
           type: "geojson",
           data: rioData ?? { type: "FeatureCollection", features: [] },
         },
-        icesat: {
-          type: "geojson",
-          data: icesatData ?? { type: "FeatureCollection", features: [] },
-        },
-        "icesat-elev": {
-          type: "geojson",
-          data: icesatElevData ?? { type: "FeatureCollection", features: [] },
-        },
         // elevation DEM (AWS elevation-tiles, terrarium encoding, SRTM-
         // based; covers the AOI — centre ~1169 m). Only fetched when the
         // 3D toggle engages setTerrain.
@@ -749,51 +712,6 @@ function buildMap() {
             visibility: state.rioLine ? "visible" : "none",
           },
           paint: { "line-color": "#4f46e5", "line-width": 3.5, "line-opacity": 0.5 },
-        },
-        // ICESat-2 pass footprints over the AOI (open CMR metadata): a
-        // translucent cyan swath where the laser measured, per pass date
-        {
-          id: "icesat-fill",
-          type: "fill",
-          source: "icesat",
-          layout: {
-            visibility: state.showIcesat ? "visible" : "none",
-          },
-          paint: {
-            "fill-color": "#06b6d4",
-            "fill-opacity": 0.18,
-          },
-        },
-        {
-          id: "icesat-outline",
-          type: "line",
-          source: "icesat",
-          layout: {
-            visibility: state.showIcesat ? "visible" : "none",
-          },
-          paint: {
-            "line-color": "#0e7490",
-            "line-width": 1.5,
-            "line-opacity": 0.8,
-          },
-        },
-        // ATL06 elevation points (Earthdata-gated): white-cored circles
-        // with a dark ring so they read over both basemaps; empty until
-        // tools/icesat_elevations runs with credentials
-        {
-          id: "icesat-elev",
-          type: "circle",
-          source: "icesat-elev",
-          layout: {
-            visibility: state.showIcesat ? "visible" : "none",
-          },
-          paint: {
-            "circle-radius": 4,
-            "circle-color": "#f0fdfa",
-            "circle-stroke-color": "#0e7490",
-            "circle-stroke-width": 1.5,
-            "circle-opacity": 0.95,
-          },
         },
       ],
     },
@@ -897,10 +815,6 @@ function wireUi() {
   });
   document.getElementById("show-rio-line").addEventListener("change", (event) => {
     state = S.setShowRioLine(state, event.target.checked);
-    renderAll();
-  });
-  document.getElementById("show-icesat").addEventListener("change", (event) => {
-    state = S.setShowIcesat(state, event.target.checked);
     renderAll();
   });
   document.getElementById("plan-poi").addEventListener("change", (event) => {
@@ -1037,7 +951,6 @@ async function boot() {
     state.maxCloud = restored.maxCloud;
     state.showProperties = restored.properties;
     state.rioLine = restored.rioLine;
-    state.showIcesat = restored.showIcesat;
     state.show3d = restored.show3d;
     if (restored.opacity != null) {
       state = S.setOverlayOpacity(state, restored.opacity);
@@ -1087,21 +1000,6 @@ async function boot() {
       rioData = null;
     }
   }
-  // ICESat-2 tracks (open CMR metadata); boot survives a failed fetch
-  try {
-    icesatData = await getJSON(`/p/${state.slug}/icesat.geojson`);
-  } catch (error) {
-    console.error("icesat tracks fetch failed", error);
-    icesatData = null;
-  }
-  // ATL06 elevation points (empty until the tool runs with credentials)
-  try {
-    icesatElevData = await getJSON(`/p/${state.slug}/icesat-elevations.geojson`);
-  } catch (error) {
-    console.error("icesat elevations fetch failed", error);
-    icesatElevData = null;
-  }
-
   try {
     buildMap();
   } catch (error) {

@@ -24,10 +24,10 @@ def test_loads_the_real_project_configuration():
     assert cfg.timeline.start.isoformat() == "2026-01-01"
     assert cfg.timeline.works_start.isoformat() == "2026-06-01"
     # sigma0/coherence removed 2026-10-12 (radar magnitude "does not make
-    # sense currently"; full InSAR is the long-term path) — the backend S1
-    # machinery stays tested via config copies in the pipeline/api tests.
-    # `insar` (INSAR-PLAN) renders unwrapped LOS displacement from SLC phase.
-    assert {"rgb", "ndvi", "mndwi", "bsi", "insar", "insar_cum"} == set(cfg.layers)
+    # sense currently") — the backend S1 machinery stays tested via config
+    # copies in the pipeline/api tests. insar/insar_cum left the UI too
+    # (2026-11, L.7.2 verdict); their machinery remains dormant + covered.
+    assert {"rgb", "ndvi", "mndwi", "bsi"} == set(cfg.layers)
     assert cfg.cache.max_zoom == 18
     assert cfg.cache.tile_budget_bytes == 10 * 1024**3
     assert cfg.cache.scene_budget_bytes == 10 * 1024**3

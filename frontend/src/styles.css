@@ -739,45 +739,6 @@ dialog form button {
   display: block;
 }
 
-/* --- InSAR LOS displacement legend (INSAR-PLAN L.5) --- */
-#insar-legend {
-  margin-top: 0.6rem;
-  padding: 0.5rem 0.6rem;
-  background: #f3f6f3;
-  border: 1px solid #d8e2da;
-  border-radius: 8px;
-}
-#insar-legend-title {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--green-900);
-  margin-bottom: 0.4rem;
-}
-#insar-legend-bar {
-  height: 12px;
-  border-radius: 3px;
-  /* negative end (toward satellite) → white (0) → positive end (sinking);
-     the ±cm labels carry the adaptive limit, the gradient is normalized */
-  background: linear-gradient(
-    to right,
-    rgb(33, 102, 172) 0%,
-    rgb(247, 247, 247) 50%,
-    rgb(178, 24, 43) 100%
-  );
-  border: 1px solid #cbd5cb;
-}
-#insar-legend-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.66rem;
-  color: #4b6152;
-  margin-top: 0.2rem;
-}
-#insar-legend-mask {
-  font-size: 0.64rem;
-  margin-top: 0.3rem;
-}
-
 /* --- Plan vs. Realidad chart (INSAR-PLAN L.9) --- */
 #plan-poi-row {
   display: flex;
@@ -896,14 +857,6 @@ dialog form button {
   min-width: 2.5rem;
   text-align: right;
   font-size: 0.68rem;
-}
-
-/* Which acquisitions the selected InSAR product's delta spans */
-#insar-legend-delta {
-  font-size: 0.7rem;
-  color: #4b6152;
-  margin-bottom: 0.3rem;
-  font-variant-numeric: tabular-nums;
 }
 
 /* Noise-floor whiskers (±1σ across pairs, L.7 validation) */

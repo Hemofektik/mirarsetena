@@ -16,8 +16,8 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await expect(page.locator("#app-title")).toHaveText("Mirar Setena");
   await expect(page.locator("#project-name")).toContainText("CDP Río General");
 
-  // six configured layers (insar + the SBAS cumulative insar_cum)
-  await expect(page.locator("#layer-buttons button")).toHaveCount(6);
+  // four configured layers (insar/insar_cum left the UI 2026-11)
+  await expect(page.locator("#layer-buttons button")).toHaveCount(4);
 
   // S2 dates populate the cloud strip (live catalog)
   await expect(page.locator("#cloud-strip span").first()).toBeVisible({
@@ -598,7 +598,7 @@ test("About dialog explains the RES-1333-2017 purpose in both languages", async 
 
 test("layer and mode buttons carry help tooltips", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#layer-buttons button")).toHaveCount(6);
+  await expect(page.locator("#layer-buttons button")).toHaveCount(4);
 
   // every layer pill explains what it shows, in the active language
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
@@ -609,11 +609,7 @@ test("layer and mode buttons carry help tooltips", async ({ page }) => {
     "title",
     /superficie expuesta/,
   );
-  await expect(page.locator('#layer-buttons [data-layer="insar"]')).toHaveAttribute(
-    "title",
-    /InSAR/,
-  );
-  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(6);
+  await expect(page.locator("#layer-buttons .help-dot")).toHaveCount(4);
 
   await page.locator("#lang-select").selectOption("en");
   await expect(page.locator('#layer-buttons [data-layer="ndvi"]')).toHaveAttribute(
@@ -624,30 +620,6 @@ test("layer and mode buttons carry help tooltips", async ({ page }) => {
     "title",
     /Bare Soil/,
   );
-});
-
-test("insar layer shows the LOS colour legend and its pair dates", async ({
-  page,
-}) => {
-  await page.goto(`/p/${SLUG}/`);
-  // the legend is hidden while an optical layer is active
-  await expect(page.locator("#insar-legend")).toBeHidden();
-
-  await page.locator('#layer-buttons [data-layer="insar"]').click();
-  // colour legend appears with the LOS displacement scale
-  await expect(page.locator("#insar-legend")).toBeVisible();
-  await expect(page.locator("#insar-legend-title")).toHaveText(/cm/);
-  // the legend bar is the blue→white→red diverging ramp
-  await expect(page.locator("#insar-legend-bar")).toBeVisible();
-
-  // scrubber lists pair end-dates (radar: cloudless), not S2 dates
-  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
-    timeout: 30_000,
-  });
-
-  // switching back to an optical layer hides the legend again
-  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
-  await expect(page.locator("#insar-legend")).toBeHidden();
 });
 
 test("overlay overzooms past the service cap instead of 400ing", async ({ page }) => {
@@ -1039,12 +1011,10 @@ test("retargeting over errored tiles never crashes the renderer", async ({ page 
   expect(pageErrors.filter((error) => error.includes("bind"))).toEqual([]);
 });
 
-test("plan vs realidad chart follows the insar layer (L.9)", async ({ page }) => {
+test("plan vs realidad chart is always visible with a plan payload (L.9)", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
-  // hidden while an optical layer is active
-  await expect(page.locator("#plan-section")).toBeHidden();
-
-  await page.locator('#layer-buttons [data-layer="insar"]').click();
+  // the panel no longer follows the insar layer (removed 2026-11): it is
+  // a time series, shown whenever /api/plan answered
   await expect(page.locator("#plan-section")).toBeVisible({ timeout: 30_000 });
   await expect(page.locator("#plan-section h2")).toHaveText("Plan vs. Realidad");
 
@@ -1062,30 +1032,9 @@ test("plan vs realidad chart follows the insar layer (L.9)", async ({ page }) =>
   await page.locator("#lang-select").selectOption("en");
   await expect(page.locator("#plan-section h2")).toHaveText("Plan vs. Actual");
 
-  // back to optical: the section leaves with the layer
+  // switching layers keeps the panel up (it is layer-independent now)
   await page.locator('#layer-buttons [data-layer="ndvi"]').click();
-  await expect(page.locator("#plan-section")).toBeHidden();
-});
-
-test("cloud filter controls hide on the radar/insar layer", async ({ page }) => {
-  await page.goto(`/p/${SLUG}/`);
-  // optical layer: the cloud controls belong to dates that carry scores
-  await expect(page.locator("#hide-cloudy-row")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#max-cloud-row")).toBeVisible();
-
-  // insar: radar dates have no cloud score -> controls hidden, not disabled.
-  // Wait for CONTROLS visible first: date-value keeps the previous layer's
-  // text while hidden, which would race the assertion through the load.
-  await page.locator('#layer-buttons [data-layer="insar"]').click();
-  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/);
-  await expect(page.locator("#hide-cloudy-row")).toBeHidden();
-  await expect(page.locator("#max-cloud-row")).toBeHidden();
-
-  // back to optical: they return
-  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
-  await expect(page.locator("#hide-cloudy-row")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#max-cloud-row")).toBeVisible();
+  await expect(page.locator("#plan-section")).toBeVisible();
 });
 
 test("clicking the date slider track jumps straight to that date", async ({
@@ -1223,8 +1172,8 @@ test("loading tiles show only a spinner, never a darkening veil", async ({
   await page.goto(`/p/${SLUG}/`);
   await page.locator("#cloud-strip span").first().waitFor({ timeout: 30_000 });
 
-  // switch to insar: a cold tile wave starts and the loaders appear
-  await page.locator('#layer-buttons [data-layer="insar"]').click();
+  // switch layer: a cold tile wave starts and the loaders appear
+  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
   const loader = page.locator(".tile-loader").first();
   await expect(loader).toBeVisible({ timeout: 30_000 });
   await expect(loader.locator(".tile-loader-spinner")).toBeVisible();
@@ -1300,43 +1249,6 @@ test("opacity slider in the layer section drives the overlay paint", async ({
   // no layer -> nothing to be transparent: the row hides
   await page.locator('#layer-buttons [data-layer="rgb"]').click(); // disable
   await expect(opacityRow).toBeHidden();
-});
-
-test("insar legend shows which acquisition dates the delta spans", async ({
-  page,
-}) => {
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
-  await page.locator('#layer-buttons [data-layer="insar"]').click();
-  await expect(page.locator("#insar-legend")).toBeVisible({ timeout: 30_000 });
-
-  // the selected date is a PAIR's end: the legend states the span, e.g.
-  // "Δ 2026-09-21 → 2026-10-03" (11-13 day same-track baseline)
-  const delta = page.locator("#insar-legend-delta");
-  // the legend shows instantly; the SPAN waits for the (cold, live STAC)
-  // insar dates fetch that carries pair_with
-  await expect(delta).toBeVisible({ timeout: 30_000 });
-  await expect(delta).toHaveText(
-    /^Δ \d{4}-\d{2}-\d{2} → \d{4}-\d{2}-\d{2}$/,
-  );
-
-  const parse = async () => {
-    const text = await delta.textContent();
-    const [from, to] = text.replace("Δ ", "").split(" → ");
-    return { from, to };
-  };
-  let span = await parse();
-  expect(span.to).toBe(await page.locator("#date-value").textContent());
-  const days = (Date.parse(span.to) - Date.parse(span.from)) / 86_400_000;
-  expect(days).toBeGreaterThanOrEqual(11);
-  expect(days).toBeLessThanOrEqual(13);
-
-  // scrub to another pair: the span follows the selection
-  await page.locator("#app-title").click();
-  await page.keyboard.press("ArrowLeft");
-  span = await parse();
-  expect(span.to).toBe(await page.locator("#date-value").textContent());
-  expect(span.to).not.toBe(span.from);
 });
 
 test("PNG download includes the POI markers (dots, labels, leaders)", async ({
@@ -1465,7 +1377,6 @@ test("plan chart shows noise-floor whiskers per measured point", async ({
 }) => {
   await page.goto(`/p/${SLUG}/`);
   await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
-  await page.locator('#layer-buttons [data-layer="insar"]').click();
   const dots = page.locator("#plan-chart circle.plan-dot");
   await expect(dots.first()).toBeVisible({ timeout: 30_000 });
 
@@ -1499,96 +1410,4 @@ test("plan chart shows noise-floor whiskers per measured point", async ({
   expect(
     await page.locator("#plan-chart circle.plan-sbas-dot").count(),
   ).toBeGreaterThanOrEqual(6);
-});
-
-test("insar_cum layer shows the SBAS cumulative tiles and legend", async ({
-  page,
-}) => {
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
-  await page.locator('#layer-buttons [data-layer="insar_cum"]').click();
-  // same pair-derived dates; the legend shows (cum layer, no pair delta)
-  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
-    timeout: 30_000,
-  });
-  await expect(page.locator("#insar-legend")).toBeVisible();
-  await expect(page.locator("#insar-legend-delta")).toBeHidden();
-  // a cumulative product exists for 08-04 (sbas_run published it)
-  const tiles = [];
-  page.on("response", (r) => {
-    if (r.url().includes("/tiles/insar_cum/")) tiles.push(r.status());
-  });
-  await page.waitForTimeout(2500);
-  expect(tiles.some((s) => s === 200)).toBe(true);
-});
-
-test("plan chart is shown on the insar_cum layer too", async ({ page }) => {
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
-  await page.locator('#layer-buttons [data-layer="insar_cum"]').click();
-  // the Plan vs. Realidad panel belongs to BOTH insar layers
-  await expect(page.locator("#plan-section")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#plan-chart circle.plan-dot").first()).toBeVisible();
-  // and leaves with the layer
-  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
-  await expect(page.locator("#plan-section")).toBeHidden();
-});
-
-test("ICESat-2 ground tracks toggle shows pass footprints", async ({ page }) => {
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
-  // the toggle exists in the overlays section
-  const toggle = page.locator("#show-icesat");
-  await expect(toggle).toBeVisible();
-  // tracks load and paint (fixture/live CMR: 24 passes)
-  await page.waitForFunction(
-    () => window.__mirarsetenaMap?.getSource("icesat")?.type === "geojson",
-    null,
-    { timeout: 30_000 },
-  );
-  await expect(toggle).toBeChecked();
-  // unchecking hides the layer
-  await toggle.uncheck();
-  const visible = await page.evaluate(() =>
-    window.__mirarsetenaMap.getLayoutProperty("icesat-fill", "visibility"),
-  );
-  expect(visible).toBe("none");
-  await toggle.check();
-  const back = await page.evaluate(() =>
-    window.__mirarsetenaMap.getLayoutProperty("icesat-fill", "visibility"),
-  );
-  expect(back).toBe("visible");
-});
-
-test("ICESat-2 elevation points layer loads under the same toggle", async ({
-  page,
-}) => {
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
-  // the elevation source exists (empty until the tool runs with creds)
-  await page.waitForFunction(
-    () => window.__mirarsetenaMap?.getSource("icesat-elev")?.type === "geojson",
-    null,
-    { timeout: 30_000 },
-  );
-  // the same toggle controls both the swaths and the elevation points
-  const toggle = page.locator("#show-icesat");
-  await toggle.uncheck();
-  const fill = await page.evaluate(() =>
-    window.__mirarsetenaMap.getLayoutProperty("icesat-fill", "visibility"),
-  );
-  const elev = await page.evaluate(() =>
-    window.__mirarsetenaMap.getLayoutProperty("icesat-elev", "visibility"),
-  );
-  expect(fill).toBe("none");
-  expect(elev).toBe("none");
-  await toggle.check();
-  const fillBack = await page.evaluate(() =>
-    window.__mirarsetenaMap.getLayoutProperty("icesat-fill", "visibility"),
-  );
-  const elevBack = await page.evaluate(() =>
-    window.__mirarsetenaMap.getLayoutProperty("icesat-elev", "visibility"),
-  );
-  expect(fillBack).toBe("visible");
-  expect(elevBack).toBe("visible");
 });

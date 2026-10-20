@@ -9,8 +9,6 @@ const MISSION_BY_LAYER = {
   ndvi: "sentinel-2-l2a",
   mndwi: "sentinel-2-l2a",
   bsi: "sentinel-2-l2a",
-  insar: "sentinel-1-slc",
-  insar_cum: "sentinel-1-slc",
 };
 
 export function missionForLayer(layer) {
@@ -33,15 +31,14 @@ export function makeState(config) {
     // Satellite overlay transparency (the raster layer's paint opacity);
     // 0.85 is the look the app has shipped with, kept as the default.
     overlayOpacity: 0.85,
-    // Dates the user double-clicked out of the scrubber, per layer:
-    // { insar: ["2026-09-09"], ... } — skipped by the slider, still shown
-    // in the cloud strip so they can be toggled back.
+    // Dates the user double-clicked out of the scrubber, per data source:
+    // { "sentinel-2-l2a": ["2026-09-09"], ... } — skipped by the slider,
+    // still shown in the cloud strip so they can be toggled back.
     disabledDates: {},
     hideCloudy: false,
     maxCloud: 20,
     showProperties: true, // two 1991 plan parcels drawn as outlines
     rioLine: true, // Río General start→end work-area line overlay
-    showIcesat: true, // ICESat-2 ground-track footprints (open CMR)
     show3d: false, // 3D terrain draped over the elevation DEM (off by default)
     poiGroups: { facilities: true, inspection: true },
     basemap: "osm",
@@ -117,10 +114,6 @@ export function setShowRioLine(state, on) {
   return { ...state, rioLine: Boolean(on) };
 }
 
-export function setShowIcesat(state, on) {
-  return { ...state, showIcesat: Boolean(on) };
-}
-
 export function setShow3d(state, on) {
   return { ...state, show3d: Boolean(on) };
 }
@@ -154,7 +147,6 @@ export function settingsFromState(state) {
     poiGroups: { ...state.poiGroups },
     showProperties: Boolean(state.showProperties),
     rioLine: Boolean(state.rioLine),
-    showIcesat: Boolean(state.showIcesat),
     show3d: Boolean(state.show3d),
     overlayOpacity: state.overlayOpacity,
     disabledDates: Object.fromEntries(
@@ -179,7 +171,6 @@ export function restoreSettings(state, saved) {
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
   if (typeof saved.rioLine === "boolean") next = { ...next, rioLine: saved.rioLine };
   if (typeof saved.show3d === "boolean") next = { ...next, show3d: saved.show3d };
-  if (typeof saved.showIcesat === "boolean") next = { ...next, showIcesat: saved.showIcesat };
   if (
     typeof saved.overlayOpacity === "number" &&
     Number.isFinite(saved.overlayOpacity)
@@ -274,18 +265,6 @@ export function stepDate(state, delta) {
   return dates[target].date;
 }
 
-/**
- * "2026-09-21 → 2026-10-03": which acquisitions an InSAR product's delta
- * spans (a product is the pair END date; pair_with holds the start
- * date(s)). Null when the pair info is unknown — never invent a span.
- */
-export function deltaSpan(entry) {
-  if (!entry || !Array.isArray(entry.pair_with) || !entry.pair_with.length) {
-    return null;
-  }
-  return `${entry.pair_with.join(", ")} → ${entry.date}`;
-}
-
 /** Double-click toggle: exclude a date from the scrubber (or bring it back). */
 export function toggleDisabledDate(state, date) {
   const layer = state.layer;
@@ -334,7 +313,6 @@ export function serializeState(state) {
   params.set("opacity", String(state.overlayOpacity));
   params.set("properties", state.showProperties ? "1" : "0");
   params.set("rio", state.rioLine ? "1" : "0");
-  params.set("icesat", state.showIcesat ? "1" : "0");
   params.set("d3", state.show3d ? "1" : "0");
   const groups = Object.entries(state.poiGroups)
     .filter(([, on]) => on)
@@ -391,7 +369,6 @@ export function parseState(search) {
     opacity: Math.min(Math.max(opacity, 0), 1),
     properties: params.get("properties") !== "0",
     rioLine: params.get("rio") !== "0",
-    showIcesat: params.get("icesat") !== "0",
     show3d: params.get("d3") === "1",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
@@ -420,7 +397,6 @@ export const MESSAGES = {
     properties_label: "Perímetro de propiedades",
     opacity: "Opacidad",
     rio_line: "Línea Río General (inicio–fin)",
-    icesat_tracks: "Pasadas ICESat-2",
     works_start: "Inicio de obras",
     about: "Acerca de",
     disclaimer:
@@ -483,20 +459,7 @@ export const MESSAGES = {
       "Índice de superficie expuesta (BSI): resalta suelo desnudo, roca " +
       "y terreno removido. Útil para ver dónde se expanden el patio de " +
       "acopio y las terrazas de extracción.",
-    layer_insar_help:
-      "InSAR (Sentinel-1): desplazamiento del terreno a lo largo de la " +
-      "línea de visión del satélite, en centímetros. Rojo = movimiento " +
-      "alejándose (hundimiento); azul = acercándose. Gris/máscara = baja " +
-      "coherencia (zonas muy cambiadas o con vegetación, sin medición fiable).",
-    layer_insar_cum_help:
-      "InSAR SBAS (Sentinel-1): serie acumulada por inversión de la red " +
-      "triangulada (pares de 12 y 24 días) — el ruido atmosférico por " +
-      "par se promedia out; los valores son el desplazamiento acumulado " +
-      "desde el 2026-07-11, en cm.",
     legend_los_title: "Desplazamiento LOS (cm)",
-    legend_los_negative: "−{limit} (hacia el satélite)",
-    legend_los_positive: "+{limit} (alejándose / hundimiento)",
-    legend_los_mask: "máscara: baja coherencia",
     plan_title: "Plan vs. Realidad",
     plan_poi: "Punto",
     plan_note:
@@ -522,7 +485,6 @@ export const MESSAGES = {
     properties_label: "Property perimeter",
     opacity: "Opacity",
     rio_line: "Río General line (start–end)",
-    icesat_tracks: "ICESat-2 passes",
     works_start: "Works start",
     about: "About",
     disclaimer:
@@ -584,20 +546,7 @@ export const MESSAGES = {
       "Bare Soil Index (BSI): highlights bare soil, rock and disturbed " +
       "ground. Useful for seeing where the storage yard and extraction " +
       "terraces expand.",
-    layer_insar_help:
-      "InSAR (Sentinel-1): ground displacement along the satellite's " +
-      "line of sight, in centimetres. Red = moving away (sinking); blue " +
-      "= moving toward the satellite. Grey/masked = low coherence (very " +
-      "changed or vegetated areas, no reliable measurement).",
-    layer_insar_cum_help:
-      "InSAR SBAS (Sentinel-1): cumulative series from the triangulated " +
-      "network inversion (12- and 24-day pairs) — per-pair atmospheric " +
-      "noise averages out; values are cumulative displacement since " +
-      "2026-07-11, in cm.",
     legend_los_title: "LOS displacement (cm)",
-    legend_los_negative: "−{limit} (toward satellite)",
-    legend_los_positive: "+{limit} (away / sinking)",
-    legend_los_mask: "mask: low coherence",
     plan_title: "Plan vs. Actual",
     plan_poi: "Point",
     plan_note:

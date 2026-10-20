@@ -406,6 +406,17 @@ monitoring on vegetated-but-coherent terrain, or if a stable-scatterer
 analysis is ever wanted) — but no further InSAR quality investment is
 warranted for the quarry-progress use case.
 
+**UI removal (2026-11):** following the verdict, the `insar` and
+`insar_cum` layers were removed from `config.layers` (so no layer
+buttons, tiles, or scrubber dates are served for them) together with the
+ICESat-2 tracks/elevation overlay (413 raw ATL06 segments in the AOI,
+183 quality-passing across 4 passes — too sparse to be useful, user
+verdict). The Plan vs. Realidad panel stays, now visible on every layer
+(it is a time series, not a map layer). The backend machinery
+(`pipeline/insar.py`, `coherence/sbas.py`, `icesat.py`, their routes and
+tests) stays dormant and covered, mirroring the 2026-10-12 σ⁰/GRD
+removal — re-enabling is a one-line `config.layers` change.
+
 ### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
   products referenced to the first pre-works pair (echoes the optical

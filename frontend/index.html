@@ -76,22 +76,10 @@
             </label>
             <div id="works-marker" class="marker muted"></div>
           </div>
-          <!-- InSAR colour legend: only shown when the insar layer is active -->
-          <div id="insar-legend" hidden>
-            <div id="insar-legend-title" data-i18n="legend_los_title"></div>
-            <!-- the product is a PAIR's delta: which dates it spans -->
-            <div id="insar-legend-delta" hidden></div>
-            <div id="insar-legend-bar"></div>
-            <div id="insar-legend-labels">
-              <span id="insar-legend-neg" data-i18n="legend_los_negative"></span>
-              <span id="insar-legend-pos" data-i18n="legend_los_positive"></span>
-            </div>
-            <div id="insar-legend-mask" class="muted" data-i18n="legend_los_mask"></div>
-          </div>
         </section>
 
         <!-- Plan vs. Realidad (INSAR-PLAN L.9): plan milestones + measured
-             per-POI InSAR series, shown with the insar layer -->
+             per-POI series; visible whenever a plan payload exists -->
         <section id="plan-section" hidden>
           <h2 data-i18n="plan_title">Plan vs. Realidad</h2>
           <label class="row" id="plan-poi-row">
@@ -127,10 +115,6 @@
           <label class="row">
             <input id="show-rio-line" type="checkbox" checked />
             <span data-i18n="rio_line">Línea Río General (inicio–fin)</span>
-          </label>
-          <label class="row">
-            <input id="show-icesat" type="checkbox" checked />
-            <span data-i18n="icesat_tracks">Pasadas ICESat-2</span>
           </label>
         </section>
 
