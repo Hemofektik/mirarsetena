@@ -500,7 +500,7 @@ def test_sbas_references_each_component_at_its_own_first_date():
         ("2026-01-05", "2026-01-17", np.array(1.0)),
         ("2026-04-23", "2026-05-05", np.array(-2.0)),  # disconnected
     ]
-    dates_out, fields, valid = solve_sbas(dates, edges)
+    _dates_out, fields, valid = solve_sbas(dates, edges)
     assert valid
     # component 1 referenced at 01-05
     assert float(fields[0][0]) == 0.0

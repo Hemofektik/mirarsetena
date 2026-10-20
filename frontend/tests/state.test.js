@@ -137,6 +137,7 @@ describe("tile URLs and URL state (I.5)", () => {
       opacity: 0.85,
       properties: true,
       rioLine: true,
+      showIcesat: true,
       show3d: false,
       pois: "facilities",
       basemap: "esri",
@@ -380,7 +381,7 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(restored.poiGroups).toEqual({ facilities: true, inspection: false });
     // settings payload never carries transient view state (dates, viewport)
     expect(Object.keys(saved).sort()).toEqual(
-      ["basemap", "disabledDates", "hideCloudy", "maxCloud", "overlayOpacity", "poiGroups", "rioLine", "show3d", "showProperties"],
+      ["basemap", "disabledDates", "hideCloudy", "maxCloud", "overlayOpacity", "poiGroups", "rioLine", "show3d", "showIcesat", "showProperties"],
     );
   });
 });

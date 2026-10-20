@@ -41,6 +41,7 @@ export function makeState(config) {
     maxCloud: 20,
     showProperties: true, // two 1991 plan parcels drawn as outlines
     rioLine: true, // Río General start→end work-area line overlay
+    showIcesat: true, // ICESat-2 ground-track footprints (open CMR)
     show3d: false, // 3D terrain draped over the elevation DEM (off by default)
     poiGroups: { facilities: true, inspection: true },
     basemap: "osm",
@@ -116,6 +117,10 @@ export function setShowRioLine(state, on) {
   return { ...state, rioLine: Boolean(on) };
 }
 
+export function setShowIcesat(state, on) {
+  return { ...state, showIcesat: Boolean(on) };
+}
+
 export function setShow3d(state, on) {
   return { ...state, show3d: Boolean(on) };
 }
@@ -149,6 +154,7 @@ export function settingsFromState(state) {
     poiGroups: { ...state.poiGroups },
     showProperties: Boolean(state.showProperties),
     rioLine: Boolean(state.rioLine),
+    showIcesat: Boolean(state.showIcesat),
     show3d: Boolean(state.show3d),
     overlayOpacity: state.overlayOpacity,
     disabledDates: Object.fromEntries(
@@ -173,6 +179,7 @@ export function restoreSettings(state, saved) {
   if (typeof saved.showProperties === "boolean") next = { ...next, showProperties: saved.showProperties };
   if (typeof saved.rioLine === "boolean") next = { ...next, rioLine: saved.rioLine };
   if (typeof saved.show3d === "boolean") next = { ...next, show3d: saved.show3d };
+  if (typeof saved.showIcesat === "boolean") next = { ...next, showIcesat: saved.showIcesat };
   if (
     typeof saved.overlayOpacity === "number" &&
     Number.isFinite(saved.overlayOpacity)
@@ -327,6 +334,7 @@ export function serializeState(state) {
   params.set("opacity", String(state.overlayOpacity));
   params.set("properties", state.showProperties ? "1" : "0");
   params.set("rio", state.rioLine ? "1" : "0");
+  params.set("icesat", state.showIcesat ? "1" : "0");
   params.set("d3", state.show3d ? "1" : "0");
   const groups = Object.entries(state.poiGroups)
     .filter(([, on]) => on)
@@ -383,6 +391,7 @@ export function parseState(search) {
     opacity: Math.min(Math.max(opacity, 0), 1),
     properties: params.get("properties") !== "0",
     rioLine: params.get("rio") !== "0",
+    showIcesat: params.get("icesat") !== "0",
     show3d: params.get("d3") === "1",
     pois: ["facilities", "inspection"].filter((g) => on.has(g)).join(","),
     basemap: params.get("basemap") ?? "osm",
@@ -411,6 +420,7 @@ export const MESSAGES = {
     properties_label: "Perímetro de propiedades",
     opacity: "Opacidad",
     rio_line: "Línea Río General (inicio–fin)",
+    icesat_tracks: "Pasadas ICESat-2",
     works_start: "Inicio de obras",
     about: "Acerca de",
     disclaimer:
@@ -512,6 +522,7 @@ export const MESSAGES = {
     properties_label: "Property perimeter",
     opacity: "Opacity",
     rio_line: "Río General line (start–end)",
+    icesat_tracks: "ICESat-2 passes",
     works_start: "Works start",
     about: "About",
     disclaimer:

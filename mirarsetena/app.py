@@ -28,6 +28,7 @@ def create_app(
     storage_root: str | Path | None = None,
     search_fn=None,
     processor=None,
+    icesat_fetch=None,
 ) -> FastAPI:
     config_dir = Path(
         config_dir or os.environ.get("MIRAR_CONFIG_DIR", "config/projects")
@@ -70,6 +71,7 @@ def create_app(
     app.state.storage = storage
     app.state.queue = queue
     app.state.search_fn = search_fn or catalog_module.search
+    app.state.icesat_fetch = icesat_fetch
     app.state.processor_override = processor
     # ONE processor closure per project: make_processor owns the
     # single-flight (in_flight + guard). Building it per request gave every
@@ -273,6 +275,39 @@ def create_app(
     @app.get("/p/{slug}/rio.geojson")
     def project_rio(slug: str) -> Response:
         return _geo_response(slug, "rio_path")
+
+    @app.get("/p/{slug}/icesat.geojson")
+    def project_icesat(slug: str) -> Response:
+        """ICESat-2 ATL06 ground tracks over the AOI (open CMR metadata).
+
+        Cached in storage after the first fetch; elevation VALUES need
+        Earthdata login and are not fetched (tracks show where/when the
+        laser measured). The CMR fetch is injectable for tests.
+        """
+        import json as _json
+
+        from mirarsetena.projects.registry import cache_key
+
+        try:
+            config = registry.get(slug)
+        except ProjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        cache_key_icesat = cache_key(slug, "catalog", "icesat-tracks.json")
+        raw = storage.get(cache_key_icesat)
+        if raw is None:
+            from mirarsetena.icesat import fetch_tracks
+
+            fetch = app.state.icesat_fetch or fetch_tracks
+            collection = fetch(tuple(config.bbox))
+            storage.put(
+                cache_key_icesat,
+                _json.dumps(collection, ensure_ascii=False).encode("utf-8"),
+            )
+            raw = storage.get(cache_key_icesat)
+        return Response(
+            content=raw, media_type="application/geo+json",
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.get("/p/{slug}/official.geojson")
     def project_official(slug: str) -> Response:

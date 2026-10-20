@@ -41,3 +41,44 @@ def test_geo_routes_are_never_cached():
         response = client.get(f"/p/{SLUG}/{route}")
         assert response.status_code == 200
         assert response.headers["cache-control"] == "no-store", route
+
+
+def test_icesat_tracks_endpoint_serves_clipped_features(tmp_path):
+    # ICESat-2 ground tracks over the AOI (user 2026-10-20): open CMR
+    # metadata, cached in storage; the fixture has 24 real passes.
+    import json as _json
+
+    from mirarsetena.app import create_app
+
+    calls = []
+
+    def fixture_fetch(bbox):
+        calls.append(bbox)
+        from mirarsetena.icesat import granules_to_features
+
+        payload = _json.loads(
+            (REPO_ROOT / "tests" / "fixtures" / "cmr_atl06.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        return {"type": "FeatureCollection",
+                "features": granules_to_features(payload, bbox)}
+
+    app = create_app(
+        config_dir=CONFIG_DIR, storage_root=tmp_path / "cache",
+        icesat_fetch=fixture_fetch,
+    )
+    client = TestClient(app)
+    res = client.get("/p/cdp-rio-general/icesat.geojson")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["type"] == "FeatureCollection"
+    assert len(body["features"]) >= 20  # the fixture's 24 passes
+    dates = [f["properties"]["date"] for f in body["features"]]
+    assert dates == sorted(dates)
+    assert "2026-05-09" in dates
+    # second call is served from storage (the fetch ran exactly once)
+    res2 = client.get("/p/cdp-rio-general/icesat.geojson")
+    assert res2.json() == body
+    assert len(calls) == 1
+    assert client.get("/p/unknown/icesat.geojson").status_code == 404

@@ -1533,3 +1533,29 @@ test("plan chart is shown on the insar_cum layer too", async ({ page }) => {
   await page.locator('#layer-buttons [data-layer="ndvi"]').click();
   await expect(page.locator("#plan-section")).toBeHidden();
 });
+
+test("ICESat-2 ground tracks toggle shows pass footprints", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
+  // the toggle exists in the overlays section
+  const toggle = page.locator("#show-icesat");
+  await expect(toggle).toBeVisible();
+  // tracks load and paint (fixture/live CMR: 24 passes)
+  await page.waitForFunction(
+    () => window.__mirarsetenaMap?.getSource("icesat")?.type === "geojson",
+    null,
+    { timeout: 30_000 },
+  );
+  await expect(toggle).toBeChecked();
+  // unchecking hides the layer
+  await toggle.uncheck();
+  const visible = await page.evaluate(() =>
+    window.__mirarsetenaMap.getLayoutProperty("icesat-fill", "visibility"),
+  );
+  expect(visible).toBe("none");
+  await toggle.check();
+  const back = await page.evaluate(() =>
+    window.__mirarsetenaMap.getLayoutProperty("icesat-fill", "visibility"),
+  );
+  expect(back).toBe("visible");
+});
