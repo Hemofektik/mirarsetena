@@ -368,7 +368,7 @@ function renderScrubber() {
  */
 function renderPlanSection() {
   const section = document.getElementById("plan-section");
-  const show = state.layer === "insar" && Boolean(planData);
+  const show = ["insar", "insar_cum"].includes(state.layer) && Boolean(planData);
   section.hidden = !show;
   if (!show) return;
 

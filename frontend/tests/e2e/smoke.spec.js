@@ -1521,3 +1521,15 @@ test("insar_cum layer shows the SBAS cumulative tiles and legend", async ({
   await page.waitForTimeout(2500);
   expect(tiles.some((s) => s === 200)).toBe(true);
 });
+
+test("plan chart is shown on the insar_cum layer too", async ({ page }) => {
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
+  await page.locator('#layer-buttons [data-layer="insar_cum"]').click();
+  // the Plan vs. Realidad panel belongs to BOTH insar layers
+  await expect(page.locator("#plan-section")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator("#plan-chart circle.plan-dot").first()).toBeVisible();
+  // and leaves with the layer
+  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
+  await expect(page.locator("#plan-section")).toBeHidden();
+});
