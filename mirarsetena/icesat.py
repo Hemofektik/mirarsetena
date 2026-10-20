@@ -161,9 +161,10 @@ def fetch_tracks(bbox: Bbox, *, temporal: str | None = None) -> dict:
 def read_atl06(path, bbox: Bbox) -> list[tuple[float, float, float]]:
     """Extract (lon, lat, elevation) points inside the bbox from an ATL06 file.
 
-    ATL06 stores per-beam `land_segments/{latitude,longitude}` with
-    `canonical/elevation` and an `elevation_quality_flag` (0 = good;
-    any nonzero = dropped). Points outside the bbox are skipped. Raises
+    Real V007 layout (measured 2026-10-20 on downloaded granules):
+    `gt*/land_ice_segments/{latitude,longitude,h_li,atl06_quality_summary}`
+    — h_li is the land-ice height (m), the quality summary is 0 = good
+    (nonzero dropped). Points outside the bbox are skipped. Raises
     FileNotFoundError for a missing file (the honest failure when a
     download never happened).
     """
@@ -176,21 +177,17 @@ def read_atl06(path, bbox: Bbox) -> list[tuple[float, float, float]]:
     with h5py.File(path, "r") as f:
         for beam in f:
             group = f[beam]
-            if "land_segments" not in group:
+            if "land_ice_segments" not in group:
                 continue
-            ls = group["land_segments"]
-            if not {"latitude", "longitude"} <= set(ls.keys()):
+            ls = group["land_ice_segments"]
+            if not {"latitude", "longitude", "h_li"} <= set(ls.keys()):
                 continue
             lats = np.asarray(ls["latitude"][:], dtype="f8")
             lons = np.asarray(ls["longitude"][:], dtype="f8")
-            if "canonical" not in ls or "elevation" not in ls["canonical"]:
-                continue
-            elevs = np.asarray(ls["canonical"]["elevation"][:], dtype="f8")
+            elevs = np.asarray(ls["h_li"][:], dtype="f8")
             quality = None
-            if "elevation_quality_flag" in ls["canonical"]:
-                quality = np.asarray(
-                    ls["canonical"]["elevation_quality_flag"][:], dtype="i4"
-                )
+            if "atl06_quality_summary" in ls:
+                quality = np.asarray(ls["atl06_quality_summary"][:], dtype="i4")
             good = np.isfinite(elevs)
             if quality is not None:
                 good &= quality == 0

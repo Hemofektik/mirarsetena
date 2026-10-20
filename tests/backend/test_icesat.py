@@ -56,23 +56,24 @@ def test_clip_polygon_keeps_only_the_bbox_intersection():
 
 
 def _write_atl06(path, lats, lons, elevs, quality=None):
-    """Minimal ATL06-shaped HDF5: per-beam land_segments arrays."""
+    """Minimal ATL06-shaped HDF5 matching the REAL V007 layout (measured
+    2026-10-20 on downloaded granules): gt*/land_ice_segments with h_li
+    and atl06_quality_summary directly in the group."""
     import h5py
     import numpy as np
 
     with h5py.File(path, "w") as f:
         for beam in ("gt1l", "gt2l"):
             g = f.create_group(beam)
-            ls = g.create_group("land_segments")
+            ls = g.create_group("land_ice_segments")
             ls.create_dataset("latitude", data=np.asarray(lats, dtype="f8"))
             ls.create_dataset("longitude", data=np.asarray(lons, dtype="f8"))
-            canon = ls.create_group("canonical")
-            canon.create_dataset("elevation", data=np.asarray(elevs, dtype="f8"))
+            ls.create_dataset("h_li", data=np.asarray(elevs, dtype="f4"))
             q = (
-                np.zeros(len(lats), dtype="i4") if quality is None
-                else np.asarray(quality, dtype="i4")
+                np.zeros(len(lats), dtype="i1") if quality is None
+                else np.asarray(quality, dtype="i1")
             )
-            canon.create_dataset("elevation_quality_flag", data=q)
+            ls.create_dataset("atl06_quality_summary", data=q)
 
 
 def test_read_atl06_extracts_elevation_points_inside_the_bbox(tmp_path):
@@ -124,6 +125,6 @@ def test_lockout_detection_stops_the_run_early():
         b"You have exceeded the maximum number of allowed login attempts. "
         b"User profile has been locked temporarily"
     )
-    assert is_lockout("Credentials (username, password) are invalid".encode())
+    assert is_lockout(b"Credentials (username, password) are invalid")
     assert not is_lockout(b"HTTP Basic: Access denied.")
     assert not is_lockout(b"")
