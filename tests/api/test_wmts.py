@@ -136,6 +136,33 @@ def test_xyz_and_wmts_return_byte_identical_tiles(client):
     assert wmts.content == xyz.content
 
 
+def test_xyz_tiles_are_browser_cacheable_forever(client):
+    """Tiles are immutable by URL (layer/date/z/x/y in the path), so the
+    browser must cache them — scrubbing back to a date must not re-fetch
+    (user 2026-10-20: 'browser caches already loaded tiles')."""
+    response = client.get(f"/p/{SLUG}/tiles/ndvi/2026-07-03/0/0/0.png")
+    assert response.status_code == 200
+    cache = response.headers.get("cache-control", "")
+    assert "no-store" not in cache and "no-cache" not in cache
+    assert "immutable" in cache
+    assert "max-age=" in cache
+
+
+def test_wmts_gettile_is_browser_cacheable_too(client):
+    """Same tile, same immutability — the WMTS KVP route must not defeat
+    the browser cache either."""
+    response = client.get(
+        f"/p/{SLUG}/wmts",
+        params={
+            "SERVICE": "WMTS", "REQUEST": "GetTile",
+            "LAYER": "ndvi_2026-07-03", "TILEMATRIXSET": "GoogleMapsCompatible",
+            "TILEMATRIX": "0", "TILEROW": "0", "TILECOL": "0",
+        },
+    )
+    assert response.status_code == 200
+    assert "immutable" in response.headers.get("cache-control", "")
+
+
 def _radar_config_dir(tmp_path):
     """Config dir with sigma0 re-added: the display config dropped the
     radar layers (2026-10-12) and later insar/insar_cum (2026-11) but this

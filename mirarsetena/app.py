@@ -449,7 +449,13 @@ def create_app(
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
             if png is None:
                 raise HTTPException(status_code=404, detail="no tile for {LAYER!r}")
-            return Response(content=png, media_type="image/png")
+            # same immutability as the XYZ route: LAYER/date/matrix/row/col
+            # fully identify the pixels
+            return Response(
+                content=png,
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=31536000, immutable"},
+            )
 
         raise HTTPException(
             status_code=400, detail=f"unsupported REQUEST {REQUEST!r}"
@@ -480,7 +486,14 @@ def create_app(
             raise HTTPException(
                 status_code=404, detail=f"no tile for {layer}/{date}/{z}/{x}/{y}"
             )
-        return Response(content=png, media_type="image/png")
+        # Immutable by URL: layer/date/z/x/y fully identify the pixels, so
+        # the browser never needs to revalidate — scrubbing back to a date
+        # is served from the local cache (user 2026-10-20).
+        return Response(
+            content=png,
+            media_type="image/png",
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
 
     return app
 
