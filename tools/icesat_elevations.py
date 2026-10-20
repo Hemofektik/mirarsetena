@@ -63,10 +63,22 @@ def _download(url: str, dest: Path, user, password, token) -> Path:
         headers=headers,
     ) as client:
         if not token:
-            login = client.post(
-                "https://urs.earthdata.nasa.gov/login",
-                data={"username": user, "password": password},
+            # the URS form is CSRF-protected: fetch it first, then POST
+            # with its authenticity_token (without it the session is
+            # rejected as "Invalid or expired session token" — measured
+            # 2026-10-20)
+            import re as _re
+
+            page = client.get("https://urs.earthdata.nasa.gov/login")
+            match = _re.search(
+                r'name="authenticity_token"[^>]*value="([^"]+)"', page.text
+            ) or _re.search(
+                r'value="([^"]+)"[^>]*name="authenticity_token"', page.text
             )
+            form = {"username": user, "password": password}
+            if match:
+                form["authenticity_token"] = match.group(1)
+            login = client.post("https://urs.earthdata.nasa.gov/login", data=form)
             if login.status_code >= 400:
                 raise RuntimeError(
                     f"URS login failed: HTTP {login.status_code}"
