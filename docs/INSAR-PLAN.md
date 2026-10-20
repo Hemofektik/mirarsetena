@@ -373,6 +373,39 @@ cm, the component-2 step at 04-23 visible as its own zero) + S1D-asc =
 and 3 chain diamonds. Both chains sub-cm across the works marker: the
 aggregated verdict now spans the ENTIRE timeline, pre and post.
 
+### L.7.2 Final verdict (2026-10-20): InSAR is not the right tool HERE
+
+The user's assessment after seeing the full stack — per-pair maps, chain
+aggregates, and the SBAS-inverted trajectories — is that the data still
+looks like noise, and the lush, seasonally-changing environment makes
+signal/noise separation fundamentally hard. **The measurements agree:**
+
+- **The signal we want does not exist in coherent pixels.** Excavation
+  is metres; C-band InSAR measures cm on pixels that SURVIVE 12-day
+  decorrelation — and an active dig face does not survive it (it
+  decorrelates, so the very place we'd measure is masked). What stays
+  coherent (roads, buildings, settled ground) is stable — and reads
+  zero, correctly.
+- **The noise floor is irreducible here:** closures 0.166 cm, per-POI
+  σ 0.12–0.38 cm, gate coverage only 39–57% (vegetation + water), and
+  the atmosphere over a 1.6 km tropical AOI is spatially differential
+  at the same ±0.17 cm scale — consistent referencing was neutral
+  (0.166→0.168), so it is not an algorithmic fixable.
+- **The SBAS trajectories prove it:** after full triangulation and
+  least-squares inversion (the correct method), both chains read
+  +0.00…+0.17 cm across the works marker — i.e. nothing, with the
+  noise properly averaged. The tool worked; the phenomenon is not
+  measurable with it in this environment.
+
+**Scope consequence:** excavation PROGRESS stays with the optical layers
+(RGB/NDVI/BSI — visibly track the pit, as the user confirmed early on).
+The InSAR products remain published as an honest stability indicator on
+coherent infrastructure (sub-cm, with whiskers and closures shown), and
+the pipeline + SBAS machinery stay for future needs (e.g. slope
+monitoring on vegetated-but-coherent terrain, or if a stable-scatterer
+analysis is ever wanted) — but no further InSAR quality investment is
+warranted for the quarry-progress use case.
+
 ### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
   products referenced to the first pre-works pair (echoes the optical
