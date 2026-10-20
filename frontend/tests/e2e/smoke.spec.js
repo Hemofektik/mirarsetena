@@ -1011,30 +1011,13 @@ test("retargeting over errored tiles never crashes the renderer", async ({ page 
   expect(pageErrors.filter((error) => error.includes("bind"))).toEqual([]);
 });
 
-test("plan vs realidad chart is always visible with a plan payload (L.9)", async ({ page }) => {
+test("the Plan vs. Realidad panel is removed from the sidebar (2026-11)", async ({ page }) => {
   await page.goto(`/p/${SLUG}/`);
-  // the panel no longer follows the insar layer (removed 2026-11): it is
-  // a time series, shown whenever /api/plan answered
-  await expect(page.locator("#plan-section")).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator("#plan-section h2")).toHaveText("Plan vs. Realidad");
-
-  // chart renders with the measured series for the default POI (quarry)
-  await expect(page.locator('#plan-chart svg[data-chart="plan"]')).toBeVisible();
-  await expect(page.locator("#plan-chart circle[data-los]")).not.toHaveCount(0);
-  // plan milestone tick (works start, from plan.json — the plan side)
-  await expect(page.locator("#plan-chart [data-milestone]")).not.toHaveCount(0);
-  // the default POI is the excavation pit itself
-  await expect(page.locator("#plan-poi")).toHaveValue("quarry");
-
-  // POI switch re-renders for that point; lang switch re-labels the panel
-  await page.locator("#plan-poi").selectOption("office");
-  await expect(page.locator("#plan-poi")).toHaveValue("office");
-  await page.locator("#lang-select").selectOption("en");
-  await expect(page.locator("#plan-section h2")).toHaveText("Plan vs. Actual");
-
-  // switching layers keeps the panel up (it is layer-independent now)
-  await page.locator('#layer-buttons [data-layer="ndvi"]').click();
-  await expect(page.locator("#plan-section")).toBeVisible();
+  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
+  // the InSAR chart panel is gone with the InSAR layers (user verdict)
+  await expect(page.locator("#plan-section")).toHaveCount(0);
+  await expect(page.locator("#plan-chart")).toHaveCount(0);
+  await expect(page.locator("#plan-poi")).toHaveCount(0);
 });
 
 test("clicking the date slider track jumps straight to that date", async ({
@@ -1372,42 +1355,3 @@ test("PNG download includes the POI markers (dots, labels, leaders)", async ({
   }
 });
 
-test("plan chart shows noise-floor whiskers per measured point", async ({
-  page,
-}) => {
-  await page.goto(`/p/${SLUG}/`);
-  await expect(page.locator("#date-controls")).toBeVisible({ timeout: 30_000 });
-  const dots = page.locator("#plan-chart circle.plan-dot");
-  await expect(dots.first()).toBeVisible({ timeout: 30_000 });
-
-  // with >= 2 stored pairs every plotted point carries a ±1σ whisker
-  const dotCount = await dots.count();
-  expect(dotCount).toBeGreaterThanOrEqual(2);
-  await expect(page.locator("#plan-chart line.plan-whisker")).toHaveCount(
-    dotCount,
-  );
-  await expect(page.locator("#plan-chart line.plan-whisker-cap")).toHaveCount(
-    dotCount * 2,
-  );
-  // the note explains the bars (i18n present, es default)
-  await expect(page.locator("#plan-note")).toContainText("1σ");
-
-  // SBAS summary: one diamond per chain whose aggregated mean is plotted
-  // (series carry chain identity; at least S1A-asc + S1D-asc + S1D-desc)
-  const marks = page.locator("#plan-chart polygon.plan-stack-dot");
-  await expect(marks.first()).toBeVisible({ timeout: 30_000 });
-  expect(await marks.count()).toBeGreaterThanOrEqual(2);
-  const chains = await page.evaluate(
-    () => [...document.querySelectorAll("#plan-chart polygon.plan-stack-dot")]
-      .map((el) => el.dataset.chain).sort(),
-  );
-  expect(chains).toContain("S1A-asc");
-  expect(chains).toContain("S1D-asc");
-
-  // the SBAS cumulative trajectory renders as its own line + dots
-  await expect(page.locator("#plan-chart polyline.plan-sbas-line").first())
-    .toBeVisible({ timeout: 30_000 });
-  expect(
-    await page.locator("#plan-chart circle.plan-sbas-dot").count(),
-  ).toBeGreaterThanOrEqual(6);
-});

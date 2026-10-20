@@ -459,13 +459,6 @@ export const MESSAGES = {
       "Índice de superficie expuesta (BSI): resalta suelo desnudo, roca " +
       "y terreno removido. Útil para ver dónde se expanden el patio de " +
       "acopio y las terrazas de extracción.",
-    legend_los_title: "Desplazamiento LOS (cm)",
-    plan_title: "Plan vs. Realidad",
-    plan_poi: "Punto",
-    plan_note:
-      "Puntos = InSAR medido (cm en la línea de visión; huecos = sin dato). " +
-      "Barras = ±1σ entre pares (suelo de ruido). " +
-      "Trazo punteado = hitos del plan. El InSAR no mide metros de excavación.",
   },
   en: {
     app: "Mirar Setena",
@@ -546,13 +539,6 @@ export const MESSAGES = {
       "Bare Soil Index (BSI): highlights bare soil, rock and disturbed " +
       "ground. Useful for seeing where the storage yard and extraction " +
       "terraces expand.",
-    legend_los_title: "LOS displacement (cm)",
-    plan_title: "Plan vs. Actual",
-    plan_poi: "Point",
-    plan_note:
-      "Dots = InSAR measured (cm along the satellite line of sight; gaps = no " +
-      "data). Bars = ±1σ across pairs (noise floor). Dashed = plan milestones. " +
-      "InSAR does not measure excavation metres.",
   },
 };
 

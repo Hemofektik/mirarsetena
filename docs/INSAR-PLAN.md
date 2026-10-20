@@ -411,8 +411,10 @@ warranted for the quarry-progress use case.
 buttons, tiles, or scrubber dates are served for them) together with the
 ICESat-2 tracks/elevation overlay (413 raw ATL06 segments in the AOI,
 183 quality-passing across 4 passes — too sparse to be useful, user
-verdict). The Plan vs. Realidad panel stays, now visible on every layer
-(it is a time series, not a map layer). The backend machinery
+verdict). The Plan vs. Realidad panel was removed from the sidebar too
+(user 2026-10-20: "the INSAR chart is still in the side menu") — its
+`chart.js` module, styles and tests went with it; the backend
+`/api/plan` route + `plan.json` stay dormant like the rest. The backend machinery
 (`pipeline/insar.py`, `coherence/sbas.py`, `icesat.py`, their routes and
 tests) stays dormant and covered, mirroring the 2026-10-12 σ⁰/GRD
 removal — re-enabling is a one-line `config.layers` change.
@@ -506,12 +508,16 @@ will acquire a drone. Decision recorded after evaluating alternatives:
   already carries the CDSE keys.
 
 ### L.9 Plan vs. Realidad timeline (design accepted 2026-10-14; gated on plan
-### target data) — 1–2 days — ✅ milestones-only shipped 2026-10-13
+### target data) — 1–2 days — ✅ shipped 2026-10-13, **UI removed 2026-10-20**
 - **Status:** implemented as below (TDD: 7 pytest + 10 vitest + 1 e2e),
   `GET /p/{slug}/api/plan` live, series backfilled for the 2026-10-03
   product (quarry +0.052 cm … two POIs honest null). The **numeric-target
   gate stays open** — add entries to `plan.json` when the original plan's
   values are supplied; nothing else changes.
+  **Removed from the sidebar 2026-10-20** (user: "the INSAR chart is
+  still in the side menu") together with the InSAR/ICESat layers: the
+  panel, `chart.js`, its styles and tests are gone; the API route,
+  `plan.json` and the series writer stay dormant for a possible return.
 - **Context:** as the InSAR stack densifies, plot the 1991/2017 plan's intended
   excavation against what the satellites actually measured — scope item agreed
   to be defined before implementation.
