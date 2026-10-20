@@ -358,6 +358,21 @@ growing. UI exposure of the cumulative line: next increment.
   running 2026-10-19) triangulate the dry-season chain; and light
   temporal regularization of the inversion (research note, not built).
 
+### L.6a.2 Pre-works S1A-asc network — measured 2026-10-19
+
+The 8-pair batch (7×24-day closers + the 36-day bridge, track-aware
+dirs, --chain-filtered) triangulated the dry-season chain 01-05..06-22.
+Measured outcome: the **36-day bridge (0318→0423) fully decorrelated**
+(0 valid px — 36 days across the wet-season transition), splitting the
+chain into two components. The solver now references each connected
+component at its OWN first date (SBAS standard for disconnected
+networks; TDD-pinned) instead of NaN-ing everything after the gap.
+Live result: S1A-asc = 12-date pre-works trajectory (quarry +0.00..+0.17
+cm, the component-2 step at 04-23 visible as its own zero) + S1D-asc =
+6-date post-works trajectory; the chart draws both lines with 18 points
+and 3 chain diamonds. Both chains sub-cm across the works marker: the
+aggregated verdict now spans the ENTIRE timeline, pre and post.
+
 ### L.6 Accumulation over time ("progress since reference") — 1 day (naive) / 2–3 days (MintPy)
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
   products referenced to the first pre-works pair (echoes the optical
