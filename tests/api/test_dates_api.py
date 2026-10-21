@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from mirarsetena.app import create_app
-from mirarsetena.pipeline.catalog import parse_scenes
+from mirarsetena.pipeline.catalog import Scene, parse_scenes
 from mirarsetena.pipeline.dates import list_dates, mission_for_layer
 from mirarsetena.pipeline.window import scene_meta_key
 from mirarsetena.projects.registry import ProjectRegistry
@@ -64,8 +64,42 @@ def test_s2_layer_returns_sorted_dates_with_cloud(storage, registry):
     assert dates[0]["date"] == "2026-07-03"
     assert all(isinstance(d["cloud"], float) for d in dates)
     assert result["mission"] == "sentinel-2-l2a"
-    assert result["timeline"]["start"] == "2026-01-01"
+    assert result["timeline"]["start"] == "2026-04-14"
     assert result["timeline"]["works_start"] == "2026-06-01"
+
+
+def test_list_dates_hides_acquisitions_before_the_timeline_start(
+    storage, registry
+):
+    # fake_search ignores the start/end window it is handed — exactly like
+    # a stale 6h catalog index written before the window changed. The
+    # timeline start must still hold when READING the index: the user
+    # asked for no dates before 2026-04-14 (2026-10-21).
+    def search_with_old_scene(collection, bbox, start, end):
+        scenes = fake_search(collection, bbox, start, end)
+        if collection != "sentinel-2-l2a":
+            return scenes
+        return [
+            Scene(
+                id="S2X_OLD",
+                collection=collection,
+                datetime="2026-01-04T11:22:29Z",
+                date="2026-01-04",
+                cloud=1.0,
+                assets={},
+            ),
+            *scenes,
+        ]
+
+    result = list_dates(
+        storage, "cdp-rio-general", registry.get("cdp-rio-general"),
+        "ndvi", search_fn=search_with_old_scene, now=NOW,
+    )
+    dates = [d["date"] for d in result["dates"]]
+    assert "2026-01-04" not in dates
+    assert dates == sorted(dates)
+    assert dates[0] == "2026-07-03"
+    assert all(d >= "2026-04-14" for d in dates)
 
 
 def _with_radar(config, layers):
@@ -119,6 +153,41 @@ def test_insar_layer_dates_come_from_interferometric_pairs(storage, registry):
     # cloud is always None for radar-derived (no SCL); each carries orbits
     assert all(d["cloud"] is None for d in result["dates"])
     assert all(d["processed"] is False for d in result["dates"])
+
+
+def test_insar_dates_never_precede_the_timeline_start(storage, registry):
+    # Pair planning sees the whole GRD history (fake_search ignores the
+    # window, like a stale search), but products before the timeline
+    # start must never reach the scrubber (user 2026-10-21).
+    def search_with_old_pair(collection, bbox, start, end):
+        scenes = fake_search(collection, bbox, start, end)
+        if collection != "sentinel-1-grd":
+            return scenes
+        old = [
+            Scene(
+                id="S1X_OLD_A", collection=collection,
+                datetime="2026-01-05T11:22:29Z", date="2026-01-05",
+                cloud=None, assets={}, orbit_state="ascending",
+                relative_orbit=92,
+            ),
+            Scene(
+                id="S1X_OLD_B", collection=collection,
+                datetime="2026-01-17T11:22:29Z", date="2026-01-17",
+                cloud=None, assets={}, orbit_state="ascending",
+                relative_orbit=92,
+            ),
+        ]
+        return [*old, *scenes]
+
+    config = _with_radar(registry.get("cdp-rio-general"), ["ndvi", "insar"])
+    result = list_dates(
+        storage, "cdp-rio-general", config,
+        "insar", search_fn=search_with_old_pair, now=NOW,
+    )
+    dates = [d["date"] for d in result["dates"]]
+    assert "2026-01-17" not in dates  # pair end before the window
+    assert dates == sorted(dates)
+    assert all(d >= "2026-04-14" for d in dates)
 
 
 def test_max_cloud_filters_dates(storage, registry):

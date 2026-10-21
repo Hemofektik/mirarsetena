@@ -31,7 +31,7 @@ bbox: [-83.675, 9.378, -83.660, 9.397]
 layers: [rgb, ndvi, mndwi, bsi]
 
 timeline:
-  start: 2026-01-01          # scrubber window start (SCOPE R2-Q2, updated 2026-10-07)
+  start: 2026-04-14          # scrubber window start (user 2026-10-21: no dates before this)
   works_start: 2026-06-01    # works began June 2026 — user correction 2026-10-09
 
 cache:

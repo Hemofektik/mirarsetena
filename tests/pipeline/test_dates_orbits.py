@@ -82,8 +82,13 @@ def test_list_dates_passes_orbits_through(tmp_path):
         search_fn=_fake_search,
     )
     by_date = {e["date"]: e for e in result["dates"]}
+    # acquisitions before the timeline start (2026-04-14) are not listed,
+    # even though the raw index still holds them
+    assert "2026-01-05" not in by_date
+    assert "2026-04-11" not in by_date
     assert by_date["2026-10-03"]["orbits"] == [["descending", 84]]
-    assert by_date["2026-01-05"]["orbits"] == [
+    # orbit passthrough still covered by a dual-track date inside the window
+    assert by_date["2026-05-05"]["orbits"] == [
         ["ascending", 92],
         ["descending", 84],
     ]

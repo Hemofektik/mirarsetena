@@ -76,7 +76,7 @@ def test_plan_returns_timeline_milestones_and_series(tmp_path):
     assert res.status_code == 200
     body = res.json()
     assert body["timeline"] == {
-        "start": "2026-01-01",
+        "start": "2026-04-14",
         "works_start": "2026-06-01",
     }
     # milestones come from the plan file (resolution TERCERO: works start

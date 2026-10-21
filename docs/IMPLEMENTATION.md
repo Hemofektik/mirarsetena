@@ -110,7 +110,7 @@ Depends: A. Produces the canonical project geometry consumed by C/D/E (`tools/ao
 Depends: A. Runs in parallel with B.
 
 ### C.1 Config-driven project registry
-- **Deliverable:** `config/projects/cdp-rio-general.yaml` (slug, name, AOI/POI paths, layer set, timeline start `2026-01-01`, works-start marker, bbox) + loader with schema validation + namespacing helper producing `/p/{slug}/…` route and cache keys.
+- **Deliverable:** `config/projects/cdp-rio-general.yaml` (slug, name, AOI/POI paths, layer set, timeline start `2026-04-14` — was `2026-01-01` until the user moved it 2026-10-21 —, works-start marker, bbox) + loader with schema validation + namespacing helper producing `/p/{slug}/…` route and cache keys.
 - **TDD:** `tests/backend/test_registry.py` — loads the real project file; unknown slug → 404/`ProjectNotFound`; missing required field → validation error; two projects namespace independently.
 - **Status:** [x] done
 

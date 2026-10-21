@@ -452,7 +452,8 @@ will acquire a drone. Decision recorded after evaluating alternatives:
 - **Deliverable (a, MVP):** cumulative mode = sum of pairwise geocoded LOS
   products referenced to the first pre-works pair (echoes the optical
   composite-baseline philosophy: reference = pre-works epoch
-  2026-01-01…2026-05-31, works marker 2026-06-01 already exists in the UI).
+  2026-04-14…2026-05-31 — the timeline start moved to 2026-04-14 on
+  2026-10-21 —, works marker 2026-06-01 already exists in the UI).
   Scrubbing the accumulated layer shows motion *up to* the selected date.
 - **Deliverable (b, gated):** if (a)'s validation shows unwrap offsets/ramps —
   MintPy SBAS over the unwrapped stack (SCOPE research tier §5.7 "InSAR

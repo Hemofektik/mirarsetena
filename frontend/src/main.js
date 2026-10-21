@@ -879,8 +879,12 @@ async function boot() {
       state.layer = null; // shared URL with the layer toggled off
       state.datesLoading = false; // nothing will be fetched
     }
-    state.hideCloudy = restored.hideCloudy;
-    state.maxCloud = restored.maxCloud;
+    if (restored.hideCloudy !== undefined) {
+      state.hideCloudy = restored.hideCloudy;
+    }
+    if (restored.maxCloud !== undefined) {
+      state.maxCloud = restored.maxCloud;
+    }
     state.showProperties = restored.properties;
     state.rioLine = restored.rioLine;
     state.show3d = restored.show3d;

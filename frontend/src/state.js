@@ -34,9 +34,10 @@ export function makeState(config) {
     // Dates the user double-clicked out of the scrubber, per data source:
     // { "sentinel-2-l2a": ["2026-09-09"], ... } — skipped by the slider,
     // still shown in the cloud strip so they can be toggled back.
-    disabledDates: {},
-    hideCloudy: false,
-    maxCloud: 20,
+    // Ships with the two noisy October dates disabled (user 2026-10-21).
+    disabledDates: { "sentinel-2-l2a": ["2026-10-06", "2026-10-16"] },
+    hideCloudy: true, // cloud filter ships ON (user 2026-10-21)
+    maxCloud: 50, // default cloudiness cap in % (user 2026-10-21)
     showProperties: true, // two 1991 plan parcels drawn as outlines
     rioLine: true, // Río General start→end work-area line overlay
     show3d: false, // 3D terrain draped over the elevation DEM (off by default)
@@ -353,8 +354,9 @@ export function parseState(search) {
   const zoom = zoomRaw == null ? null : Number(zoomRaw);
   if (zoom != null && Number.isNaN(zoom)) return null;
 
-  const maxCloud = Number(params.get("maxCloud") ?? "20");
-  if (Number.isNaN(maxCloud)) return null;
+  const maxCloudRaw = params.get("maxCloud");
+  const maxCloud = maxCloudRaw == null ? undefined : Number(maxCloudRaw);
+  if (maxCloud !== undefined && Number.isNaN(maxCloud)) return null;
   const opacity = Number(params.get("opacity") ?? "0.85");
   if (Number.isNaN(opacity)) return null;
 
@@ -364,7 +366,12 @@ export function parseState(search) {
   return {
     layer: params.get("layer"),
     date: params.get("date"),
-    hideCloudy: params.get("hideCloudy") === "1",
+    // Cloud settings are undefined when the URL did not carry them, so
+    // boot only overwrites the remembered/default filter when the shared
+    // link actually says something (a bare ?layer= link must not reset it).
+    hideCloudy: params.has("hideCloudy")
+      ? params.get("hideCloudy") === "1"
+      : undefined,
     maxCloud,
     opacity: Math.min(Math.max(opacity, 0), 1),
     properties: params.get("properties") !== "0",

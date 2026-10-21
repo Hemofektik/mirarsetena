@@ -216,6 +216,12 @@ def _list_insar_dates(
     for entry in by_end.values():
         entry["pair_with"].sort()
 
+    # The timeline window is authoritative on READ: pair planning sees the
+    # whole GRD history, but products before the configured start never
+    # reach the scrubber (user 2026-10-21: no dates before 2026-04-14).
+    start = config.timeline.start.isoformat()
+    by_end = {key: entry for key, entry in by_end.items() if key >= start}
+
     # processed=True when the job already cached a product for this pair;
     # each processed entry carries its own adaptive ramp limit so the legend
     # matches the tile actually on screen (INSAR-PLAN decision 5 gate: the
@@ -293,6 +299,13 @@ def list_dates(
                 ],
             }
         )
+
+    # The timeline window is authoritative on READ: a stale index (or a
+    # search that ignored the window) must never surface acquisitions
+    # before the configured start (user 2026-10-21: no dates before
+    # 2026-04-14).
+    start = config.timeline.start.isoformat()
+    enriched = [entry for entry in enriched if entry["date"] >= start]
 
     if max_cloud is not None:
         enriched = [

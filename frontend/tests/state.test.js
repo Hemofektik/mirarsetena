@@ -149,6 +149,22 @@ describe("tile URLs and URL state (I.5)", () => {
     expect(parseState("layer=%%%&")).toBeNull();
     expect(parseState("")).toBeNull();
   });
+
+  it("cloud settings only appear in the parse when the URL carried them", () => {
+    // A shared ?layer= URL must not reset the remembered/default cloud
+    // filter — boot applies a cloud value only when the URL says it.
+    const bare = parseState("layer=ndvi");
+    expect(bare.hideCloudy).toBeUndefined();
+    expect(bare.maxCloud).toBeUndefined();
+    const explicit = parseState("layer=ndvi&hideCloudy=0&maxCloud=30");
+    expect(explicit.hideCloudy).toBe(false);
+    expect(explicit.maxCloud).toBe(30);
+    const on = parseState("hideCloudy=1&maxCloud=50");
+    expect(on.hideCloudy).toBe(true);
+    expect(on.maxCloud).toBe(50);
+    // a present-but-garbage value still rejects the whole URL
+    expect(parseState("layer=ndvi&maxCloud=banana")).toBeNull();
+  });
 });
 
 describe("POI groups and basemap (I.3)", () => {
@@ -358,8 +374,8 @@ describe("remembered settings (bare-URL loads)", () => {
       poiGroups: { bogus: false, facilities: 1 },
     });
     expect(dirty.basemap).toBe("osm");
-    expect(dirty.hideCloudy).toBe(false);
-    expect(dirty.maxCloud).toBe(20);
+    expect(dirty.hideCloudy).toBe(true); // shipped default: filter ON
+    expect(dirty.maxCloud).toBe(50); // shipped default: 50% cap
     expect(dirty.showProperties).toBe(true); // 0 is not a boolean -> default kept
     expect(dirty.poiGroups).toEqual({ facilities: true, inspection: true });
   });
@@ -381,6 +397,44 @@ describe("remembered settings (bare-URL loads)", () => {
     expect(Object.keys(saved).sort()).toEqual(
       ["basemap", "disabledDates", "hideCloudy", "maxCloud", "overlayOpacity", "poiGroups", "rioLine", "show3d", "showProperties"],
     );
+  });
+});
+
+describe("shipped defaults (user 2026-10-21)", () => {
+  const config = {
+    slug: "x",
+    layers: ["rgb", "ndvi"],
+    timeline: { start: "2026-04-14", works_start: "2026-06-01" },
+  };
+
+  it("cloud filter ships ON at 50% with the two noisy dates disabled", () => {
+    const state = makeState(config);
+    expect(state.hideCloudy).toBe(true);
+    expect(state.maxCloud).toBe(50);
+    expect(state.disabledDates).toEqual({
+      "sentinel-2-l2a": ["2026-10-06", "2026-10-16"],
+    });
+    // radar has its own bucket: the S2 defaults never leak into it
+    expect(state.disabledDates["sentinel-1-slc"]).toBeUndefined();
+  });
+
+  it("the disabled defaults skip the slider but stay in the strip", () => {
+    const dates = [
+      { date: "2026-04-14", cloud: 38.71 },
+      { date: "2026-10-06", cloud: 0.28 },
+      { date: "2026-10-16", cloud: 27.92 },
+    ];
+    const state = setLayer(makeState(config), "rgb", dates);
+    // strip keeps every date under the 50% cap so a double-click can
+    // re-enable the crossed-out ones…
+    expect(stripDates(state).map((d) => d.date)).toEqual([
+      "2026-04-14",
+      "2026-10-06",
+      "2026-10-16",
+    ]);
+    // …while the slider scrubs only the enabled remainder
+    expect(visibleDates(state).map((d) => d.date)).toEqual(["2026-04-14"]);
+    expect(state.date).toBe("2026-04-14"); // opens on the newest VISIBLE date
   });
 });
 
@@ -415,14 +469,19 @@ describe("disabled dates (double-click a cloud-strip tick)", () => {
   it("toggling disables/enables a date for the CURRENT layer only", () => {
     let state = setLayer(makeState(config), "rgb", DATES_S2);
     state = toggleDisabledDate(state, "2026-07-08");
-    expect(disabledDatesFor(state)).toEqual(["2026-07-08"]);
+    // the two shipped-disabled dates ride along in the same bucket
+    expect(disabledDatesFor(state)).toEqual([
+      "2026-10-06",
+      "2026-10-16",
+      "2026-07-08",
+    ]);
     // the same date on another layer stays enabled (cloud scores are optical)
     const radar = setLayer(state, "insar", DATES_S1);
     expect(disabledDatesFor(radar)).toEqual([]);
     // toggling again re-enables
     expect(
       disabledDatesFor(toggleDisabledDate(state, "2026-07-08")),
-    ).toEqual([]);
+    ).toEqual(["2026-10-06", "2026-10-16"]); // back to the shipped defaults
   });
 
   it("the scrubber skips disabled dates but the strip keeps showing them", () => {
@@ -471,12 +530,19 @@ describe("disabled dates (double-click a cloud-strip tick)", () => {
       setLayer(makeState(config), "rgb", DATES_S2),
       JSON.parse(JSON.stringify(saved)),
     );
-    expect(disabledDatesFor(restored)).toEqual(["2026-07-08"]);
+    expect(disabledDatesFor(restored)).toEqual([
+      "2026-10-06",
+      "2026-10-16",
+      "2026-07-08",
+    ]);
     // type-strict merge: a bad shape is ignored, not trusted
     const dirty = restoreSettings(makeState(config), {
       disabledDates: { rgb: "2026-07-08" },
     });
-    expect(dirty.disabledDates).toEqual({});
+    // rejected payload -> the shipped defaults survive untouched
+    expect(dirty.disabledDates).toEqual({
+      "sentinel-2-l2a": ["2026-10-06", "2026-10-16"],
+    });
   });
 });
 
@@ -494,14 +560,21 @@ describe("disabled dates are shared per data source (mission)", () => {
     );
     // switching to another S2 layer keeps the disabled date excluded
     state = setLayer(state, "ndvi", DATES_S2);
-    expect(disabledDatesFor(state)).toEqual(["2026-07-08"]);
+    expect(disabledDatesFor(state)).toEqual([
+      "2026-10-06",
+      "2026-10-16",
+      "2026-07-08",
+    ]);
     expect(visibleDates(state).map((d) => d.date)).toEqual([
       "2026-07-03",
       "2026-07-10",
     ]);
     // toggling from the other S2 layer removes it for ALL of them
     state = toggleDisabledDate(state, "2026-07-08");
-    expect(disabledDatesFor(setLayer(state, "rgb", DATES_S2))).toEqual([]);
+    expect(disabledDatesFor(setLayer(state, "rgb", DATES_S2))).toEqual([
+      "2026-10-06",
+      "2026-10-16",
+    ]);
     // the radar mission never saw it
     expect(disabledDatesFor(setLayer(state, "insar", DATES_S1))).toEqual([]);
   });

@@ -26,11 +26,15 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   const s2Count = await page.locator("#cloud-strip span").count();
   expect(s2Count).toBeGreaterThan(10);
 
-  // hide-cloudy shrinks the optical strip (dates with a cloud score)
-  await page.locator("#hide-cloudy").check();
-  const shrunk = await page.locator("#cloud-strip span").count();
-  expect(shrunk).toBeLessThan(s2Count);
+  // hide-cloudy ships ON at a 50% cap (user 2026-10-21): unchecking it
+  // grows the strip back to every date in the window, checking shrinks it
+  await expect(page.locator("#hide-cloudy")).toBeChecked();
+  await expect(page.locator("#max-cloud")).toHaveValue("50");
   await page.locator("#hide-cloudy").uncheck();
+  const grown = await page.locator("#cloud-strip span").count();
+  expect(grown).toBeGreaterThan(s2Count);
+  await page.locator("#hide-cloudy").check();
+  expect(await page.locator("#cloud-strip span").count()).toBe(s2Count);
 
   // switch to a second optical layer: the scrubber follows
   await page.locator('#layer-buttons button:has-text("mndwi")').click();
@@ -65,6 +69,47 @@ test("app boots, layer switching drives the scrubber", async ({ page }) => {
   await page.locator("#status-link").click();
   await expect(page.locator("body")).toContainText("missions");
   await page.goBack();
+});
+
+test("shipped defaults: 50% cloud cap, filter on, timeline from 2026-04-14", async ({ page }) => {
+  // User 2026-10-21: max cloudiness 50% by default, the cloud checkbox
+  // activated, 2026-10-06/2026-10-16 disabled, and no dates shown before
+  // the timeline start 2026-04-14.
+  await page.goto(`/p/${SLUG}/`);
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+
+  await expect(page.locator("#hide-cloudy")).toBeChecked();
+  await expect(page.locator("#max-cloud")).toHaveValue("50");
+
+  const strip = await page.locator("#cloud-strip span").evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      date: node.dataset.date,
+      disabled: node.classList.contains("disabled"),
+    })),
+  );
+  expect(strip.length).toBeGreaterThan(0);
+  const listed = strip.map((tick) => tick.date);
+  expect(listed).toEqual([...listed].sort());
+  expect(listed[0]).toBe("2026-04-14"); // window start, nothing before it
+
+  // the two noisy dates stay VISIBLE (crossed-out) but leave the slider
+  for (const off of ["2026-10-06", "2026-10-16"]) {
+    const tick = strip.find((entry) => entry.date === off);
+    expect(tick, `${off} must stay visible in the strip`).toBeTruthy();
+    expect(tick.disabled).toBe(true);
+  }
+  const enabled = strip.filter((tick) => !tick.disabled).map((tick) => tick.date);
+  expect(enabled.at(-1)).not.toBe("2026-10-16"); // disabled newest skipped
+
+  // boot opens on the newest ENABLED date, thumb at the slider's end
+  await expect(page.locator("#date-value")).toHaveText(enabled.at(-1), {
+    timeout: 30_000,
+  });
+  await expect(page.locator("#date-end")).toHaveValue(
+    String(enabled.length - 1),
+  );
 });
 
 test("mobile viewport keeps the panel usable (I.7)", async ({ page }) => {
@@ -478,11 +523,6 @@ test("each in-flight tile request shows a loading animation", async ({ page }) =
 });
 
 test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
-  // The slider opens on the newest acquisition — dynamic, the catalog grows.
-  const catalog = await (
-    await page.request.get(`http://127.0.0.1:4173/p/${SLUG}/api/dates?layer=ndvi`)
-  ).json();
-  const newest = catalog.dates.at(-1).date;
   await page.addInitScript(() => {
     window.__tileEv = [];
     const real = window.fetch;
@@ -504,16 +544,20 @@ test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
       );
     };
   });
-  // Only the SECOND date is slow (a cold scene the user then abandons).
-  await page.route("**/p/**/tiles/**/2026-01-09/**", async (route) => {
+  // Only the SECOND visible date is slow (a cold scene the user then
+  // abandons): with the shipped defaults that is 2026-04-19.
+  await page.route("**/p/**/tiles/**/2026-04-19/**", async (route) => {
     await new Promise((r) => setTimeout(r, 10_000));
     await route.continue();
   });
 
   await page.goto(`/p/${SLUG}/?layer=ndvi`);
-  await expect(page.locator("#date-value")).toHaveText(newest, {
+  // The slider opens on the newest ENABLED acquisition — dynamic, the
+  // catalog grows (and 2026-10-16 ships disabled).
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
     timeout: 30_000,
   });
+  const newest = await page.locator("#date-value").textContent();
   // the newest date settles normally (warm)
   await expect(page.locator(".tile-loader")).toHaveCount(0, {
     timeout: 60_000,
@@ -524,7 +568,7 @@ test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
     el.value = "1";
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
-  await expect(page.locator("#date-value")).toHaveText("2026-01-09");
+  await expect(page.locator("#date-value")).toHaveText("2026-04-19");
   await expect(page.locator(".tile-loader").first()).toBeVisible({
     timeout: 10_000,
   });
@@ -540,7 +584,7 @@ test("scrubbing away aborts the tiles you no longer want", async ({ page }) => {
     .poll(
       () =>
         page.evaluate(
-          () => window.__tileEv.filter((ev) => ev.e === "abort" && ev.tag.includes("2026-01-09")).length,
+          () => window.__tileEv.filter((ev) => ev.e === "abort" && ev.tag.includes("2026-04-19")).length,
         ),
       { timeout: 8_000 },
     )
@@ -662,9 +706,9 @@ test("restored URL state drives every control (no inverted checkboxes)", async (
   // Esri basemap, raw mode. Every input must SHOW that state — otherwise
   // the next click inverts what the user thinks they are changing.
   await page.goto(
-    `/p/${SLUG}/?layer=ndvi&date=2026-01-04&hideCloudy=1&maxCloud=50&properties=1&pois=facilities&basemap=esri`,
+    `/p/${SLUG}/?layer=ndvi&date=2026-04-14&hideCloudy=1&maxCloud=50&properties=1&pois=facilities&basemap=esri`,
   );
-  await expect(page.locator("#date-value")).toHaveText("2026-01-04");
+  await expect(page.locator("#date-value")).toHaveText("2026-04-14");
   await expect(page.locator("#poi-inspection")).not.toBeChecked();
   await expect(page.locator("#poi-facilities")).toBeChecked();
   await expect(page.locator("#hide-cloudy")).toBeChecked();
@@ -708,7 +752,7 @@ test("settings are memorized for bare-URL visits", async ({ page }) => {
 
   await pickBasemap(page, "esri");
   await page.locator("#poi-inspection").uncheck();
-  await page.locator("#hide-cloudy").check();
+  await page.locator("#hide-cloudy").uncheck(); // ships ON -> turn it OFF
   await page.waitForTimeout(300);
 
   // fresh visit WITHOUT any query string: remembered settings re-apply
@@ -718,7 +762,7 @@ test("settings are memorized for bare-URL visits", async ({ page }) => {
   });
   await expect(page.locator("#btn-basemap")).toHaveAttribute("data-basemap", "esri");
   await expect(page.locator("#poi-inspection")).not.toBeChecked();
-  await expect(page.locator("#hide-cloudy")).toBeChecked();
+  await expect(page.locator("#hide-cloudy")).not.toBeChecked();
   await page.waitForFunction(() => window.__mirarsetenaMap, null, { timeout: 15000 });
   const base = await page.evaluate(
     () => window.__mirarsetenaMap.getSource("base").tiles?.[0] ?? "",
@@ -1028,14 +1072,25 @@ test("clicking the date slider track jumps straight to that date", async ({
   const newest = await page.locator("#date-value").textContent();
   expect(newest).toMatch(/^\d{4}-\d{2}-\d{2}$/);
 
-  // slider indices map to the catalog's visible dates (no cloud filter on
-  // a fresh page): index 0 = first date, max = last date
-  const dates = await page.evaluate(async (slug) => {
+  // The API serves the whole timeline window; the slider scrubs the
+  // cloud-filtered, enabled subset (50% cap on, 10-06/10-16 disabled).
+  const apiDates = await page.evaluate(async (slug) => {
     const response = await fetch(`/p/${slug}/api/dates?layer=rgb`);
     return (await response.json()).dates.map((entry) => entry.date);
   }, SLUG);
-  expect(dates.length).toBeGreaterThan(2);
-  expect(dates[0]).not.toBe(newest);
+  expect(apiDates[0]).toBe("2026-04-14"); // nothing before the timeline start
+  expect(apiDates.length).toBeGreaterThan(2);
+  const visible = await page
+    .locator("#cloud-strip span")
+    .evaluateAll((nodes) =>
+      nodes
+        .filter((node) => !node.classList.contains("disabled"))
+        .map((node) => node.dataset.date),
+    );
+  expect(visible.length).toBeLessThan(apiDates.length); // filter really applies
+  expect(visible[0]).toBe(apiDates[0]);
+  expect(visible.at(-1)).not.toBe("2026-10-16"); // disabled by default
+  expect(visible[0]).not.toBe(newest);
 
   // click the far LEFT of the track (thumb starts at the newest date, so
   // the left end is clear) -> jump to the earliest date
@@ -1045,12 +1100,14 @@ test("clicking the date slider track jumps straight to that date", async ({
   expect(track).not.toBeNull();
   await page.mouse.click(track.x + 1, track.y + track.height / 2);
   await expect(page.locator("#date-end")).toHaveValue("0");
-  await expect(page.locator("#date-value")).toHaveText(dates[0]);
+  await expect(page.locator("#date-value")).toHaveText(visible[0]);
 
-  // click back at the far RIGHT -> newest date again
+  // click back at the far RIGHT -> newest enabled date again
   await page.mouse.click(track.x + track.width - 1, track.y + track.height / 2);
-  await expect(page.locator("#date-end")).toHaveValue(String(dates.length - 1));
-  await expect(page.locator("#date-value")).toHaveText(dates.at(-1));
+  await expect(page.locator("#date-end")).toHaveValue(
+    String(visible.length - 1),
+  );
+  await expect(page.locator("#date-value")).toHaveText(visible.at(-1));
 });
 
 test("double-clicking a cloud-strip tick disables that date for scrubbing", async ({
@@ -1114,10 +1171,12 @@ test("the selected date's cloud-strip tick carries the current highlight", async
   await expect(page.locator("#cloud-strip span").first()).toBeVisible({
     timeout: 30_000,
   });
-  // boot selects the newest date -> its tick is highlighted
+  // boot selects the newest ENABLED date -> its tick is highlighted;
+  // the disabled tail of the strip (2026-10-16) never carries /current/
   const dots = await page.locator("#cloud-strip span").count();
-  const last = page.locator("#cloud-strip span").nth(dots - 1);
-  await expect(last).toHaveClass(/current/);
+  const enabledTicks = page.locator("#cloud-strip span:not(.disabled)");
+  await expect(enabledTicks.last()).toHaveClass(/current/);
+  expect(await page.locator("#cloud-strip span.current").count()).toBe(1);
 
   // clicking another tick moves the highlight with the selection
   const mid = page.locator("#cloud-strip span").nth(Math.floor(dots / 2));
@@ -1125,7 +1184,7 @@ test("the selected date's cloud-strip tick carries the current highlight", async
   await mid.click();
   await expect(mid).toHaveClass(/current/);
   await expect(mid).not.toHaveClass(/disabled/);
-  await expect(last).not.toHaveClass(/current/);
+  await expect(enabledTicks.last()).not.toHaveClass(/current/);
   expect(await page.locator("#date-value").textContent()).toBe(midDate);
 
   // scrubbing the slider moves it too (track click at the far left)
@@ -1182,10 +1241,12 @@ test("arrow keys step the date slider from anywhere", async ({ page }) => {
   await page.keyboard.press("ArrowRight");
   await expect(page.locator("#date-value")).toHaveText(newest);
 
-  // disabled dates are skipped: disable the second-newest tick, then
-  // ArrowLeft from the newest must jump over it
-  const dots = await page.locator("#cloud-strip span").count();
-  const secondLast = page.locator("#cloud-strip span").nth(dots - 2);
+  // disabled dates are skipped: disable the tick just before the newest
+  // ENABLED one (the strip's disabled tail already ships crossed out),
+  // then ArrowLeft from the newest must jump over it
+  const enabledTicks = page.locator("#cloud-strip span:not(.disabled)");
+  const enabledCount = await enabledTicks.count();
+  const secondLast = enabledTicks.nth(enabledCount - 2);
   const skipped = await secondLast.getAttribute("data-date");
   await secondLast.dblclick();
   await page.locator("#app-title").click();

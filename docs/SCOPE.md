@@ -44,7 +44,7 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 | # | Decision |
 |---|---|
 | Q1 | Purpose: **own analytical tool** (b). Public read-only when deployed. |
-| Q2 | Window: recent years → refined in R2 to start **2026-07-01** → changed 2026-10-07 to **2026-01-01** (user request; ~9 months of pre-works baseline). |
+| Q2 | Window: recent years → refined in R2 to start **2026-07-01** → changed 2026-10-07 to **2026-01-01** (user request; ~9 months of pre-works baseline) → changed 2026-10-21 to **2026-04-14** ("do not show any dates before" the timeline start; enforced server-side on read). |
 | Q3 | Indicators: **bare-ground expansion + vegetation (NDVI) + river change + Sentinel-1 change** (a+b+c+e). |
 | Q4 | **Elevation out of scope v1** (honest explanation: S1 is not elevation data; DEM differencing deferred). |
 | Q5 | Architecture: on-demand tile service (d) → refined in R2-Q5/Q6 to WMTS with caching. |
@@ -58,7 +58,7 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 | # | Decision |
 |---|---|
 | Q1 | Sentinel-1 scope: **σ⁰ change + coherence**; preprocessing background job starts **after plain data is first viewed**. |
-| Q2 | Timeline start: **2026-01-01** (moved from 2026-07-01 on 2026-10-07; ~7 months clean baseline before works). Works-start marker **2026-06-01** (corrected by user 2026-10-09 from the earlier ~Aug estimate). |
+| Q2 | Timeline start: **2026-04-14** (2026-07-01 → 2026-01-01 on 2026-10-07 → 2026-04-14 on 2026-10-21, user: no dates before it; `list_dates` filters stale indexes on read). Works-start marker **2026-06-01** (corrected by user 2026-10-09 from the earlier ~Aug estimate). |
 | Q3 | Sentinel-2 layers: **RGB + NDVI + MNDWI + BSI**. |
 | Q4 | **Full OGC WMTS 1.0.0** + XYZ raster tiles from the same handlers (QGIS usable as second client). |
 | Q5 | Freshness: **hybrid** — scheduled catalog poll + orbit-repeat prediction of next acquisition. |
@@ -72,13 +72,13 @@ Consequences: the v1 core (S2 layers + σ⁰ change) runs **account-free**; only
 | # | Decision |
 |---|---|
 | Q1 | SLC account: **Copernicus CDSE** (a); ASF fallback. |
-| Q2 | Coherence job: **full-window eager** from 2026-01-01, then one new pair appended per new scene, forever. |
+| Q2 | Coherence job: **full-window eager** from the timeline start (2026-04-14 since 2026-10-21), then one new pair appended per new scene, forever. |
 | Q3 | Export: **shareable URL state + PNG screenshot** (GeoTIFF deferred). |
 | Q4 | Basemap: **OSM default + Esri World Imagery toggle** (with attribution). |
 | Q5 | POIs: **single toggleable labeled layer, two groups** — project facilities vs inspection points. |
 | Q6 | Cache: **cap zoom 18; 10 GB soft budget each for rendered tiles and for source products (scenes/layers/coherence), LRU eviction both** (raised from 2 GB tiles-only / sources unbounded, 2026-10-08). |
 | Q7 | **`/status` page**: cache sizes, last catalog check, pending jobs, **predicted next acquisition** per mission (from repeat cycles), last scene seen. |
-| Q8 | **Cloud intelligence**: per-date AOI cloud % computed from SCL, badges on scrubber, "hide cloudy dates" toggle. |
+| Q8 | **Cloud intelligence**: per-date AOI cloud % computed from SCL, badges on scrubber, "hide cloudy dates" toggle. *Defaults since 2026-10-21 (user):* filter **ON** at a **50%** cap, and 2026-10-06 / 2026-10-16 ship disabled (crossed-out in the strip, skipped by the slider, re-enableable by double-click). |
 | Q9 | **About panel**: resolution source, Copernicus/ESA attribution (mandatory), parcel reconstruction method, "unofficial tool, not affiliated with SETENA" disclaimer. |
 | Q10 | Phase-2 register confirmed (see §5). |
 
@@ -141,7 +141,7 @@ flowchart LR
 - **Frontend:** MapLibre GL, layer switcher → layer-driven date scrubber (works-start marker, cloud badges + hide-cloudy — **optical layers only**; hidden on radar since 2026-10-09 because cloudiness does not affect Sentinel-1), POI toggle (facilities / inspection groups) rendered as dots with decluttered, always-visible labels (no overlap at any zoom), **Río General work-area line overlay** (clipped OSM way between the project start/end POIs — the plan's boundary between El General and Daniel Flores; `rio.geojson` route + white-cased indigo line, ODbL attribution), OSM default + Esri imagery switch as a **Google-Maps-style basemap picker** (thumbnail bottom-left → Map/Satellite panel with live preview tiles), **3D terrain view** as a **3D/2D map button** (bottom-right, AWS elevation-tiles DEM, pitch 60 tilt, `d3=` toggle), URL state sharing, PNG export, About panel (incl. the RES-1333-2017 purpose/reason in ES+EN), ES/EN language switch, localized help tooltips on the layer pills and radar modes.
 - **Tile service:** WMTS 1.0.0 (GetCapabilities/GetTile) + XYZ raster over shared handlers; per-project slug namespacing; zoom cap 18; tile LRU at 2 GB, sources retained.
 - **S2 pipeline:** STAC fetch → dual-tile mosaicking → RGB/NDVI/MNDWI/BSI + SCL cloud % → two-level cache.
-- **S1 pipeline:** GRD COG fetch → σ⁰ change-vs-baseline (frontend range slider picks start/end; raw mode removed by user decision 2026-10-08). *Accumulative since 2026-10-09:* the pair delta keeps its magnitude classes, but weak ± classes require local consistency (|Δ| ≥ 2× the pooled temporal variability of the 3-date windows around start/end, else neutral) — validated on the live products: AOI neutral 68%→80%, weak mottle 29%→18%, strong change and quarry/control separation unchanged. *Composite baseline since 2026-10-12 (user):* the radar default baseline is **`baseline=composite`** — the per-pixel temporal median of every processed Sentinel-1 date before `works_start` (2026-01-01..2026-06-01), so each post-works date shows what the project changed against the quiet pre-works period (validated: quarry strong 3.1% → 15.5%, control 0.0%); the range-start knob stays as the opt-out pair mode via the radar checkbox.
+- **S1 pipeline:** GRD COG fetch → σ⁰ change-vs-baseline (frontend range slider picks start/end; raw mode removed by user decision 2026-10-08). *Accumulative since 2026-10-09:* the pair delta keeps its magnitude classes, but weak ± classes require local consistency (|Δ| ≥ 2× the pooled temporal variability of the 3-date windows around start/end, else neutral) — validated on the live products: AOI neutral 68%→80%, weak mottle 29%→18%, strong change and quarry/control separation unchanged. *Composite baseline since 2026-10-12 (user):* the radar default baseline is **`baseline=composite`** — the per-pixel temporal median of every processed Sentinel-1 date before `works_start` (window `timeline.start`..`works_start`, i.e. 2026-04-14..2026-06-01 since the 2026-10-21 window move), so each post-works date shows what the project changed against the quiet pre-works period (validated: quarry strong 3.1% → 15.5%, control 0.0%); the range-start knob stays as the opt-out pair mode via the radar checkbox.
 - **Coherence pipeline:** CDSE token → SLC pairs (same orbit, 12-day, eager from the timeline start) → compute-and-purge → cached result only. Triggered after first plain-data view; thereafter append-only.
 - **Freshness:** scheduled catalog poll + orbit-repeat prediction surfaced on `/status` (per your Q5: the server knows from orbit/past data whether new data may be available).
 
