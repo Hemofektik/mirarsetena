@@ -10,6 +10,10 @@ Mirar Setena es una aplicación web SIG que muestra en un mapa el alcance geogr�
 
 > 🚧 Estado: desarrollo inicial. El alcance completo — decisiones, arquitectura y hoja de ruta — está documentado en **[docs/SCOPE.md](docs/SCOPE.md)**; el plan de ejecución TDD/BDD con casillas de progreso por incremento está en **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)**.
 
+## Demostración en vivo
+
+**🔗 [ms.hemofektik.de](https://ms.hemofektik.de/)** — la instancia desplegada para *CDP Río General* (abre directamente en el mapa; el endpoint OGC WMTS está en `https://ms.hemofektik.de/p/cdp-rio-general/wmts`).
+
 ## ¿Por qué?
 
 La Resolución **RES-1333-2017-SETENA** autorizó el proyecto *CDP Río General* — extracción de material del cauce del Río General más una planta de trituración en Pérez Zeledón, San José — y define exactamente dónde puede operar el desarrollador. Los trabajos iniciaron el 1 de junio de 2026.

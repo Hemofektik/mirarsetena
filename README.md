@@ -10,6 +10,10 @@ Mirar Setena is a web GIS tool that shows the geographic scope of a project auth
 
 > 🚧 Status: early development. The full scope — decisions, architecture and roadmap — is documented in **[docs/SCOPE.md](docs/SCOPE.md)**; the TDD/BDD execution plan with per-increment progress checkboxes is **[docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)**.
 
+## Live demo
+
+**🔗 [ms.hemofektik.de](https://ms.hemofektik.de/)** — the deployed instance for *CDP Río General* (opens straight on the map; the OGC WMTS endpoint is at `https://ms.hemofektik.de/p/cdp-rio-general/wmts`).
+
 ## Why
 
 Resolution **RES-1333-2017-SETENA** authorized the *CDP Río General* project — material extraction from the Río General channel plus a crushing plant in Pérez Zeledón, San José — and it defines exactly where the developer may operate. Earthworks began on 1 June 2026.
