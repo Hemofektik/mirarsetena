@@ -112,6 +112,27 @@ test("shipped defaults: 50% cloud cap, filter on, timeline from 2026-04-14", asy
   );
 });
 
+test("bare domain boots the default project without a /p/ subdir", async ({
+  page,
+}) => {
+  // User 2026-10-22: https://ms.hemofektik.de/ must show the app directly
+  // — no "Missing project slug" error, no redirect into /p/{slug}/.
+  await page.goto("/");
+  await expect(page.locator("#app-title")).toHaveText("Mirar Setena");
+  await expect(page.locator("#project-name")).toContainText("CDP Río General");
+  await expect(page.locator("#cloud-strip span").first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(page.locator("#date-value")).toHaveText(/^\d{4}-\d{2}-\d{2}$/, {
+    timeout: 30_000,
+  });
+  // the address bar stays on the bare domain — no subdir appears
+  expect(new URL(page.url()).pathname).toBe("/");
+  // and the booted project really serves: config + a tile answer 200
+  const config = await page.request.get("/p/cdp-rio-general/config");
+  expect(config.status()).toBe(200);
+});
+
 test("mobile viewport keeps the panel usable (I.7)", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/p/${SLUG}/`);

@@ -97,6 +97,22 @@ def create_app(
         limiter = anyio.to_thread.current_default_thread_limiter()
         return {"status": "ok", "threadpool_tokens": int(limiter.total_tokens)}
 
+    @app.get("/projects")
+    def projects() -> dict:
+        """Project list for the bare-domain boot (no /p/{slug}/ in the path).
+
+        The SPA served at `/` asks which project to open; `default` is the
+        first slug in config order (deterministic, config-file sorted).
+        """
+        known = registry.all()
+        slugs = sorted(known)
+        return {
+            "default": slugs[0] if slugs else None,
+            "projects": [
+                {"slug": slug, "name": known[slug].name} for slug in slugs
+            ],
+        }
+
     @app.get("/p/{slug}/config")
     def project_config(slug: str) -> dict:
         try:

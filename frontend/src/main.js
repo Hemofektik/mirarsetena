@@ -849,11 +849,19 @@ function applyI18n() {
 }
 
 async function boot() {
-  if (!slug) {
-    document.body.textContent = "Missing project slug (/p/{slug}/)";
-    return;
+  let projectSlug = slug;
+  if (!projectSlug) {
+    // Bare domain (ms.hemofektik.de/): no /p/{slug}/ segment to parse —
+    // ask the backend which project to boot and keep the address bar on
+    // the bare path (user 2026-10-22: "show the content without subdirs").
+    const listing = await getJSON("/projects");
+    projectSlug = listing.default;
+    if (!projectSlug) {
+      document.body.textContent = "No projects configured";
+      return;
+    }
   }
-  config = await getJSON(`/p/${slug}/config`);
+  config = await getJSON(`/p/${projectSlug}/config`);
   state = S.makeState(config);
 
   // language: explicit URL param > stored preference > Spanish
