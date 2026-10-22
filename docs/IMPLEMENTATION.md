@@ -387,3 +387,31 @@ Depends: G, H, I.
   9. Mobile 390×844 viewport — Playwright ✓
   10. Restart persistence: cache + date index survive container recreate (data/ volume) ✓
 - **Bugs found & fixed during K:** mixed-MGRS-zone mosaics (16PHR+17PKL reprojection), S1 GCP-only georeferencing, GRD east→west range axis windowing, jobs without handlers being failed instead of parked, RGB outside-AOI black fill, httpx missing from runtime deps.
+
+---
+
+## Deployment — ms.hemofektik.de (custom domain, 2026-10-22)
+
+**Goal (user):** serve the app at `https://ms.hemofektik.de/` with the browser staying on the domain — no visible redirect to the OCI IP, no iframe.
+
+**Why not an iframe:** an iframe would keep the URL but breaks fullscreen map UX (nested scroll/zoom, no direct tile URLs, WMTS/QGIS unusable). A reverse proxy serves the real app same-origin instead.
+
+**Topology:** browser → Apache (hosting server 87.118.66.12, ProFTPD+Apache, docroot folder `mirarsetena/` = the subdomain) → reverse proxy → OCI `http://129.158.207.69:80` → Caddy → uvicorn `127.0.0.1:8000`.
+
+**Two config files (neither is in this repo — both live on servers):**
+
+1. `mirarsetena/.htaccess` on the hosting server (FTP creds in `~/.bashrc` `HEMOFEKTIK_FTP_*`):
+   ```apache
+   DirectoryIndex disabled          # else Apache proxies /index.html → FastAPI 404
+   RewriteEngine On
+   RewriteCond %{HTTP:Upgrade} websocket [NC]
+   RewriteRule ^(.*)$ http://129.158.207.69/$1 [P,L]
+   RewriteRule ^(.*)$ http://129.158.207.69/$1 [P,L]
+   ```
+   `SSLProxyEngine`/`SSLProxyVerify` are NOT allowed in `.htaccess` context (500) — hence plain-HTTP proxying to Caddy, not HTTPS.
+
+2. `/etc/caddy/Caddyfile` on the OCI instance: the `http://` block serves proxied traffic (requests carrying `X-Forwarded-For`, added by Apache) directly to uvicorn instead of redirecting to HTTPS; direct browser hits on the bare IP keep the 301→HTTPS behavior. `:443` block unchanged (IP cert via lego).
+
+**Verified:** `/`, `/p/{slug}/`, config/pois/rio/dates/tiles/WMTS/healthz/assets all 200 through the domain; 0 redirects off-domain; 0 IP references in served HTML; direct `https://129.158.207.69/` still 200 and `http://` still 301s to HTTPS.
+
+**Gotchas:** the app has no hardcoded origins (WMTS uses `request.base_url`), so it works under any hostname. The hosting folder for a subdomain is `<sub>.hemofektik.de/` — but `ms.hemofektik.de` is served from the `mirarsetena/` folder (user-configured vhost).
